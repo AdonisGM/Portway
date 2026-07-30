@@ -23,6 +23,14 @@ interface Props {
   onCancel: () => void
   children: ReactNode
   busy?: boolean
+  /** Blocks confirm while the body's own input is incomplete or invalid. */
+  confirmDisabled?: boolean
+  /**
+   * This dialog was built for Delete, so its confirm is red by default. Rename
+   * and the permission dialogs are not destructive and must not borrow that
+   * weight — red is how the app says "this cannot be undone".
+   */
+  confirmVariant?: 'dangerSolid' | 'accent'
 }
 
 export function ConfirmDialog({
@@ -33,6 +41,8 @@ export function ConfirmDialog({
   onCancel,
   children,
   busy,
+  confirmDisabled,
+  confirmVariant = 'dangerSolid',
 }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null)
 
@@ -70,7 +80,12 @@ export function ConfirmDialog({
           <Button ref={cancelRef} size="md" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="dangerSolid" size="md" onClick={onConfirm} disabled={busy}>
+          <Button
+            variant={confirmVariant}
+            size="md"
+            onClick={onConfirm}
+            disabled={busy || confirmDisabled}
+          >
             {confirmLabel}
           </Button>
         </div>

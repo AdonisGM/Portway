@@ -27,6 +27,22 @@ export default function App() {
   const loadHosts = useApp((s) => s.loadHosts)
   const loadKeys = useApp((s) => s.loadKeys)
 
+  /**
+   * No native context menu anywhere. A desktop app that pops up the webview's
+   * "Reload / Inspect Element" menu on right-click reads as a web page in a
+   * frame, and this app now has real menus of its own to put there instead.
+   *
+   * The terminal is the one place a right-click could have meant something —
+   * some terminals paste on it — but xterm does not bind it, ours pastes with
+   * the platform shortcut, and leaving one pane with the browser menu would be
+   * stranger than having none.
+   */
+  useEffect(() => {
+    const block = (e: MouseEvent) => e.preventDefault()
+    document.addEventListener('contextmenu', block)
+    return () => document.removeEventListener('contextmenu', block)
+  }, [])
+
   // Reveal the window as soon as the shell is painted. Deliberately not
   // waiting on loadHosts: the table has its own "loading hosts…" state, and
   // holding the window back for the database would make a fast start feel

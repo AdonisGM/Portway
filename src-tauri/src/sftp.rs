@@ -1,3 +1,4 @@
+use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -285,4 +286,111 @@ async fn put_file(
     }
     target.flush().await?;
     Ok(total)
+}
+
+/// russh-sftp renders a status packet as `"{status_code}: {error_message}"`,
+/// and servers routinely send the same words in both — "Permission denied:
+/// Permission denied". Said once is the whole message.
+fn tidy(e: impl std::fmt::Display) -> String {
+    let text = e.to_string();
+    match text.split_once(": ") {
+        Some((head, tail)) if head == tail => head.to_string(),
+        _ => text,
+    }
+}
+
+/// An attribute change carrying *only* what is being changed.
+///
+/// `Metadata::default()` is emphatically not this: it is `size: Some(0)`,
+/// `uid/gid: Some(0)`, `permissions: Some(0o777 | DIR)` and zeroed timestamps.
+/// Building a chmod on top of it would truncate the file to nothing, hand it to
+/// root and date it to 1970 — the flags word is derived from which fields are
+/// `Some`, so every default that survives is a change that gets sent.
+fn only(f: impl FnOnce(&mut Metadata)) -> Metadata {
+    let mut meta = Metadata {
+        size: None,
+        uid: None,
+        user: None,
+        gid: None,
+        group: None,
+        permissions: None,
+        atime: None,
+        mtime: None,
+    };
+    f(&mut meta);
+    meta
+}
+
+/// Rename, which on a remote filesystem is also "move".
+pub async fn rename(app: &AppHandle, session_id: &str, from: &str, to: &str) -> Result<()> {
+    let (sftp, host_id) = open(app, session_id).await?;
+    log(app, host_id, session_id, Origin::User, &format!("sftp rename {from} -> {to}"));
+    sftp.rename(from, to)
+        .await
+        .map_err(|e| Error::Ssh(format!("could not rename {from}: {}", tidy(e))))
+}
+
+/// `chmod`. `mode` is the permission bits alone; the file-type bits are the
+/// server's business and must not be sent back.
+pub async fn chmod(app: &AppHandle, session_id: &str, path: &str, mode: u32) -> Result<()> {
+    let (sftp, host_id) = open(app, session_id).await?;
+    let mode = mode & 0o7777;
+    log(app, host_id, session_id, Origin::User, &format!("sftp chmod {mode:o} {path}"));
+    sftp.set_metadata(path, only(|m| m.permissions = Some(mode)))
+        .await
+        .map_err(|e| Error::Ssh(format!("could not chmod {path}: {}", tidy(e))))
+}
+
+/// `chown`, optionally down the tree.
+///
+/// Recursion is off by default and has to be asked for: on a directory it is
+/// the difference between changing one entry and changing every file under it,
+/// and there is no undo on the far end.
+pub async fn chown(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    uid: u32,
+    gid: u32,
+    recursive: bool,
+) -> Result<u64> {
+    let (sftp, host_id) = open(app, session_id).await?;
+    log(
+        app,
+        host_id,
+        session_id,
+        Origin::User,
+        &format!("sftp chown {uid}:{gid}{} {path}", if recursive { " -R" } else { "" }),
+    );
+
+    let meta = || only(|m| {
+        m.uid = Some(uid);
+        m.gid = Some(gid);
+    });
+
+    sftp.set_metadata(path, meta())
+        .await
+        .map_err(|e| Error::Ssh(format!("could not chown {path}: {}", tidy(e))))?;
+    let mut changed = 1u64;
+    if !recursive {
+        return Ok(changed);
+    }
+
+    // Same explicit stack as the upload walk: a recursive async fn needs boxing,
+    // and an unreadable subdirectory should skip rather than abort a change that
+    // has already been half applied.
+    let mut stack = vec![path.to_string()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = sftp.read_dir(&dir).await else { continue };
+        for entry in entries {
+            let child = join_remote(&dir, &entry.file_name());
+            if sftp.set_metadata(&child, meta()).await.is_ok() {
+                changed += 1;
+            }
+            if entry.metadata().is_dir() {
+                stack.push(child);
+            }
+        }
+    }
+    Ok(changed)
 }

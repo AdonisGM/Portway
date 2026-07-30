@@ -83,6 +83,41 @@ pub async fn sftp_upload_path(
     sftp::upload_path(&app, &session_id, &local, &remote_dir).await
 }
 
+/// Rename, which on a remote filesystem is also move.
+#[tauri::command]
+pub async fn sftp_rename(
+    app: AppHandle,
+    session_id: String,
+    from: String,
+    to: String,
+) -> Result<()> {
+    sftp::rename(&app, &session_id, &from, &to).await
+}
+
+#[tauri::command]
+pub async fn sftp_chmod(
+    app: AppHandle,
+    session_id: String,
+    path: String,
+    mode: u32,
+) -> Result<()> {
+    sftp::chmod(&app, &session_id, &path, mode).await
+}
+
+/// Returns how many entries were changed, which is the only way the UI can say
+/// what a recursive run actually did.
+#[tauri::command]
+pub async fn sftp_chown(
+    app: AppHandle,
+    session_id: String,
+    path: String,
+    uid: u32,
+    gid: u32,
+    recursive: bool,
+) -> Result<u64> {
+    sftp::chown(&app, &session_id, &path, uid, gid, recursive).await
+}
+
 /// The audit trail for one host, newest first.
 #[tauri::command]
 pub fn host_log(db: State<'_, Db>, host_id: i64, limit: Option<i64>) -> Result<Vec<LogEntry>> {

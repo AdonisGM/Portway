@@ -141,6 +141,22 @@ export const sftpUpload = (sessionId: string, local: string, remote: string) =>
 export const sftpUploadPath = (sessionId: string, local: string, remoteDir: string) =>
   invoke<number>('sftp_upload_path', { sessionId, local, remoteDir })
 
+export const sftpRename = (sessionId: string, from: string, to: string) =>
+  invoke<void>('sftp_rename', { sessionId, from, to })
+
+/** `mode` is permission bits only — file-type bits are the server's business. */
+export const sftpChmod = (sessionId: string, path: string, mode: number) =>
+  invoke<void>('sftp_chmod', { sessionId, path, mode })
+
+/** Returns how many entries changed, so a recursive run can say what it did. */
+export const sftpChown = (
+  sessionId: string,
+  path: string,
+  uid: number,
+  gid: number,
+  recursive: boolean,
+) => invoke<number>('sftp_chown', { sessionId, path, uid, gid, recursive })
+
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })
 

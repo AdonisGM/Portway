@@ -239,6 +239,22 @@ plus search/filter/accent for the parts that are live.
   extension, so a server too old to send one costs a second and then correctly falls back to
   SHA-1. Non-RSA keys are unaffected: `PrivateKeyWithHashAlg::new` drops the hash algorithm for
   anything that is not RSA.
+- **The native context menu is off everywhere** (`App.tsx`), because a desktop app that opens
+  the webview's "Reload / Inspect Element" menu reads as a web page in a frame. The terminal was
+  the one candidate for an exception — some terminals paste on right-click — but xterm does not
+  bind it and ours pastes with the platform shortcut, so leaving one pane with a browser menu
+  would be stranger than having none. `DataTable` also clears the selection on right-click:
+  WebKit selects the word under the cursor even through `user-select: none`, which otherwise
+  leaves the filename highlighted behind the menu as though it were being edited.
+- **Never build an SFTP attribute change on `Metadata::default()`.** It is not a blank: it is
+  `size: Some(0)`, `uid`/`gid` `Some(0)`, `permissions: Some(0o777 | DIR)` and zeroed
+  timestamps, and the protocol's flags word is derived from which fields are `Some`. A chmod
+  written on top of it would truncate the file to nothing, hand it to root and date it to 1970.
+  `sftp.rs::only()` exists to make the empty case the easy one.
+- **A failed file operation must not replace the listing.** The pane has two error slots on
+  purpose: one means "this folder could not be read" and takes the table's place, the other is a
+  dismissible line above a listing that is still there. Losing your place in a directory is a
+  worse outcome than the failure being reported.
 - **A dropped file cannot come from an HTML5 `drop` handler.** The webview hands JavaScript a
   `File` with its path withheld — the same wall "Choose file…" hit — so OS drops arrive through
   `getCurrentWebview().onDragDropEvent()` with real paths instead. That event is *window*-wide,

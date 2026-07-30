@@ -71,6 +71,8 @@ interface Props<T> {
   density?: Density
   virtualized?: boolean
   onRowClick?: (row: T, index: number) => void
+  /** Right-click on a row. The event carries the point the menu opens at. */
+  onRowContextMenu?: (row: T, event: React.MouseEvent) => void
   isSelected?: (row: T, index: number) => boolean
   /** Approximate row height; the virtualiser measures the real one after mount. */
   estimateRowHeight?: number
@@ -88,6 +90,7 @@ export function DataTable<T>({
   density = 'default',
   virtualized = false,
   onRowClick,
+  onRowContextMenu,
   isSelected,
   estimateRowHeight = 38,
   emptyMessage,
@@ -113,6 +116,19 @@ export function DataTable<T>({
       selected: isSelected?.(row, index) ?? false,
     }),
     onClick: onRowClick ? () => onRowClick(row, index) : undefined,
+    onContextMenu: onRowContextMenu
+      ? (e: React.MouseEvent) => {
+          // The app suppresses the native menu globally; this stops the row's
+          // own handler from also being read as a plain click.
+          e.preventDefault()
+          e.stopPropagation()
+          // WebKit selects the word under a right-click even through
+          // `user-select: none`, which leaves the filename highlighted behind
+          // the menu as though it were being edited.
+          window.getSelection()?.removeAllRanges()
+          onRowContextMenu(row, e)
+        }
+      : undefined,
   })
 
   return (

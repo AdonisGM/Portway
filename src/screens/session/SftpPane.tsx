@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RemoteFile } from '@/lib/api'
-import { message, sftpList } from '@/lib/api'
+import { message, sftpChmod, sftpChown, sftpList, sftpRename } from '@/lib/api'
 import { formatMtime, formatSize } from '@/lib/bytes'
 import type { Session } from '@/data/types'
 import { Chip } from '@/components/ui/Chip'
@@ -10,6 +10,8 @@ import { FileIcon } from './FileIcons'
 import { useSftpColumns, type SftpColumnId } from './columns'
 import { ColumnPicker } from './ColumnPicker'
 import { useDropUpload } from './useDropUpload'
+import { ContextMenu, MenuItem, MenuSeparator, type MenuPoint } from '@/components/ui/ContextMenu'
+import { OwnerDialog, PermissionsDialog, RenameDialog } from './FileDialogs'
 
 /**
  * Real SFTP browsing over the session's existing SSH connection, with a
@@ -47,6 +49,16 @@ export function SftpPane({ session, width, resizing }: Props) {
   const [busy, setBusy] = useState(false)
   const cols = useSftpColumns()
   const paneRef = useRef<HTMLDivElement>(null)
+  // One piece of state for the whole right-click flow: which row was hit, where
+  // the menu goes, and which dialog it opened. Keeping them together means a
+  // dialog can never outlive the row it was opened on.
+  const [menu, setMenu] = useState<{ file: RemoteFile; at: MenuPoint } | null>(null)
+  const [dialog, setDialog] = useState<'rename' | 'mode' | 'owner' | null>(null)
+  const [acting, setActing] = useState<RemoteFile | null>(null)
+  // Separate from `error`, which means "this folder could not be read" and so
+  // replaces the table. A failed rename or chmod must leave the listing where
+  // it is — losing your place is a worse outcome than the failure itself.
+  const [opError, setOpError] = useState<string | null>(null)
 
   const load = useCallback(
     async (target: string, system = false) => {
@@ -92,6 +104,29 @@ export function SftpPane({ session, width, resizing }: Props) {
     paneRef,
     onUploaded: () => void load(path),
   })
+
+  /** Absolute path of a listed entry, in the folder currently shown. */
+  const pathOf = (file: RemoteFile) =>
+    path.endsWith('/') ? `${path}${file.name}` : `${path}/${file.name}`
+
+  /** Runs one remote change, then re-reads the folder so the row shows truth. */
+  const act = async (run: () => Promise<unknown>) => {
+    setDialog(null)
+    setActing(null)
+    setOpError(null)
+    try {
+      await run()
+      await load(path)
+    } catch (e) {
+      setOpError(message(e))
+    }
+  }
+
+  const openDialog = (kind: 'rename' | 'mode' | 'owner') => {
+    setActing(menu?.file ?? null)
+    setDialog(kind)
+    setMenu(null)
+  }
 
   const RENDERERS: Record<SftpColumnId, Column<RemoteFile>> = {
     name: {
@@ -201,13 +236,18 @@ export function SftpPane({ session, width, resizing }: Props) {
         </Chip>
       </div>
 
-      {drop.error ? (
+      {/* Upload and file-operation failures share one dismissible line: both
+          are things that went wrong *to* the listing, not instead of it. */}
+      {drop.error ?? opError ? (
         <button
           type="button"
-          onClick={drop.clearError}
+          onClick={() => {
+            drop.clearError()
+            setOpError(null)
+          }}
           className="flex-none border-b border-w06 px-3 py-2 text-left font-mono text-mono/cmd break-words text-warn"
         >
-          ! {drop.error}
+          ! {drop.error ?? opError}
         </button>
       ) : null}
 
@@ -233,8 +273,62 @@ export function SftpPane({ session, width, resizing }: Props) {
             }
           }}
           emptyMessage="empty directory"
+          onRowContextMenu={(file, e) => {
+            // `..` is ours, not an entry on the server — there is nothing on the
+            // far end to rename or chmod.
+            if (file.name === '..') return
+            setMenu({ file, at: { x: e.clientX, y: e.clientY } })
+          }}
         />
       )}
+      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={130}>
+        <MenuItem onClick={() => openDialog('rename')}>Rename…</MenuItem>
+        <MenuItem onClick={() => openDialog('mode')}>Permissions…</MenuItem>
+        <MenuItem onClick={() => openDialog('owner')}>Owner…</MenuItem>
+        <MenuSeparator />
+        <MenuItem
+          onClick={() => {
+            if (menu) void navigator.clipboard.writeText(pathOf(menu.file))
+            setMenu(null)
+          }}
+        >
+          Copy path
+        </MenuItem>
+      </ContextMenu>
+
+      {dialog === 'rename' && acting ? (
+        <RenameDialog
+          file={acting}
+          onCancel={() => setDialog(null)}
+          onRename={(name) =>
+            void act(() =>
+              sftpRename(
+                session.id,
+                pathOf(acting),
+                path.endsWith('/') ? `${path}${name}` : `${path}/${name}`,
+              ),
+            )
+          }
+        />
+      ) : null}
+
+      {dialog === 'mode' && acting ? (
+        <PermissionsDialog
+          file={acting}
+          onCancel={() => setDialog(null)}
+          onApply={(mode) => void act(() => sftpChmod(session.id, pathOf(acting), mode))}
+        />
+      ) : null}
+
+      {dialog === 'owner' && acting ? (
+        <OwnerDialog
+          file={acting}
+          onCancel={() => setDialog(null)}
+          onApply={(uid, gid, recursive) =>
+            void act(() => sftpChown(session.id, pathOf(acting), uid, gid, recursive))
+          }
+        />
+      ) : null}
     </div>
   )
 }

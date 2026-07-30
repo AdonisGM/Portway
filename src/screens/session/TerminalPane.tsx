@@ -36,8 +36,8 @@ export function TerminalPane({ session }: { session: Session }) {
     if (!mount) return
 
     const term = new Terminal({
-      fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-      fontSize: 12,
+      fontFamily: token('--font-mono', 'ui-monospace, monospace'),
+      fontSize: 13,
       // The handoff asks for two things a real terminal cannot both honour:
       // body text at 12px/1.75 *and* a 7×14px block cursor. A block cursor
       // fills its cell, so at 1.75 the cell is 21px and the cursor towers over

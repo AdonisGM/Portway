@@ -6,7 +6,7 @@ import { WindowControls } from './WindowControls'
  * drawn with a titlebar — so it is built from the same tokens as everything
  * else and kept deliberately quiet.
  *
- * The brand block is 194px wide with a right hairline so it continues the
+ * The brand block is 214px wide with a right hairline so it continues the
  * sidebar's column line; the mock's brand row (SSH Client.dc.html:35-38) moved
  * up here, which is why Sidebar no longer draws one.
  *
@@ -14,7 +14,7 @@ import { WindowControls } from './WindowControls'
  * tauri.conf.json sets decorations:false. macOS instead keeps its real frame
  * (tauri.macos.conf.json: decorations:true + titleBarStyle:Overlay), so the
  * system draws the traffic lights over our content at the top left and we draw
- * nothing on the right. The 194px brand block is load-bearing — it continues
+ * nothing on the right. The 214px brand block is load-bearing — it continues
  * the sidebar hairline — so the lights are cleared with a left inset inside it
  * rather than by widening it, and the accent dot steps aside for them: three
  * coloured circles are already the brand mark's job in that corner.

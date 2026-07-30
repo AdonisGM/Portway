@@ -6,7 +6,7 @@ import { useApp, type Screen } from '@/store/appStore'
 import { NAV_ICONS } from './NavIcons'
 
 /**
- * Fixed 194px rail. Four blocks: nav list, Groups, the Sessions list pinned to
+ * Fixed 214px rail. Four blocks: nav list, Groups, the Sessions list pinned to
  * the bottom, and the agent footer. The brand row the mock draws at the top
  * (SSH Client.dc.html:35-38) now lives in the titlebar, so the nav list starts
  * here with a little air where the brand used to be.
@@ -33,7 +33,7 @@ export function Sidebar() {
 
   return (
     <nav className="flex w-nav flex-none flex-col border-r border-w06 bg-nav">
-      <div className="flex flex-col gap-px px-2 pt-3">
+      <div className="flex flex-col gap-0.75 px-2.5 pt-3">
         {nav.map((item) => {
           // Servers reads as active on the session and form screens too
           // (README line 120), since both are reached from it.
@@ -50,7 +50,7 @@ export function Sidebar() {
               // because the icon and the label have to sit together at the left
               // with the design's 11px between them — `justify-between` would
               // push all three apart evenly.
-              className={`flex items-center gap-2.75 rounded-nav px-2.25 py-1.75 text-body transition-colors ${
+              className={`flex items-center gap-2.75 rounded-nav px-2.75 py-2.25 text-body transition-colors ${
                 active ? 'bg-w06 text-fg' : 'text-fg-2 hover:bg-w09'
               }`}
             >
@@ -65,7 +65,7 @@ export function Sidebar() {
       </div>
 
       <SectionLabel className="px-4 pt-4.5 pb-1.5">Groups</SectionLabel>
-      <div className="flex flex-col gap-px px-2">
+      <div className="flex flex-col gap-0.75 px-2.5">
         {groups.map((group) => (
           <button
             key={group.id}
@@ -74,7 +74,7 @@ export function Sidebar() {
               toggleGroup(group.id)
               goScreen('servers')
             }}
-            className={`flex items-center gap-2 rounded-nav px-2.25 py-1.5 text-cell transition-colors ${
+            className={`flex items-center gap-2 rounded-nav px-2.75 py-2.25 text-body transition-colors ${
               groupFilter === group.id ? 'bg-w06 text-fg' : 'text-fg-2 hover:bg-w05'
             }`}
           >
@@ -85,7 +85,7 @@ export function Sidebar() {
         ))}
       </div>
 
-      <div className="mt-auto px-2 pb-2">
+      <div className="mt-auto px-2.5 pb-2">
         {sessions.length > 0 ? (
           <SectionLabel className="px-2 pb-1.5">Sessions</SectionLabel>
         ) : null}
@@ -94,7 +94,7 @@ export function Sidebar() {
             key={session.id}
             type="button"
             onClick={() => activateTab(i)}
-            className="flex w-full items-center gap-1.75 rounded-nav px-2.25 py-1.25 font-mono text-meta text-fg-2 transition-colors hover:bg-w05 hover:text-fg"
+            className="flex w-full items-center gap-1.75 rounded-nav px-2.75 py-1.5 font-mono text-meta text-fg-2 transition-colors hover:bg-w05 hover:text-fg"
           >
             <StatusDot tone="accent" size="xs" />
             <span className="cell-ellipsis">{session.name}</span>

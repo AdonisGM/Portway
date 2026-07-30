@@ -1,11 +1,7 @@
-/* Vendored so the packaged app never reaches for fonts.googleapis.com the way
-   the prototype does. Sans 400/500/600, Mono 400/500 — the weights the
-   handoff's typography section calls for. */
-@import '@fontsource/ibm-plex-sans/400.css';
-@import '@fontsource/ibm-plex-sans/500.css';
-@import '@fontsource/ibm-plex-sans/600.css';
-@import '@fontsource/ibm-plex-mono/400.css';
-@import '@fontsource/ibm-plex-mono/500.css';
+/* No webfont. The revised design specifies system stacks, which is also the
+   strongest form of the rule the vendored IBM Plex files were serving: the
+   packaged app cannot reach for fonts.googleapis.com if it asks for no font
+   at all. The stacks themselves live in theme.css with every other token. */
 
 @import './theme.css';
 

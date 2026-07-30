@@ -30,7 +30,7 @@ export function ScreenShell({ header, footer, children, overlay }: Props) {
 /** The `12px 16px` bar at the top of every screen. */
 export function ScreenHeader({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-none items-center gap-2.5 border-b border-w06 px-4 py-3">
+    <div className="flex flex-none items-center gap-2.5 border-b border-w06 px-4.5 py-4">
       {children}
     </div>
   )
@@ -52,7 +52,7 @@ export function ScreenSubtitle({ children }: { children: ReactNode }) {
  */
 export function FooterBar({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-none items-center gap-4 border-t border-w06 px-4 py-2.25 font-mono text-mono text-faint">
+    <div className="flex flex-none items-center gap-4 border-t border-w06 px-4 py-2.5 font-mono text-mono text-faint">
       {children}
     </div>
   )

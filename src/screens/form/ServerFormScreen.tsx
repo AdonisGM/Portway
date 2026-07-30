@@ -181,7 +181,7 @@ export function ServerFormScreen() {
 
   return (
     <div className="absolute inset-0 flex flex-col bg-base">
-      <div className="flex flex-none items-center gap-3 border-b border-w06 px-5 py-3.25">
+      <div className="flex flex-none items-center gap-3 border-b border-w06 px-5 py-3.75">
         <button
           type="button"
           onClick={() => goScreen('servers')}

@@ -23,8 +23,8 @@
   --spacing: 4px;
 
   /* Structural widths from the handoff, so they read by name in markup. */
-  --spacing-nav: 194px; /* left nav          */
-  --spacing-drawer: 330px; /* servers detail drawer */
+  --spacing-nav: 214px; /* left nav          */
+  --spacing-drawer: 348px; /* servers detail drawer */
   --spacing-sftp: 470px; /* session SFTP pane    */
   --spacing-summary: 300px; /* form summary column  */
   --spacing-titlebar: 32px; /* custom window chrome */
@@ -123,18 +123,23 @@
   /* -- type ramp -----------------------------------------------------------
      text-title, text-host, text-body, text-cell, text-meta, text-mono,
      text-label, text-badge, text-status */
-  --text-title: 14px; /* screen title            */
-  --text-host: 14.5px; /* drawer host name        */
-  --text-body: 12.5px; /* body, table cell        */
-  --text-cell: 12px; /* mono cell, small body   */
-  --text-meta: 11.5px; /* mono meta, field label  */
-  --text-mono: 11px; /* footnote mono           */
-  --text-label: 10px; /* section / table heading */
-  --text-badge: 9.5px; /* kind badge              */
-  --text-status: 10.5px; /* terminal status bar     */
+  --text-title: 15px; /* screen title            */
+  --text-host: 15.5px; /* drawer host name        */
+  --text-body: 13.5px; /* body, table cell        */
+  --text-cell: 13px; /* mono cell, small body   */
+  --text-meta: 12.5px; /* mono meta, field label  */
+  --text-mono: 12.5px; /* footnote mono           */
+  --text-label: 11.5px; /* section / table heading */
+  --text-badge: 11px; /* kind badge              */
+  --text-status: 12px; /* terminal status bar     */
 
-  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* The revised design drops the webfont: "no webfont, system stacks only".
+     The vendored IBM Plex files existed so the packaged app never reached for
+     fonts.googleapis.com the way the prototype does — system stacks satisfy
+     that outright, and the app no longer ships ~200KB of woff2 it renders
+     before the first frame. */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
   --leading-term: 1.75; /* terminal body     */
   --leading-code: 1.6; /* drawer $ command  */
@@ -148,7 +153,10 @@
   --radius-bar: 2px; /* transfer progress track */
   --radius-badge: 3px;
   --radius-chip: 4px;
-  --radius-nav: 5px;
+  /* 5px in the first handoff. The revision rounds nav and group rows to the
+     same 6px as fields and buttons, which is why this is no longer its own
+     value in practice — kept named so the rail can diverge again. */
+  --radius-nav: 6px;
   --radius-field: 6px;
   --radius-toggle: 9px;
 

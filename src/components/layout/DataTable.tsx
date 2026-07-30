@@ -38,8 +38,8 @@ const rowStyles = tv({
   base: 'group grid w-full items-center gap-2.5 border-b border-w03 text-left transition-colors',
   variants: {
     density: {
-      default: 'px-4 py-2.25 text-body', // 9px 16px  — Servers, Known hosts
-      relaxed: 'px-4 py-2.5 text-body', // 10px 16px — SSH Keys, Tunnels
+      default: 'px-5 py-2.75 text-body', // 11px 20px — Servers, Known hosts
+      relaxed: 'px-5 py-3 text-body', // 12px 20px — SSH Keys, Tunnels
       compact: 'px-3 py-1.5 font-mono text-cell text-fg-2', // 6px 12px — SFTP files
     },
     interactive: { true: 'cursor-pointer hover:bg-w04', false: '' },
@@ -52,8 +52,8 @@ const headStyles = tv({
   base: 'table-head grid flex-none gap-2.5 border-b border-w06',
   variants: {
     density: {
-      default: 'px-4 py-2', // 8px 16px
-      relaxed: 'px-4 py-2',
+      default: 'px-5 py-2.5', // 10px 20px
+      relaxed: 'px-5 py-2.5',
       compact: 'px-3 py-1.5', // 6px 12px
     },
   },

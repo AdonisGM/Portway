@@ -134,7 +134,7 @@ Three layers, built bottom-up. Screens are almost entirely composed of the layer
 **1. Tokens — `src/styles/theme.css`.** The handoff's whole token table lives in one Tailwind v4
 `@theme` block, which generates a named utility per entry. It is the only file in the app where
 a hex value or raw px measurement appears. The design's awkward values become named utilities
-(`text-body` = 12.5px, `bg-field`, `border-w06`), so no component ever writes `text-[12.5px]`.
+(`text-body` = 13.5px, `bg-field`, `border-w06`), so no component ever writes `text-[13.5px]`.
 
 Spacing uses a fixed 4px base, so the design's odd values are ordinary scale steps:
 9px = `2.25`, 7px = `1.75`, 11px = `2.75`, 18px = `4.5`, 26px = `6.5`.
@@ -256,7 +256,7 @@ traffic lights over our content; we draw nothing on the right.
   16. If the titlebar height ever changes, re-measure rather than re-derive: screenshot the
   corner and read the pixels.
 - **`--spacing-lights` (86px) is the gutter the brand block indents by** so "Portway" clears the
-  lights, which end at x≈74. The block stays 194px wide — that width continues the sidebar's
+  lights, which end at x≈74. The block stays 214px wide — that width continues the sidebar’s
   column hairline, so widening it to make room would misalign every row beneath it. The accent
   dot is dropped on macOS instead: three coloured circles already do that job in that corner.
 - **Platform is detected synchronously** in `src/lib/platform.ts`, off `navigator.userAgent`,

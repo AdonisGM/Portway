@@ -198,6 +198,14 @@ plus search/filter/accent for the parts that are live.
   claims mousedown for anything inside one, turning button clicks into window drags.
 - **Window IPC needs `src-tauri/capabilities/default.json`.** Tauri v2 denies every command not
   listed there; without it minimize/maximize/close silently do nothing.
+- **Never pass `None` as the hash algorithm for a public-key auth.** For an RSA key russh maps
+  `None` to `ssh-rsa`, which is RSA over SHA-1, and OpenSSH has refused that by default since
+  8.8 — so a perfectly good RSA key gets "the server rejected the key" and the search goes
+  looking for a wrong key, which is the one thing it is not. `ssh.rs` asks the server through
+  `best_supported_rsa_hash()` instead. That call waits up to a second for the `server-sig-algs`
+  extension, so a server too old to send one costs a second and then correctly falls back to
+  SHA-1. Non-RSA keys are unaffected: `PrivateKeyWithHashAlg::new` drops the hash algorithm for
+  anything that is not RSA.
 - **The private key field's two buttons read the real machine, not the mock.** "From SSH Keys"
   lists a scan of `~/.ssh` (`keys.rs`), not `SSH_KEYS` from `data/mock.ts`, because the path it
   writes is handed straight to `load_secret_key` on connect — offering the mock's invented names

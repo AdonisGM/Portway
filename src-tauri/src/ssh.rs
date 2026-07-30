@@ -396,17 +396,43 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
                     path.display()
                 ))
             })?;
+            // Which signature algorithm to sign with, asked of the server rather
+            // than assumed. It matters only for RSA keys, and there it is the
+            // difference between connecting and not: `None` means `ssh-rsa`,
+            // which is RSA over SHA-1, and OpenSSH has refused that by default
+            // since 8.8. An RSA key that works everywhere else would be rejected
+            // here with nothing to suggest the key was fine all along.
+            //
+            // The server answers through the `server-sig-algs` extension. A
+            // server too old to send one flattens to `None`, which is also the
+            // right answer for it. Non-RSA keys ignore this entirely.
+            let hash_alg = handle
+                .best_supported_rsa_hash()
+                .await
+                .map_err(|e| {
+                    Error::Ssh(format!("could not read the server's signature algorithms: {e}"))
+                })?
+                .flatten();
+
             let auth = handle
                 .authenticate_publickey(
                     &host.user,
-                    PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                    PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
                 )
                 .await
                 .map_err(|e| Error::Ssh(format!("key auth failed: {e}")))?;
             if !auth.success() {
+                // Name the algorithm: "the server rejected the key" alone sends
+                // people looking for a wrong key, which is the one thing it is
+                // usually not.
                 return Err(Error::Ssh(format!(
-                    "the server rejected the key for user '{}'",
-                    host.user
+                    "the server rejected the key for user '{}' (offered {}). \
+                     Check that the public half is in ~/.ssh/authorized_keys on the host.",
+                    host.user,
+                    match hash_alg {
+                        Some(alg) => format!("rsa-{alg:?}").to_lowercase(),
+                        None => "the key's default algorithm".into(),
+                    }
                 )));
             }
             Ok(())

@@ -286,11 +286,13 @@ traffic lights over our content; we draw nothing on the right.
 2. The Servers table is virtualized (70 rows). The other tables are 4–9 rows and are not.
 3. Servers row SSH/SFTP buttons appear on hover/focus, as the handoff asks for in production.
    Actions on SSH Keys and Known hosts stay visible — `Verified` reads as status, not an action.
-4. Fonts are vendored via `@fontsource` rather than fetched from Google.
+4. No webfont at all. The design's second revision specifies system stacks, which is the
+   strongest form of the rule the vendored `@fontsource` files were serving — an app that asks
+   for no font cannot reach for Google's.
 5. **Custom 32px titlebar** replaces the Windows system frame. Not in the handoff — it was
    requested — so it is built from the same tokens. The brand mark moved out of the sidebar
-   into it. The window is 1240×812 so the area below the titlebar is the 1240×780 design
-   baseline. Dragging, double-click-to-maximize and edge/corner resizing all still work
+   into it. The window opens at 1550×1015 — the 1240×812 baseline plus the 25% that was asked
+   for — so the area below the titlebar keeps the design's proportions. Dragging, double-click-to-maximize and edge/corner resizing all still work
    (the window keeps `WS_THICKFRAME`), but **Windows Snap Layouts is lost**: the flyout needs
    the OS to hit-test a real `HTMAXBUTTON`, which a DOM button can't provide. If that matters,
    `tauri-plugin-decorum` extends the client area under a native frame and keeps snap — the
@@ -298,6 +300,11 @@ traffic lights over our content; we draw nothing on the right.
 6. The Servers footer reads `N of 70 hosts` while a search or filter is narrowing the list, and
    the mock's exact `70 hosts` otherwise.
 7. All UI strings are English; the prototype mixed English and Vietnamese.
+8. **The drawer's `Terminal…` chip is gone.** The handoff draws it between Duplicate and Del
+   but never says what it does, the prototype leaves it inert, and it is absent from the list
+   of things the handoff marks as undesigned — so there was nothing to build against. Rather
+   than invent a behaviour, it was removed: a control that does nothing when pressed teaches
+   the user the app is broken, and Edit and Duplicate get its width.
 
 ### Two places the handoff no longer matches reality
 

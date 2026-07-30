@@ -33,7 +33,7 @@ const button = tv({
       lg: 'px-4 py-1.75 text-cell',
       // full-width halves of the drawer's SSH / SFTP pair
       block: 'w-full py-2 text-body',
-      // the drawer's second action row: Edit · Duplicate · Terminal… · Del
+      // the drawer’s second action row: Edit · Duplicate · Del
       row: 'rounded-nav px-2.25 py-1.5 text-meta',
     },
   },

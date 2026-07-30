@@ -67,9 +67,12 @@ export function HostDrawer({ host }: { host: Host }) {
           <Button size="row" className="flex-1" onClick={() => openDuplicateForm(host)}>
             Duplicate
           </Button>
-          <Button size="row" className="flex-1">
-            Terminal…
-          </Button>
+          {/* The design's third chip here was "Terminal…", and it is inert in
+              the prototype too — the handoff draws it but never says what it
+              does, and it is not in the list of things left undesigned either.
+              Rather than invent a behaviour for it, it is dropped: a control
+              that does nothing when pressed is worse than one that isn't
+              there, and Edit and Duplicate get the width back. */}
           <Button
             variant="danger"
             size="row"

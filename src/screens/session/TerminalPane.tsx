@@ -49,10 +49,10 @@ export function TerminalPane({ session }: { session: Session }) {
       cursorStyle: 'block',
       scrollback: 10_000,
       theme: {
-        background: token('--color-term', '#08090a'),
-        foreground: token('--color-term-fg', '#a8aea8'),
+        background: token('--color-term', '#121417'),
+        foreground: token('--color-term-fg', '#ced4ce'),
         cursor: token('--color-accent', '#5ec8b0'),
-        cursorAccent: token('--color-term', '#08090a'),
+        cursorAccent: token('--color-term', '#121417'),
         selectionBackground: token('--color-w15', '#ffffff26'),
         // The palette has to be given explicitly. Left out, every colour a
         // program emits renders as the plain foreground — `ls` loses its
@@ -65,15 +65,15 @@ export function TerminalPane({ session }: { session: Session }) {
         blue: token('--color-ansi-blue', '#6f9fd8'),
         magenta: token('--color-ansi-magenta', '#b48ac4'),
         cyan: token('--color-ansi-cyan', '#5ec8b0'),
-        white: token('--color-ansi-white', '#a8aea8'),
-        brightBlack: token('--color-ansi-bright-black', '#6b7078'),
+        white: token('--color-ansi-white', '#ced4ce'),
+        brightBlack: token('--color-ansi-bright-black', '#939aa3'),
         brightRed: token('--color-ansi-bright-red', '#e89184'),
         brightGreen: token('--color-ansi-bright-green', '#98d3a2'),
         brightYellow: token('--color-ansi-bright-yellow', '#dbb877'),
         brightBlue: token('--color-ansi-bright-blue', '#8ab6e6'),
         brightMagenta: token('--color-ansi-bright-magenta', '#c9a4d8'),
         brightCyan: token('--color-ansi-bright-cyan', '#7fd9c4'),
-        brightWhite: token('--color-ansi-bright-white', '#e8e8e6'),
+        brightWhite: token('--color-ansi-bright-white', '#f1f2f4'),
       },
     })
     const fit = new FitAddon()

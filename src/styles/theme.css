@@ -33,22 +33,22 @@
 
   /* -- surfaces ------------------------------------------------------------
      bg-base, bg-nav, bg-term, bg-panel, bg-drawer, bg-field, bg-tab-active */
-  --color-base: #0c0d0f;
-  --color-nav: #0a0b0c;
-  --color-term: #08090a;
-  --color-panel: #0e0f11;
-  --color-drawer: #101114;
-  --color-field: #15171a;
-  --color-tab-active: #131417;
+  --color-base: #1b1e22;
+  --color-nav: #14161a;
+  --color-term: #121417;
+  --color-panel: #1f2226;
+  --color-drawer: #22262b;
+  --color-field: #2a2e34;
+  --color-tab-active: #262a30;
 
   /* -- text ----------------------------------------------------------------
      text-fg, text-fg-2, text-muted, text-faint, text-term-fg, text-term-dim */
-  --color-fg: #e8e8e6;
-  --color-fg-2: #a6aab1;
-  --color-muted: #83878e;
-  --color-faint: #6b7078;
-  --color-term-fg: #a8aea8;
-  --color-term-dim: #4f545a;
+  --color-fg: #f1f2f4;
+  --color-fg-2: #c5cad1;
+  --color-muted: #a9afb7;
+  --color-faint: #939aa3;
+  --color-term-fg: #ced4ce;
+  --color-term-dim: #8d939b;
 
   /* -- the terminal's 16 ANSI colours --------------------------------------
      Not in the handoff, which never drew coloured output, but a shell emits
@@ -71,15 +71,15 @@
   --color-ansi-blue: #6f9fd8;
   --color-ansi-magenta: #b48ac4;
   --color-ansi-cyan: #5ec8b0;
-  --color-ansi-white: #a8aea8;
-  --color-ansi-bright-black: #6b7078;
+  --color-ansi-white: #ced4ce;
+  --color-ansi-bright-black: #939aa3;
   --color-ansi-bright-red: #e89184;
   --color-ansi-bright-green: #98d3a2;
   --color-ansi-bright-yellow: #dbb877;
   --color-ansi-bright-blue: #8ab6e6;
   --color-ansi-bright-magenta: #c9a4d8;
   --color-ansi-bright-cyan: #7fd9c4;
-  --color-ansi-bright-white: #e8e8e6;
+  --color-ansi-bright-white: #f1f2f4;
 
   /* -- white overlays, named by the README's alpha -------------------------
      bg-w05, border-w06, hover:bg-w15, … */
@@ -93,16 +93,22 @@
   --color-w12: #ffffff1f; /* toggle off               */
   --color-w14: #ffffff24; /* outline button           */
   --color-w15: #ffffff26; /* soft button hover        */
+  /* The one overlay the recoloured design adds. Every other alpha above is
+     unchanged from the first handoff — only the nav rail's five items hover
+     harder now, which is what keeps them legible after the rail gained icons
+     and the surfaces underneath it were lifted. */
+  --color-w09: #ffffff17; /* nav item hover           */
 
   /* -- accent (live) -------------------------------------------------------
      Settings rewrites --color-accent on :root; every utility compiles to
      var(--color-accent), so one write repaints the whole app. */
   --color-accent: #5ec8b0;
   --color-accent-27: color-mix(in srgb, var(--color-accent) 27%, transparent);
-  /* "Accent text sits on #0c0d0f" (README). Same value as --color-base, but it
+  /* "Accent text sits on #1b1e22" (README). Same value as --color-base, but it
      needs its own name: `text-base` is Tailwind's built-in 1rem font size, so
-     it would never resolve as a colour. */
-  --color-ink: #0c0d0f;
+     it would never resolve as a colour. Being a separate token, it does not
+     follow --color-base on its own — recolouring the app means editing both. */
+  --color-ink: #1b1e22;
 
   /* -- group / status ------------------------------------------------------ */
   --color-prod: #d9776a;

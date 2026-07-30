@@ -7,21 +7,21 @@
 </head>
 <body>
 <x-dc>
-<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><style>
-body{margin:0;background:#f0eee9;font-family:'IBM Plex Sans',system-ui,sans-serif}
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><style>
+body{margin:0;background:#f0eee9;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 a{color:#2a78d6}a:hover{color:#1b5fae}
 .dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
 .dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
-.dv-tid{font:600 10px 'IBM Plex Mono',monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
-.dv-tname{font:600 13px/1.2 'IBM Plex Sans',sans-serif;color:#1a1a1a}
+.dv-tid{font:600 11.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 14px/1.2 system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a}
 .dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
 .dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
-.dv-oid{font:600 10.5px 'IBM Plex Mono',monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}
-.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 'IBM Plex Sans',sans-serif;color:rgba(0,0,0,.55)}
-.dv-card{max-width:100%;background:#0c0d0f;border:1px solid rgba(0,0,0,.5);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);overflow:hidden}
+.dv-oid{font:600 12px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 12.5px/1.3 system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:rgba(0,0,0,.55)}
+.dv-card{max-width:100%;background:#1b1e22;border:1px solid rgba(0,0,0,.5);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);overflow:hidden}
 .dv-opt:target .dv-oid{background:#2a78d6;color:#fff}
-.dv-next{margin:22px 0 0;font:12px/1.5 'IBM Plex Sans',sans-serif;color:rgba(0,0,0,.5)}
-.dv-note{margin:0 0 22px;max-width:70ch;font:13px/1.6 'IBM Plex Sans',sans-serif;color:rgba(0,0,0,.62)}
+.dv-next{margin:22px 0 0;font:12px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:rgba(0,0,0,.5)}
+.dv-note{margin:0 0 22px;max-width:70ch;font:13px/1.6 system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:rgba(0,0,0,.62)}
 </style></helmet>
 
 <section class="dv-turn" id="t2">
@@ -29,180 +29,195 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
 <p class="dv-note">Table không bao giờ co lại: click một row thì panel chi tiết trượt vào từ phải, phủ lên bảng (Esc hoặc × để đóng). Bấm SSH/SFTP mở màn session tab ngang, terminal trái + file browser phải. Nút New server mở form đủ password / private key + passphrase / agent forwarding / jump host. Card dưới đây bấm được thật.</p>
 <div class="dv-opts">
 <div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Interactive — Servers · Session · New server</div>
-<div class="dv-card" style="width:1240px;height:780px;display:flex;color:#e8e8e6;font-family:'IBM Plex Sans',sans-serif">
+<div class="dv-card" style="width:1240px;height:780px;display:flex;color:#f1f2f4;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
 
-  <div style="width:194px;flex:none;background:#0a0b0c;border-right:1px solid #ffffff0f;display:flex;flex-direction:column">
-    <div style="padding:16px 16px 14px;display:flex;align-items:center;gap:9px">
-      <div style="width:18px;height:18px;border-radius:4px;background:{{ accent }}"></div>
-      <span style="font:600 12.5px 'IBM Plex Sans';letter-spacing:.02em">Portway</span>
+  <div style="width:214px;flex:none;background:#14161a;border-right:1px solid #ffffff0f;display:flex;flex-direction:column">
+    <div style="padding:20px 18px 16px;display:flex;align-items:center;gap:10px">
+      <div style="width:20px;height:20px;border-radius:5px;background:{{ accent }}"></div>
+      <span style="font:600 13.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em">Portway</span>
     </div>
-    <div style="display:flex;flex-direction:column;gap:1px;padding:4px 8px">
-      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="5">
-        <div onClick="{{ n.onGo }}" style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;font-size:12.5px;cursor:pointer;background:{{ n.bg }};color:{{ n.fg }}" style-hover="background:#ffffff08">
-          {{ n.label }}<span style="font:400 11px 'IBM Plex Mono';color:#6b7078">{{ n.count }}</span>
-        </div>
-      </sc-for>
+    <div style="display:flex;flex-direction:column;gap:3px;padding:6px 10px">
+      <div onClick="{{ navS.onGo }}" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:6px;font-size:13.5px;cursor:pointer;background:{{ navS.bg }};color:{{ navS.fg }}" style-hover="background:#ffffff17">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" style="flex:none;opacity:.85"><rect x="2" y="2.5" width="12" height="4.5" rx="1.2"></rect><rect x="2" y="9" width="12" height="4.5" rx="1.2"></rect><path d="M4.4 4.75h.01M4.4 11.25h.01"></path></svg>
+        Servers<span style="margin-left:auto;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">70</span>
+      </div>
+      <div onClick="{{ navK.onGo }}" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:6px;font-size:13.5px;cursor:pointer;background:{{ navK.bg }};color:{{ navK.fg }}" style-hover="background:#ffffff17">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" style="flex:none;opacity:.85"><circle cx="5.4" cy="5.4" r="2.9"></circle><path d="M7.5 7.5 13 13M10.4 10.4l-1.5 1.5M12 12l-1.2 1.2"></path></svg>
+        SSH Keys<span style="margin-left:auto;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">4</span>
+      </div>
+      <div onClick="{{ navT.onGo }}" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:6px;font-size:13.5px;cursor:pointer;background:{{ navT.bg }};color:{{ navT.fg }}" style-hover="background:#ffffff17">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.85"><path d="M2 5h9l-2.2-2.2M14 11H5l2.2 2.2"></path></svg>
+        Tunnels<span style="margin-left:auto;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">2</span>
+      </div>
+      <div onClick="{{ navH.onGo }}" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:6px;font-size:13.5px;cursor:pointer;background:{{ navH.bg }};color:{{ navH.fg }}" style-hover="background:#ffffff17">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.85"><path d="M8 2.2 13 4v4.2c0 3-2.1 4.7-5 5.6-2.9-.9-5-2.6-5-5.6V4l5-1.8Z"></path><path d="M6 8l1.6 1.6L10.2 7"></path></svg>
+        Known hosts<span style="margin-left:auto;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">41</span>
+      </div>
+      <div onClick="{{ navSet.onGo }}" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:6px;font-size:13.5px;cursor:pointer;background:{{ navSet.bg }};color:{{ navSet.fg }}" style-hover="background:#ffffff17">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" style="flex:none;opacity:.85"><path d="M2 4.5h4M9 4.5h5M2 11.5h5M10 11.5h4"></path><circle cx="7.6" cy="4.5" r="1.7"></circle><circle cx="8.6" cy="11.5" r="1.7"></circle></svg>
+        Settings
+      </div>
     </div>
-    <div style="margin-top:18px;padding:0 16px 6px;font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078">Groups</div>
-    <div style="display:flex;flex-direction:column;gap:1px;padding:0 8px">
+    <div style="margin-top:22px;padding:0 18px 8px;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3">Groups</div>
+    <div style="display:flex;flex-direction:column;gap:2px;padding:0 10px">
       <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:5px;font-size:12px;color:#a6aab1;cursor:pointer" style-hover="background:#ffffff08">
+        <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:6px;font-size:13px;color:#c5cad1;cursor:pointer" style-hover="background:#ffffff08">
           <span style="width:6px;height:6px;border-radius:50%;background:{{ g.color }}"></span>{{ g.name }}
-          <span style="margin-left:auto;font:400 11px 'IBM Plex Mono';color:#6b7078">{{ g.count }}</span>
+          <span style="margin-left:auto;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">{{ g.count }}</span>
         </div>
       </sc-for>
     </div>
-    <div style="margin-top:auto;padding:0 8px 8px">
-      <div style="padding:0 8px 6px;font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078">Sessions</div>
+    <div style="margin-top:auto;padding:0 10px 10px">
+      <div style="padding:0 10px 8px;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3">Sessions</div>
       <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="2">
-        <div onClick="{{ t.onOpen }}" style="display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:5px;font:400 11.5px 'IBM Plex Mono';color:#a6aab1;cursor:pointer" style-hover="background:#ffffff08;color:#e8e8e6">
+        <div onClick="{{ t.onOpen }}" style="display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:5px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1;cursor:pointer" style-hover="background:#ffffff08;color:#f1f2f4">
           <span style="width:5px;height:5px;border-radius:50%;background:{{ accent }}"></span>{{ t.name }}
-          <span style="margin-left:auto;font-size:10px;color:#6b7078">{{ t.kind }}</span>
+          <span style="margin-left:auto;font-size:11.5px;color:#939aa3">{{ t.kind }}</span>
         </div>
       </sc-for>
     </div>
-    <div style="padding:11px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">agent · 3 keys loaded</div>
+    <div style="padding:14px 18px;border-top:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">agent · 3 keys loaded</div>
   </div>
 
   <div style="flex:1;min-width:0;position:relative;overflow:hidden">
 
     <sc-if value="{{ isServers }}" hint-placeholder-val="{{ true }}">
       <div style="position:absolute;inset:0;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
-          <div style="flex:1;display:flex;align-items:center;gap:8px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px">
-            <span style="font:400 12px 'IBM Plex Mono';color:#6b7078">/</span>
-            <span style="font-size:12.5px;color:#83878e">Search host, user, tag…</span>
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid #ffffff0f">
+          <div style="flex:1;display:flex;align-items:center;gap:8px;background:#2a2e34;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px">
+            <span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">/</span>
+            <span style="font-size:13.5px;color:#a9afb7">Search host, user, tag…</span>
           </div>
-          <div style="display:flex;background:#15171a;border:1px solid #ffffff12;border-radius:6px;overflow:hidden;font-size:11.5px">
-            <span style="padding:6px 11px;background:#ffffff12;color:#e8e8e6;cursor:pointer">All</span>
-            <span style="padding:6px 11px;color:#83878e;cursor:pointer" style-hover="color:#e8e8e6">Recent</span>
-            <span style="padding:6px 11px;color:#83878e;cursor:pointer" style-hover="color:#e8e8e6">Favorites</span>
+          <div style="display:flex;background:#2a2e34;border:1px solid #ffffff12;border-radius:6px;overflow:hidden;font-size:12.5px">
+            <span style="padding:6px 11px;background:#ffffff12;color:#f1f2f4;cursor:pointer">All</span>
+            <span style="padding:6px 11px;color:#a9afb7;cursor:pointer" style-hover="color:#f1f2f4">Recent</span>
+            <span style="padding:6px 11px;color:#a9afb7;cursor:pointer" style-hover="color:#f1f2f4">Favorites</span>
           </div>
-          <div onClick="{{ goForm }}" style="padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">New server</div>
+          <div onClick="{{ goForm }}" style="padding:6px 12px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;color:#1b1e22;background:{{ accent }}">New server</div>
         </div>
 
-        <div style="display:grid;grid-template-columns:12px 2.1fr 1.5fr 96px 104px 100px 68px 118px;gap:10px;padding:8px 16px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+        <div style="display:grid;grid-template-columns:12px 2.1fr 1.5fr 96px 104px 100px 68px 118px;gap:12px;padding:10px 20px;border-bottom:1px solid #ffffff0f;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#939aa3">
           <span></span><span>Host</span><span>Address</span><span>User</span><span>Group</span><span>Last used</span><span>Auth</span><span></span>
         </div>
         <div style="flex:1;overflow:hidden">
           <sc-for list="{{ hosts }}" as="s" hint-placeholder-count="11">
-            <div onClick="{{ s.onSelect }}" style="display:grid;grid-template-columns:12px 2.1fr 1.5fr 96px 104px 100px 68px 118px;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid #ffffff08;font-size:12.5px;cursor:pointer;background:{{ s.bg }}" style-hover="background:#ffffff0a">
+            <div onClick="{{ s.onSelect }}" style="display:grid;grid-template-columns:12px 2.1fr 1.5fr 96px 104px 100px 68px 118px;gap:12px;align-items:center;padding:11px 20px;border-bottom:1px solid #ffffff08;font-size:13.5px;cursor:pointer;background:{{ s.bg }}" style-hover="background:#ffffff0a">
               <span style="width:7px;height:7px;border-radius:50%;background:{{ s.color }}"></span>
               <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
-              <span style="font:400 12px 'IBM Plex Mono';color:#a6aab1">{{ s.addr }}</span>
-              <span style="font:400 12px 'IBM Plex Mono';color:#a6aab1">{{ s.user }}</span>
-              <span style="color:#a6aab1">{{ s.group }}</span>
-              <span style="color:#83878e;font-size:12px">{{ s.last }}</span>
-              <span style="font:400 11px 'IBM Plex Mono';color:#83878e">{{ s.auth }}</span>
+              <span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">{{ s.addr }}</span>
+              <span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">{{ s.user }}</span>
+              <span style="color:#c5cad1">{{ s.group }}</span>
+              <span style="color:#a9afb7;font-size:13px">{{ s.last }}</span>
+              <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">{{ s.auth }}</span>
               <span style="display:flex;gap:5px;justify-content:flex-end">
-                <span onClick="{{ s.onSSH }}" style="padding:3px 9px;border-radius:4px;font-size:11px;color:#e8e8e6;background:#ffffff12" style-hover="background:#ffffff26">SSH</span>
-                <span onClick="{{ s.onSFTP }}" style="padding:3px 9px;border-radius:4px;font-size:11px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff26;color:#e8e8e6">SFTP</span>
+                <span onClick="{{ s.onSSH }}" style="padding:3px 9px;border-radius:4px;font-size:12.5px;color:#f1f2f4;background:#ffffff12" style-hover="background:#ffffff26">SSH</span>
+                <span onClick="{{ s.onSFTP }}" style="padding:3px 9px;border-radius:4px;font-size:12.5px;color:#c5cad1;background:#ffffff0d" style-hover="background:#ffffff26;color:#f1f2f4">SFTP</span>
               </span>
             </div>
           </sc-for>
         </div>
-        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078;display:flex;gap:16px">
+        <div style="padding:11px 20px;border-top:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3;display:flex;gap:16px">
           <span>70 hosts · 4 groups</span><span style="margin-left:auto">click row → details · ↵ ssh · ⇧↵ sftp</span>
         </div>
       </div>
 
       <div onClick="{{ closeDrawer }}" style="position:absolute;inset:0;background:#00000059;transition:opacity .18s ease;opacity:{{ scrimOpacity }};pointer-events:{{ scrimEvents }}"></div>
 
-      <div style="position:absolute;top:0;right:0;bottom:0;width:330px;background:#101114;border-left:1px solid #ffffff1a;box-shadow:-18px 0 40px #00000073;display:flex;flex-direction:column;transition:transform .22s cubic-bezier(.32,.72,0,1);transform:{{ drawerTransform }}">
-        <div style="padding:15px 16px 14px;border-bottom:1px solid #ffffff0f">
+      <div style="position:absolute;top:0;right:0;bottom:0;width:348px;background:#22262b;border-left:1px solid #ffffff1a;box-shadow:-18px 0 40px #00000073;display:flex;flex-direction:column;transition:transform .22s cubic-bezier(.32,.72,0,1);transform:{{ drawerTransform }}">
+        <div style="padding:17px 18px 16px;border-bottom:1px solid #ffffff0f">
           <div style="display:flex;align-items:center;gap:8px">
             <span style="width:7px;height:7px;border-radius:50%;background:{{ cur.color }}"></span>
-            <span style="font:600 14.5px 'IBM Plex Sans';min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cur.name }}</span>
-            <span onClick="{{ closeDrawer }}" style="margin-left:auto;flex:none;width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#83878e;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1f;color:#e8e8e6">×</span>
+            <span style="font:600 14.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cur.name }}</span>
+            <span onClick="{{ closeDrawer }}" style="margin-left:auto;flex:none;width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#a9afb7;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1f;color:#f1f2f4">×</span>
           </div>
-          <div style="margin-top:6px;font:400 12px 'IBM Plex Mono';color:#83878e">{{ cur.user }}@{{ cur.addr }}</div>
+          <div style="margin-top:6px;font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">{{ cur.user }}@{{ cur.addr }}</div>
           <div style="display:flex;gap:8px;margin-top:14px">
-            <div onClick="{{ cur.onSSH }}" style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">SSH</div>
-            <div onClick="{{ cur.onSFTP }}" style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:12.5px;border:1px solid #ffffff1f;color:#e8e8e6;cursor:pointer" style-hover="background:#ffffff0f">SFTP</div>
+            <div onClick="{{ cur.onSSH }}" style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:13.5px;font-weight:500;cursor:pointer;color:#1b1e22;background:{{ accent }}">SSH</div>
+            <div onClick="{{ cur.onSFTP }}" style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:13.5px;border:1px solid #ffffff1f;color:#f1f2f4;cursor:pointer" style-hover="background:#ffffff0f">SFTP</div>
           </div>
           <div style="display:flex;gap:6px;margin-top:8px">
-            <div onClick="{{ goForm }}" style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Edit</div>
-            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Duplicate</div>
-            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Terminal…</div>
-            <div style="flex:none;padding:6px 9px;border-radius:5px;font-size:11.5px;color:#d9776a;cursor:pointer;background:#ffffff0d" style-hover="background:#d9776a26">Del</div>
+            <div onClick="{{ goForm }}" style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:12.5px;color:#c5cad1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Edit</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:12.5px;color:#c5cad1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Duplicate</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:12.5px;color:#c5cad1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Terminal…</div>
+            <div style="flex:none;padding:6px 9px;border-radius:5px;font-size:12.5px;color:#d9776a;cursor:pointer;background:#ffffff0d" style-hover="background:#d9776a26">Del</div>
           </div>
         </div>
-        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:9px;font-size:12px;border-bottom:1px solid #ffffff0f">
-          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Auth</span><span style="font:400 12px 'IBM Plex Mono';text-align:right">{{ cur.authLong }}</span></div>
-          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Passphrase</span><span style="font:400 12px 'IBM Plex Mono'">{{ cur.passphrase }}</span></div>
-          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Jump host</span><span style="font:400 12px 'IBM Plex Mono'">{{ cur.jump }}</span></div>
-          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Agent forward</span><span style="font:400 12px 'IBM Plex Mono'">{{ cur.agent }}</span></div>
-          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Group</span><span>{{ cur.group }}</span></div>
-          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Last used</span><span>{{ cur.last }}</span></div>
+        <div style="padding:16px 18px;display:flex;flex-direction:column;gap:11px;font-size:13px;border-bottom:1px solid #ffffff0f">
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#939aa3">Auth</span><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;text-align:right">{{ cur.authLong }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#939aa3">Passphrase</span><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">{{ cur.passphrase }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#939aa3">Jump host</span><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">{{ cur.jump }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#939aa3">Agent forward</span><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">{{ cur.agent }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#939aa3">Group</span><span>{{ cur.group }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#939aa3">Last used</span><span>{{ cur.last }}</span></div>
         </div>
-        <div style="padding:14px 16px;border-bottom:1px solid #ffffff0f">
-          <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Recent activity</div>
-          <div style="display:flex;flex-direction:column;gap:7px;font-size:12px">
-            <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">ssh · 14m</span><span style="color:#6b7078">2 min ago</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">sftp · 3 files</span><span style="color:#6b7078">yesterday</span></div>
+        <div style="padding:16px 18px;border-bottom:1px solid #ffffff0f">
+          <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:9px">Recent activity</div>
+          <div style="display:flex;flex-direction:column;gap:7px;font-size:13px">
+            <div style="display:flex;justify-content:space-between"><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">ssh · 14m</span><span style="color:#939aa3">2 min ago</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">sftp · 3 files</span><span style="color:#939aa3">yesterday</span></div>
           </div>
         </div>
-        <div style="padding:14px 16px">
-          <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:8px">Tags</div>
+        <div style="padding:16px 18px">
+          <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:8px">Tags</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
-            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">{{ cur.env }}</span>
-            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">eu-west</span>
+            <span style="padding:3px 8px;border-radius:4px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;background:#ffffff0f;color:#c5cad1">{{ cur.env }}</span>
+            <span style="padding:3px 8px;border-radius:4px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;background:#ffffff0f;color:#c5cad1">eu-west</span>
           </div>
         </div>
-        <div style="margin-top:auto;padding:12px 16px;border-top:1px solid #ffffff0f;font:400 11px/1.6 'IBM Plex Mono';color:#6b7078;word-break:break-all">$ {{ cur.cmd }}</div>
+        <div style="margin-top:auto;padding:14px 18px;border-top:1px solid #ffffff0f;font:400 12.5px/1.6 ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3;word-break:break-all">$ {{ cur.cmd }}</div>
       </div>
     </sc-if>
 
     <sc-if value="{{ isSession }}" hint-placeholder-val="{{ false }}">
       <div style="position:absolute;inset:0;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:stretch;border-bottom:1px solid #ffffff0f;background:#0a0b0c">
-          <div onClick="{{ goServers }}" style="flex:none;display:flex;align-items:center;padding:0 13px;font:400 12px 'IBM Plex Mono';color:#83878e;cursor:pointer;border-right:1px solid #ffffff0f" style-hover="color:#e8e8e6">‹ hosts</div>
+        <div style="display:flex;align-items:stretch;border-bottom:1px solid #ffffff0f;background:#14161a">
+          <div onClick="{{ goServers }}" style="flex:none;display:flex;align-items:center;padding:0 13px;font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7;cursor:pointer;border-right:1px solid #ffffff0f" style-hover="color:#f1f2f4">‹ hosts</div>
           <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
-            <div onClick="{{ t.onOpen }}" style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-right:1px solid #ffffff0f;font-size:12px;cursor:pointer;background:{{ t.bg }};color:{{ t.fg }}">
+            <div onClick="{{ t.onOpen }}" style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-right:1px solid #ffffff0f;font-size:13px;cursor:pointer;background:{{ t.bg }};color:{{ t.fg }}">
               <span style="width:6px;height:6px;border-radius:50%;background:{{ accent }}"></span>
-              <span style="font-family:'IBM Plex Mono'">{{ t.name }}</span>
-              <span style="padding:1px 5px;border-radius:3px;font-size:9.5px;letter-spacing:.06em;background:#ffffff14;color:#a6aab1">{{ t.kind }}</span>
-              <span style="color:#6b7078" style-hover="color:#e8e8e6">×</span>
+              <span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">{{ t.name }}</span>
+              <span style="padding:1px 5px;border-radius:3px;font-size:11px;letter-spacing:.06em;background:#ffffff14;color:#c5cad1">{{ t.kind }}</span>
+              <span style="color:#939aa3" style-hover="color:#f1f2f4">×</span>
             </div>
           </sc-for>
-          <div style="display:flex;align-items:center;padding:0 12px;color:#6b7078;cursor:pointer;font-size:14px" style-hover="color:#e8e8e6">+</div>
+          <div style="display:flex;align-items:center;padding:0 12px;color:#939aa3;cursor:pointer;font-size:14px" style-hover="color:#f1f2f4">+</div>
         </div>
 
         <div style="flex:1;display:flex;min-height:0">
-          <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#08090a">
-            <div style="display:flex;align-items:center;gap:9px;padding:8px 14px;border-bottom:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#121417">
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 14px;border-bottom:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">
               <span style="width:6px;height:6px;border-radius:50%;background:{{ accent }}"></span>TERMINAL · {{ cur.user }}@{{ cur.name }}
               <span style="margin-left:auto">ed25519 · 14m</span>
             </div>
-            <div style="flex:1;overflow:hidden;padding:12px 14px;font:400 12px/1.75 'IBM Plex Mono';color:#a8aea8;white-space:pre-wrap">{{ termText }}<span style="display:inline-block;width:7px;height:14px;vertical-align:-2px;background:{{ accent }}"></span></div>
-            <div style="padding:7px 14px;border-top:1px solid #ffffff0f;font:400 10.5px 'IBM Plex Mono';color:#4f545a;display:flex;gap:18px">
+            <div style="flex:1;overflow:hidden;padding:12px 14px;font:400 13px/1.75 ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#ced4ce;white-space:pre-wrap">{{ termText }}<span style="display:inline-block;width:7px;height:14px;vertical-align:-2px;background:{{ accent }}"></span></div>
+            <div style="padding:7px 14px;border-top:1px solid #ffffff0f;font:400 12px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#8d939b;display:flex;gap:18px">
               <span>utf-8</span><span>80×24</span><span style="margin-left:auto">⌘T new tab · ⌘D split</span>
             </div>
           </div>
 
-          <div style="width:470px;flex:none;border-left:1px solid #ffffff14;background:#0e0f11;display:flex;flex-direction:column">
-            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">
+          <div style="width:470px;flex:none;border-left:1px solid #ffffff14;background:#1f2226;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">
               <span style="width:6px;height:6px;border-radius:50%;background:#c9a15f"></span>SFTP
-              <span style="margin-left:auto;cursor:pointer" style-hover="color:#e8e8e6">local ⇄ remote</span>
+              <span style="margin-left:auto;cursor:pointer" style-hover="color:#f1f2f4">local ⇄ remote</span>
             </div>
-            <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid #ffffff0f;font:400 11.5px 'IBM Plex Mono';color:#a6aab1">
-              <span style="color:#6b7078;cursor:pointer">↑</span><span style="color:#6b7078">/</span>var<span style="color:#6b7078">/</span>lib<span style="color:#6b7078">/</span>postgresql
-              <span style="margin-left:auto;padding:2px 7px;border-radius:4px;background:#ffffff0d;cursor:pointer;font-size:11px" style-hover="background:#ffffff1f">Upload</span>
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">
+              <span style="color:#939aa3;cursor:pointer">↑</span><span style="color:#939aa3">/</span>var<span style="color:#939aa3">/</span>lib<span style="color:#939aa3">/</span>postgresql
+              <span style="margin-left:auto;padding:2px 7px;border-radius:4px;background:#ffffff0d;cursor:pointer;font-size:12.5px" style-hover="background:#ffffff1f">Upload</span>
             </div>
-            <div style="display:grid;grid-template-columns:1.7fr 78px 100px;gap:10px;padding:6px 12px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+            <div style="display:grid;grid-template-columns:1.7fr 78px 100px;gap:10px;padding:6px 12px;border-bottom:1px solid #ffffff0f;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#939aa3">
               <span>Name</span><span style="text-align:right">Size</span><span>Modified</span>
             </div>
             <div style="flex:1;overflow:hidden">
               <sc-for list="{{ files }}" as="f" hint-placeholder-count="9">
-                <div style="display:grid;grid-template-columns:1.7fr 78px 100px;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid #ffffff08;font:400 12px 'IBM Plex Mono';color:#a6aab1;cursor:pointer" style-hover="background:#ffffff0a;color:#e8e8e6">
+                <div style="display:grid;grid-template-columns:1.7fr 78px 100px;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid #ffffff08;font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1;cursor:pointer" style-hover="background:#ffffff0a;color:#f1f2f4">
                   <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{{ f.color }}">{{ f.name }}</span>
-                  <span style="text-align:right;color:#83878e">{{ f.size }}</span>
-                  <span style="color:#6b7078;font-size:11.5px">{{ f.mod }}</span>
+                  <span style="text-align:right;color:#a9afb7">{{ f.size }}</span>
+                  <span style="color:#939aa3;font-size:12.5px">{{ f.mod }}</span>
                 </div>
               </sc-for>
             </div>
             <div style="padding:9px 12px;border-top:1px solid #ffffff0f;display:flex;flex-direction:column;gap:6px">
-              <div style="display:flex;justify-content:space-between;font:400 11px 'IBM Plex Mono';color:#83878e"><span>dump-2026-07-30.sql.gz</span><span>62% · 3.1 MB/s</span></div>
+              <div style="display:flex;justify-content:space-between;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7"><span>dump-2026-07-30.sql.gz</span><span>62% · 3.1 MB/s</span></div>
               <div style="height:3px;border-radius:2px;background:#ffffff14;overflow:hidden"><div style="height:3px;width:62%;background:{{ accent }}"></div></div>
             </div>
           </div>
@@ -211,34 +226,34 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
     </sc-if>
 
     <sc-if value="{{ isForm }}" hint-placeholder-val="{{ false }}">
-      <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#0c0d0f">
-        <div style="display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid #ffffff0f">
-          <span onClick="{{ goServers }}" style="font:400 12px 'IBM Plex Mono';color:#83878e;cursor:pointer" style-hover="color:#e8e8e6">‹ hosts</span>
-          <span style="font:600 14px 'IBM Plex Sans'">New server</span>
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#1b1e22">
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 22px;border-bottom:1px solid #ffffff0f">
+          <span onClick="{{ goServers }}" style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7;cursor:pointer" style-hover="color:#f1f2f4">‹ hosts</span>
+          <span style="font:600 14px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">New server</span>
           <span style="margin-left:auto;display:flex;gap:8px">
-            <span onClick="{{ goServers }}" style="padding:7px 14px;border-radius:6px;font-size:12px;color:#a6aab1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Cancel</span>
-            <span style="padding:7px 14px;border-radius:6px;font-size:12px;border:1px solid #ffffff24;color:#e8e8e6;cursor:pointer" style-hover="background:#ffffff0f">Test connection</span>
-            <span onClick="{{ goServers }}" style="padding:7px 16px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">Save</span>
+            <span onClick="{{ goServers }}" style="padding:7px 14px;border-radius:6px;font-size:13px;color:#c5cad1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Cancel</span>
+            <span style="padding:7px 14px;border-radius:6px;font-size:13px;border:1px solid #ffffff24;color:#f1f2f4;cursor:pointer" style-hover="background:#ffffff0f">Test connection</span>
+            <span onClick="{{ goServers }}" style="padding:7px 16px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;color:#1b1e22;background:{{ accent }}">Save</span>
           </span>
         </div>
         <div style="flex:1;display:flex;min-height:0">
-          <div style="flex:1;min-width:0;overflow:hidden;padding:20px 24px;display:flex;flex-direction:column;gap:22px">
+          <div style="flex:1;min-width:0;overflow:hidden;padding:24px 26px;display:flex;flex-direction:column;gap:26px">
             <div>
-              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:11px">Connection</div>
+              <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:11px">Connection</div>
               <div style="display:grid;grid-template-columns:1.6fr 74px;gap:12px">
-                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Label</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono'">db-replica.prod</div></div>
-                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Group</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font-size:12.5px;color:#a6aab1">Prod ⌄</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Label</span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">db-replica.prod</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Group</span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font-size:13.5px;color:#c5cad1">Prod ⌄</div></div>
               </div>
               <div style="display:grid;grid-template-columns:1.6fr 74px 1fr;gap:12px;margin-top:12px">
-                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Host</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid {{ accent }}44;font:400 12.5px 'IBM Plex Mono'">10.20.4.32</div></div>
-                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Port</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono'">22</div></div>
-                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Username</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono'">postgres</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Host</span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid {{ accent }}44;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">10.20.4.32</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Port</span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">22</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Username</span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">postgres</div></div>
               </div>
             </div>
 
             <div>
-              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:11px">Authentication</div>
-              <div style="display:flex;background:#15171a;border:1px solid #ffffff14;border-radius:6px;overflow:hidden;font-size:12px;width:max-content">
+              <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:11px">Authentication</div>
+              <div style="display:flex;background:#2a2e34;border:1px solid #ffffff14;border-radius:6px;overflow:hidden;font-size:13px;width:max-content">
                 <sc-for list="{{ authTabs }}" as="a" hint-placeholder-count="3">
                   <span onClick="{{ a.onPick }}" style="padding:7px 14px;cursor:pointer;background:{{ a.bg }};color:{{ a.fg }}">{{ a.label }}</span>
                 </sc-for>
@@ -246,67 +261,67 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
 
               <sc-if value="{{ authIsPassword }}" hint-placeholder-val="{{ false }}">
                 <div style="margin-top:13px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                  <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Password</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1;display:flex;justify-content:space-between">••••••••••<span style="color:#6b7078;font-size:11px;cursor:pointer">show</span></div></div>
-                  <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end"><div style="display:flex;align-items:center;gap:9px;font-size:12px;color:#a6aab1;padding:8px 0"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span>Save to system keychain</div></div>
+                  <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Password</span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1;display:flex;justify-content:space-between">••••••••••<span style="color:#939aa3;font-size:12.5px;cursor:pointer">show</span></div></div>
+                  <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end"><div style="display:flex;align-items:center;gap:9px;font-size:13px;color:#c5cad1;padding:8px 0"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#1b1e22"></span></span>Save to system keychain</div></div>
                 </div>
               </sc-if>
 
               <sc-if value="{{ authIsKey }}" hint-placeholder-val="{{ true }}">
                 <div style="margin-top:13px;display:flex;flex-direction:column;gap:12px">
                   <div style="display:flex;flex-direction:column;gap:6px">
-                    <span style="font-size:11.5px;color:#83878e">Private key</span>
+                    <span style="font-size:12.5px;color:#a9afb7">Private key</span>
                     <div style="display:flex;gap:8px;align-items:center">
-                      <div style="flex:1;padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1">~/.ssh/id_ed25519</div>
-                      <span style="padding:8px 13px;border-radius:6px;font-size:12px;border:1px solid #ffffff24;cursor:pointer" style-hover="background:#ffffff0f">Choose file…</span>
-                      <span style="padding:8px 13px;border-radius:6px;font-size:12px;color:#a6aab1;background:#ffffff0d;cursor:pointer" style-hover="background:#ffffff1a">From SSH Keys</span>
+                      <div style="flex:1;padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">~/.ssh/id_ed25519</div>
+                      <span style="padding:8px 13px;border-radius:6px;font-size:13px;border:1px solid #ffffff24;cursor:pointer" style-hover="background:#ffffff0f">Choose file…</span>
+                      <span style="padding:8px 13px;border-radius:6px;font-size:13px;color:#c5cad1;background:#ffffff0d;cursor:pointer" style-hover="background:#ffffff1a">From SSH Keys</span>
                     </div>
                   </div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                    <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Passphrase <span style="color:#6b7078">(nếu key có)</span></span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1;display:flex;justify-content:space-between">••••••••<span style="color:#6b7078;font-size:11px;cursor:pointer">show</span></div></div>
-                    <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end"><div style="display:flex;align-items:center;gap:9px;font-size:12px;color:#a6aab1;padding:8px 0"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span>Unlock via keychain</div></div>
+                    <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Passphrase <span style="color:#939aa3">(nếu key có)</span></span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1;display:flex;justify-content:space-between">••••••••<span style="color:#939aa3;font-size:12.5px;cursor:pointer">show</span></div></div>
+                    <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end"><div style="display:flex;align-items:center;gap:9px;font-size:13px;color:#c5cad1;padding:8px 0"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#1b1e22"></span></span>Unlock via keychain</div></div>
                   </div>
-                  <div style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">fingerprint SHA256:9pQ…hK4 · ed25519 · added Mar 2026</div>
+                  <div style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">fingerprint SHA256:9pQ…hK4 · ed25519 · added Mar 2026</div>
                 </div>
               </sc-if>
 
               <sc-if value="{{ authIsAgent }}" hint-placeholder-val="{{ false }}">
                 <div style="margin-top:13px;display:flex;flex-direction:column;gap:10px">
-                  <div style="font-size:12.5px;color:#a6aab1">Dùng key đang nạp trong ssh-agent — không lưu credential nào trong app.</div>
+                  <div style="font-size:13.5px;color:#c5cad1">Dùng key đang nạp trong ssh-agent — không lưu credential nào trong app.</div>
                   <div style="display:flex;flex-direction:column;gap:1px;border:1px solid #ffffff14;border-radius:6px;overflow:hidden">
-                    <div style="display:flex;gap:10px;padding:8px 11px;background:#15171a;font:400 12px 'IBM Plex Mono';color:#a6aab1"><span style="color:{{ accent }}">●</span>id_ed25519<span style="margin-left:auto;color:#6b7078">SHA256:9pQ…hK4</span></div>
-                    <div style="display:flex;gap:10px;padding:8px 11px;background:#15171a;font:400 12px 'IBM Plex Mono';color:#a6aab1"><span style="color:#6b7078">●</span>id_rsa_legacy<span style="margin-left:auto;color:#6b7078">SHA256:2fT…mQ1</span></div>
+                    <div style="display:flex;gap:10px;padding:8px 11px;background:#2a2e34;font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1"><span style="color:{{ accent }}">●</span>id_ed25519<span style="margin-left:auto;color:#939aa3">SHA256:9pQ…hK4</span></div>
+                    <div style="display:flex;gap:10px;padding:8px 11px;background:#2a2e34;font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1"><span style="color:#939aa3">●</span>id_rsa_legacy<span style="margin-left:auto;color:#939aa3">SHA256:2fT…mQ1</span></div>
                   </div>
                 </div>
               </sc-if>
             </div>
 
             <div>
-              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:11px">Advanced</div>
+              <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:11px">Advanced</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Jump host / bastion</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1">bastion.corp ⌄</div></div>
-                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Run on connect</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1">tmux attach -t main</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Jump host / bastion</span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">bastion.corp ⌄</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#a9afb7">Run on connect</span><div style="padding:8px 10px;border-radius:6px;background:#2a2e34;border:1px solid #ffffff14;font:400 13.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">tmux attach -t main</div></div>
               </div>
-              <div style="display:flex;gap:26px;margin-top:13px;font-size:12px;color:#a6aab1">
-                <div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span>Agent forwarding</div>
-                <div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:17px;border-radius:9px;background:#ffffff1f;position:relative;display:inline-block"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#83878e"></span></span>Keep alive (60s)</div>
+              <div style="display:flex;gap:26px;margin-top:13px;font-size:13px;color:#c5cad1">
+                <div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#1b1e22"></span></span>Agent forwarding</div>
+                <div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:17px;border-radius:9px;background:#ffffff1f;position:relative;display:inline-block"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#a9afb7"></span></span>Keep alive (60s)</div>
               </div>
             </div>
           </div>
 
-          <div style="width:300px;flex:none;border-left:1px solid #ffffff0f;background:#0e0f11;padding:18px 18px;display:flex;flex-direction:column;gap:16px">
+          <div style="width:300px;flex:none;border-left:1px solid #ffffff0f;background:#1f2226;padding:18px 18px;display:flex;flex-direction:column;gap:16px">
             <div>
-              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Resulting command</div>
-              <div style="background:#101114;border:1px solid #ffffff14;border-radius:6px;padding:11px 12px;font:400 11.5px/1.7 'IBM Plex Mono';color:#a6aab1;word-break:break-all">{{ formCmd }}</div>
+              <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:9px">Resulting command</div>
+              <div style="background:#22262b;border:1px solid #ffffff14;border-radius:6px;padding:11px 12px;font:400 12.5px/1.7 ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1;word-break:break-all">{{ formCmd }}</div>
             </div>
             <div>
-              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Checks</div>
-              <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:#a6aab1">
+              <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:9px">Checks</div>
+              <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;color:#c5cad1">
                 <div style="display:flex;gap:9px"><span style="color:{{ accent }}">✓</span>DNS / host reachable</div>
                 <div style="display:flex;gap:9px"><span style="color:{{ accent }}">✓</span>Port 22 open via bastion</div>
                 <div style="display:flex;gap:9px"><span style="color:#c9a15f">!</span>Host key chưa có trong known_hosts</div>
               </div>
             </div>
-            <div style="margin-top:auto;font:400 11px/1.7 'IBM Plex Mono';color:#6b7078">Credentials luôn nằm trong OS keychain. App chỉ lưu tham chiếu.</div>
+            <div style="margin-top:auto;font:400 12.5px/1.7 ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">Credentials luôn nằm trong OS keychain. App chỉ lưu tham chiếu.</div>
           </div>
         </div>
       </div>
@@ -314,139 +329,139 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
 
     <sc-if value="{{ isKeys }}" hint-placeholder-val="{{ false }}">
       <div style="position:absolute;inset:0;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
-          <span style="font:600 14px 'IBM Plex Sans'">SSH Keys</span>
-          <span style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">4 keys · 3 loaded in agent</span>
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid #ffffff0f">
+          <span style="font:600 14px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">SSH Keys</span>
+          <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">4 keys · 3 loaded in agent</span>
           <span style="margin-left:auto;display:flex;gap:8px">
-            <span style="padding:6px 12px;border-radius:6px;font-size:12px;border:1px solid #ffffff24;color:#e8e8e6;cursor:pointer" style-hover="background:#ffffff0f">Import…</span>
-            <span style="padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">Generate key</span>
+            <span style="padding:6px 12px;border-radius:6px;font-size:13px;border:1px solid #ffffff24;color:#f1f2f4;cursor:pointer" style-hover="background:#ffffff0f">Import…</span>
+            <span style="padding:6px 12px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;color:#1b1e22;background:{{ accent }}">Generate key</span>
           </span>
         </div>
-        <div style="display:grid;grid-template-columns:12px 1.5fr 82px 1.6fr 90px 96px 118px;gap:10px;padding:8px 16px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+        <div style="display:grid;grid-template-columns:12px 1.5fr 82px 1.6fr 90px 96px 118px;gap:12px;padding:10px 20px;border-bottom:1px solid #ffffff0f;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#939aa3">
           <span></span><span>Name</span><span>Type</span><span>Fingerprint</span><span>Used by</span><span>Added</span><span></span>
         </div>
         <div style="flex:1;overflow:hidden">
           <sc-for list="{{ keys }}" as="k" hint-placeholder-count="4">
-            <div style="display:grid;grid-template-columns:12px 1.5fr 82px 1.6fr 90px 96px 118px;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid #ffffff08;font-size:12.5px;cursor:pointer" style-hover="background:#ffffff0a">
+            <div style="display:grid;grid-template-columns:12px 1.5fr 82px 1.6fr 90px 96px 118px;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid #ffffff08;font-size:13.5px;cursor:pointer" style-hover="background:#ffffff0a">
               <span style="width:7px;height:7px;border-radius:50%;background:{{ k.dot }}"></span>
-              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'IBM Plex Mono'">{{ k.name }}</span>
-              <span style="font:400 11.5px 'IBM Plex Mono';color:#a6aab1">{{ k.type }}</span>
-              <span style="font:400 11.5px 'IBM Plex Mono';color:#83878e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ k.fp }}</span>
-              <span style="color:#a6aab1">{{ k.used }}</span>
-              <span style="color:#83878e;font-size:12px">{{ k.added }}</span>
+              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">{{ k.name }}</span>
+              <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">{{ k.type }}</span>
+              <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ k.fp }}</span>
+              <span style="color:#c5cad1">{{ k.used }}</span>
+              <span style="color:#a9afb7;font-size:13px">{{ k.added }}</span>
               <span style="display:flex;gap:5px;justify-content:flex-end">
-                <span style="padding:3px 9px;border-radius:4px;font-size:11px;color:#e8e8e6;background:#ffffff12" style-hover="background:#ffffff26">Copy pub</span>
-                <span style="padding:3px 9px;border-radius:4px;font-size:11px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff26;color:#e8e8e6">···</span>
+                <span style="padding:3px 9px;border-radius:4px;font-size:12.5px;color:#f1f2f4;background:#ffffff12" style-hover="background:#ffffff26">Copy pub</span>
+                <span style="padding:3px 9px;border-radius:4px;font-size:12.5px;color:#c5cad1;background:#ffffff0d" style-hover="background:#ffffff26;color:#f1f2f4">···</span>
               </span>
             </div>
           </sc-for>
         </div>
-        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078;display:flex;gap:16px"><span>private keys không bao giờ rời khỏi máy</span><span style="margin-left:auto">passphrase lưu trong OS keychain</span></div>
+        <div style="padding:11px 20px;border-top:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3;display:flex;gap:16px"><span>private keys không bao giờ rời khỏi máy</span><span style="margin-left:auto">passphrase lưu trong OS keychain</span></div>
       </div>
     </sc-if>
 
     <sc-if value="{{ isTunnels }}" hint-placeholder-val="{{ false }}">
       <div style="position:absolute;inset:0;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
-          <span style="font:600 14px 'IBM Plex Sans'">Tunnels</span>
-          <span style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">2 active · 2 idle</span>
-          <span style="margin-left:auto;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">New tunnel</span>
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid #ffffff0f">
+          <span style="font:600 14px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">Tunnels</span>
+          <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">2 active · 2 idle</span>
+          <span style="margin-left:auto;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;color:#1b1e22;background:{{ accent }}">New tunnel</span>
         </div>
-        <div style="display:grid;grid-template-columns:1.2fr 78px 2fr 1.1fr 88px 96px;gap:10px;padding:8px 16px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+        <div style="display:grid;grid-template-columns:1.2fr 78px 2fr 1.1fr 88px 96px;gap:12px;padding:10px 20px;border-bottom:1px solid #ffffff0f;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#939aa3">
           <span>Label</span><span>Type</span><span>Forward</span><span>Via host</span><span>Autostart</span><span>State</span>
         </div>
         <div style="flex:1;overflow:hidden">
           <sc-for list="{{ tunnels }}" as="t" hint-placeholder-count="4">
-            <div style="display:grid;grid-template-columns:1.2fr 78px 2fr 1.1fr 88px 96px;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid #ffffff08;font-size:12.5px;cursor:pointer" style-hover="background:#ffffff0a">
+            <div style="display:grid;grid-template-columns:1.2fr 78px 2fr 1.1fr 88px 96px;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid #ffffff08;font-size:13.5px;cursor:pointer" style-hover="background:#ffffff0a">
               <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.label }}</span>
-              <span style="font:400 11px 'IBM Plex Mono';color:#a6aab1">{{ t.type }}</span>
-              <span style="font:400 11.5px 'IBM Plex Mono';color:#83878e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.fwd }}</span>
-              <span style="font:400 11.5px 'IBM Plex Mono';color:#a6aab1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.via }}</span>
-              <span style="color:#83878e;font-size:12px">{{ t.auto }}</span>
-              <span style="display:flex;align-items:center;gap:8px;font:400 11.5px 'IBM Plex Mono';color:{{ t.color }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.color }}"></span>{{ t.state }}</span>
+              <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">{{ t.type }}</span>
+              <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.fwd }}</span>
+              <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.via }}</span>
+              <span style="color:#a9afb7;font-size:13px">{{ t.auto }}</span>
+              <span style="display:flex;align-items:center;gap:8px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:{{ t.color }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.color }}"></span>{{ t.state }}</span>
             </div>
           </sc-for>
         </div>
-        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">tunnel tự mở lại khi session tương ứng reconnect</div>
+        <div style="padding:11px 20px;border-top:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">tunnel tự mở lại khi session tương ứng reconnect</div>
       </div>
     </sc-if>
 
     <sc-if value="{{ isKnown }}" hint-placeholder-val="{{ false }}">
       <div style="position:absolute;inset:0;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
-          <span style="font:600 14px 'IBM Plex Sans'">Known hosts</span>
-          <div style="flex:1;max-width:280px;display:flex;align-items:center;gap:8px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:5px 10px">
-            <span style="font:400 12px 'IBM Plex Mono';color:#6b7078">/</span><span style="font-size:12.5px;color:#83878e">Filter ~/.ssh/known_hosts</span>
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid #ffffff0f">
+          <span style="font:600 14px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">Known hosts</span>
+          <div style="flex:1;max-width:280px;display:flex;align-items:center;gap:8px;background:#2a2e34;border:1px solid #ffffff12;border-radius:6px;padding:5px 10px">
+            <span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">/</span><span style="font-size:13.5px;color:#a9afb7">Filter ~/.ssh/known_hosts</span>
           </div>
-          <span style="margin-left:auto;font:400 11.5px 'IBM Plex Mono';color:#c9a15f">1 host key changed</span>
+          <span style="margin-left:auto;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c9a15f">1 host key changed</span>
         </div>
-        <div style="display:grid;grid-template-columns:12px 1.6fr 90px 2fr 100px 118px;gap:10px;padding:8px 16px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+        <div style="display:grid;grid-template-columns:12px 1.6fr 90px 2fr 100px 118px;gap:12px;padding:10px 20px;border-bottom:1px solid #ffffff0f;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#939aa3">
           <span></span><span>Host</span><span>Key type</span><span>Fingerprint</span><span>First seen</span><span></span>
         </div>
         <div style="flex:1;overflow:hidden">
           <sc-for list="{{ known }}" as="h" hint-placeholder-count="8">
-            <div style="display:grid;grid-template-columns:12px 1.6fr 90px 2fr 100px 118px;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid #ffffff08;font-size:12.5px;cursor:pointer" style-hover="background:#ffffff0a">
+            <div style="display:grid;grid-template-columns:12px 1.6fr 90px 2fr 100px 118px;gap:12px;align-items:center;padding:11px 20px;border-bottom:1px solid #ffffff08;font-size:13.5px;cursor:pointer" style-hover="background:#ffffff0a">
               <span style="width:7px;height:7px;border-radius:50%;background:{{ h.color }}"></span>
-              <span style="font:400 12px 'IBM Plex Mono';min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ h.host }}</span>
-              <span style="font:400 11.5px 'IBM Plex Mono';color:#a6aab1">{{ h.type }}</span>
-              <span style="font:400 11.5px 'IBM Plex Mono';color:#83878e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ h.fp }}</span>
-              <span style="color:#83878e;font-size:12px">{{ h.seen }}</span>
+              <span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ h.host }}</span>
+              <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">{{ h.type }}</span>
+              <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ h.fp }}</span>
+              <span style="color:#a9afb7;font-size:13px">{{ h.seen }}</span>
               <span style="display:flex;gap:5px;justify-content:flex-end">
-                <span style="padding:3px 9px;border-radius:4px;font-size:11px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff26;color:#e8e8e6">{{ h.action }}</span>
-                <span style="padding:3px 9px;border-radius:4px;font-size:11px;color:#d9776a;background:#ffffff0d" style-hover="background:#d9776a26">Remove</span>
+                <span style="padding:3px 9px;border-radius:4px;font-size:12.5px;color:#c5cad1;background:#ffffff0d" style-hover="background:#ffffff26;color:#f1f2f4">{{ h.action }}</span>
+                <span style="padding:3px 9px;border-radius:4px;font-size:12.5px;color:#d9776a;background:#ffffff0d" style-hover="background:#d9776a26">Remove</span>
               </span>
             </div>
           </sc-for>
         </div>
-        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">41 entries · đọc trực tiếp từ ~/.ssh/known_hosts</div>
+        <div style="padding:11px 20px;border-top:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">41 entries · đọc trực tiếp từ ~/.ssh/known_hosts</div>
       </div>
     </sc-if>
 
     <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
       <div style="position:absolute;inset:0;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
-          <span style="font:600 14px 'IBM Plex Sans'">Settings</span>
-          <span style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">config lưu tại ~/.portway/config.toml</span>
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid #ffffff0f">
+          <span style="font:600 14px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">Settings</span>
+          <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">config lưu tại ~/.portway/config.toml</span>
         </div>
-        <div style="flex:1;overflow:hidden;padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:26px 34px;align-content:start">
+        <div style="flex:1;overflow:hidden;padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:30px 40px;align-content:start">
           <div>
-            <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:12px">Appearance</div>
-            <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px">
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Theme</span><span style="display:flex;background:#15171a;border:1px solid #ffffff14;border-radius:6px;overflow:hidden;font-size:11.5px"><span style="padding:5px 11px;color:#83878e;cursor:pointer">Auto</span><span style="padding:5px 11px;background:#ffffff14;cursor:pointer">Dark</span></span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Accent</span><span style="display:flex;gap:6px"><span style="width:17px;height:17px;border-radius:50%;background:#5ec8b0;cursor:pointer;box-shadow:0 0 0 2px #ffffff26"></span><span style="width:17px;height:17px;border-radius:50%;background:#c9a15f;cursor:pointer"></span><span style="width:17px;height:17px;border-radius:50%;background:#9b8fd6;cursor:pointer"></span><span style="width:17px;height:17px;border-radius:50%;background:#e8e8e6;cursor:pointer"></span></span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Row density</span><span style="font-family:'IBM Plex Mono';color:#83878e">compact ⌄</span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Colour hosts by group</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span></div>
+            <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:12px">Appearance</div>
+            <div style="display:flex;flex-direction:column;gap:11px;font-size:13.5px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Theme</span><span style="display:flex;background:#2a2e34;border:1px solid #ffffff14;border-radius:6px;overflow:hidden;font-size:12.5px"><span style="padding:5px 11px;color:#a9afb7;cursor:pointer">Auto</span><span style="padding:5px 11px;background:#ffffff14;cursor:pointer">Dark</span></span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Accent</span><span style="display:flex;gap:6px"><span style="width:17px;height:17px;border-radius:50%;background:#5ec8b0;cursor:pointer;box-shadow:0 0 0 2px #ffffff26"></span><span style="width:17px;height:17px;border-radius:50%;background:#c9a15f;cursor:pointer"></span><span style="width:17px;height:17px;border-radius:50%;background:#9b8fd6;cursor:pointer"></span><span style="width:17px;height:17px;border-radius:50%;background:#f1f2f4;cursor:pointer"></span></span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Row density</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">compact ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Colour hosts by group</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#1b1e22"></span></span></div>
             </div>
           </div>
           <div>
-            <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:12px">Terminal</div>
-            <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px">
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Font</span><span style="font-family:'IBM Plex Mono';color:#83878e">IBM Plex Mono · 13px ⌄</span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Cursor</span><span style="font-family:'IBM Plex Mono';color:#83878e">block · blink ⌄</span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Scrollback</span><span style="font-family:'IBM Plex Mono';color:#83878e">10 000 lines</span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Bell</span><span style="width:30px;height:17px;border-radius:9px;background:#ffffff1f;position:relative;display:inline-block"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#83878e"></span></span></div>
+            <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:12px">Terminal</div>
+            <div style="display:flex;flex-direction:column;gap:11px;font-size:13.5px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Font</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">SF Mono / Consolas · 13px ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Cursor</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">block · blink ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Scrollback</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">10 000 lines</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Bell</span><span style="width:30px;height:17px;border-radius:9px;background:#ffffff1f;position:relative;display:inline-block"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#a9afb7"></span></span></div>
             </div>
           </div>
           <div>
-            <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:12px">Security</div>
-            <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px">
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Store secrets in OS keychain</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Confirm before connecting to prod</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Lock app after idle</span><span style="font-family:'IBM Plex Mono';color:#83878e">15 min ⌄</span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Strict host key checking</span><span style="font-family:'IBM Plex Mono';color:#83878e">ask ⌄</span></div>
+            <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:12px">Security</div>
+            <div style="display:flex;flex-direction:column;gap:11px;font-size:13.5px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Store secrets in OS keychain</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#1b1e22"></span></span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Confirm before connecting to prod</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#1b1e22"></span></span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Lock app after idle</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">15 min ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Strict host key checking</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">ask ⌄</span></div>
             </div>
           </div>
           <div>
-            <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:12px">Transfers &amp; sync</div>
-            <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px">
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Default download folder</span><span style="font-family:'IBM Plex Mono';color:#83878e">~/Downloads ⌄</span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Parallel transfers</span><span style="font-family:'IBM Plex Mono';color:#83878e">4</span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Import from ~/.ssh/config</span><span style="padding:4px 10px;border-radius:5px;font-size:11.5px;color:#e8e8e6;background:#ffffff12;cursor:pointer" style-hover="background:#ffffff26">Sync now</span></div>
-              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Config backup</span><span style="font-family:'IBM Plex Mono';color:#83878e">local only ⌄</span></div>
+            <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:12px">Transfers &amp; sync</div>
+            <div style="display:flex;flex-direction:column;gap:11px;font-size:13.5px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Default download folder</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">~/Downloads ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Parallel transfers</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">4</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Import from ~/.ssh/config</span><span style="padding:4px 10px;border-radius:5px;font-size:12.5px;color:#f1f2f4;background:#ffffff12;cursor:pointer" style-hover="background:#ffffff26">Sync now</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#c5cad1">Config backup</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">local only ⌄</span></div>
             </div>
           </div>
         </div>
-        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">Portway 0.4.1 · openssh 9.7p1</div>
+        <div style="padding:11px 20px;border-top:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">Portway 0.4.1 · openssh 9.7p1</div>
       </div>
     </sc-if>
 
@@ -458,123 +473,123 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
 
 <section class="dv-turn" id="t1">
 <div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Servers screen — 4 directions</span></div>
-<p class="dv-note">Assumptions: cross-platform dark UI, dense pro-tool density, English labels, ~70 hosts so grouping + search matter, list + right detail panel as the base pattern. Type: IBM Plex Sans for UI, IBM Plex Mono for anything a shell would print (hosts, ports, keys, commands). Left nav is fixed: Servers, SSH Keys, Tunnels, Known hosts, Settings. Each option below is the same screen, different information model. Pick one and I'll build the full flow: SSH/SFTP side-by-side session, new-server form with password / key / passphrase / agent forwarding / jump host, and tabs.</p>
+<p class="dv-note">Assumptions: cross-platform dark UI, dense pro-tool density, English labels, ~70 hosts so grouping + search matter, list + right detail panel as the base pattern. Type: system UI font (system-ui / Segoe UI / Roboto) for the interface, system monospace (SF Mono / Consolas / Menlo) for anything a shell would print — hosts, ports, keys, commands. Left nav is fixed: Servers, SSH Keys, Tunnels, Known hosts, Settings. Each option below is the same screen, different information model. Pick one and I'll build the full flow: SSH/SFTP side-by-side session, new-server form with password / key / passphrase / agent forwarding / jump host, and tabs.</p>
 <div class="dv-opts">
 
 <div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>By the book — flat table + detail panel</div>
-<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#e8e8e6">
-  <div style="width:186px;flex:none;background:#0a0b0c;border-right:1px solid #ffffff0f;display:flex;flex-direction:column">
+<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#f1f2f4">
+  <div style="width:186px;flex:none;background:#14161a;border-right:1px solid #ffffff0f;display:flex;flex-direction:column">
     <div style="padding:16px 16px 14px;display:flex;align-items:center;gap:9px">
-      <div style="width:18px;height:18px;border-radius:4px;background:#e8e8e6"></div>
-      <span style="font:600 12.5px 'IBM Plex Sans';letter-spacing:.02em">Portway</span>
+      <div style="width:18px;height:18px;border-radius:4px;background:#f1f2f4"></div>
+      <span style="font:600 13.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.02em">Portway</span>
     </div>
     <div style="display:flex;flex-direction:column;gap:1px;padding:4px 8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;background:#ffffff0f;font-size:12.5px;font-weight:500">Servers<span style="font:400 11px 'IBM Plex Mono';color:#83878e">70</span></div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">SSH Keys<span style="font:400 11px 'IBM Plex Mono';color:#6b7078">4</span></div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">Tunnels<span style="font:400 11px 'IBM Plex Mono';color:#6b7078">2</span></div>
-      <div style="padding:7px 9px;border-radius:5px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">Known hosts</div>
-      <div style="padding:7px 9px;border-radius:5px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">Settings</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;background:#ffffff0f;font-size:13.5px;font-weight:500">Servers<span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">70</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;font-size:13.5px;color:#c5cad1" style-hover="background:#ffffff08;color:#f1f2f4">SSH Keys<span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">4</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;font-size:13.5px;color:#c5cad1" style-hover="background:#ffffff08;color:#f1f2f4">Tunnels<span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">2</span></div>
+      <div style="padding:7px 9px;border-radius:5px;font-size:13.5px;color:#c5cad1" style-hover="background:#ffffff08;color:#f1f2f4">Known hosts</div>
+      <div style="padding:7px 9px;border-radius:5px;font-size:13.5px;color:#c5cad1" style-hover="background:#ffffff08;color:#f1f2f4">Settings</div>
     </div>
-    <div style="margin-top:18px;padding:0 16px 6px;font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078">Groups</div>
-    <div style="display:flex;flex-direction:column;gap:1px;padding:0 8px">
+    <div style="margin-top:22px;padding:0 18px 8px;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3">Groups</div>
+    <div style="display:flex;flex-direction:column;gap:2px;padding:0 10px">
       <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:5px;font-size:12px;color:#a6aab1" style-hover="background:#ffffff08">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:5px;font-size:13px;color:#c5cad1" style-hover="background:#ffffff08">
           <span style="width:6px;height:6px;border-radius:50%;background:{{ g.color }}"></span>{{ g.name }}
-          <span style="margin-left:auto;font:400 11px 'IBM Plex Mono';color:#6b7078">{{ g.count }}</span>
+          <span style="margin-left:auto;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">{{ g.count }}</span>
         </div>
       </sc-for>
     </div>
-    <div style="margin-top:auto;padding:12px 14px;border-top:1px solid #ffffff0f;display:flex;align-items:center;gap:8px;font:400 11px 'IBM Plex Mono';color:#6b7078">agent: 3 keys loaded</div>
+    <div style="margin-top:auto;padding:12px 14px;border-top:1px solid #ffffff0f;display:flex;align-items:center;gap:8px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">agent: 3 keys loaded</div>
   </div>
 
   <div style="flex:1;min-width:0;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #ffffff0f">
-      <div style="flex:1;display:flex;align-items:center;gap:8px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px">
-        <span style="font:400 12px 'IBM Plex Mono';color:#6b7078">/</span>
-        <span style="font-size:12.5px;color:#83878e">Search host, user, tag…</span>
+      <div style="flex:1;display:flex;align-items:center;gap:8px;background:#2a2e34;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px">
+        <span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">/</span>
+        <span style="font-size:13.5px;color:#a9afb7">Search host, user, tag…</span>
       </div>
-      <div style="display:flex;background:#15171a;border:1px solid #ffffff12;border-radius:6px;overflow:hidden;font-size:11.5px">
-        <span style="padding:6px 10px;background:#ffffff12;color:#e8e8e6">All</span>
-        <span style="padding:6px 10px;color:#83878e" style-hover="color:#e8e8e6">Recent</span>
-        <span style="padding:6px 10px;color:#83878e" style-hover="color:#e8e8e6">Favorites</span>
+      <div style="display:flex;background:#2a2e34;border:1px solid #ffffff12;border-radius:6px;overflow:hidden;font-size:12.5px">
+        <span style="padding:6px 10px;background:#ffffff12;color:#f1f2f4">All</span>
+        <span style="padding:6px 10px;color:#a9afb7" style-hover="color:#f1f2f4">Recent</span>
+        <span style="padding:6px 10px;color:#a9afb7" style-hover="color:#f1f2f4">Favorites</span>
       </div>
-      <div style="padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;color:#0c0d0f;background:{{ accent }}">New server</div>
+      <div style="padding:6px 12px;border-radius:6px;font-size:13px;font-weight:500;color:#1b1e22;background:{{ accent }}">New server</div>
     </div>
 
     <div style="flex:1;display:flex;min-height:0">
       <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
-        <div style="display:grid;grid-template-columns:12px minmax(170px,2.2fr) 1.15fr 78px 78px 54px;gap:10px;padding:8px 14px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+        <div style="display:grid;grid-template-columns:12px minmax(170px,2.2fr) 1.15fr 78px 78px 54px;gap:10px;padding:8px 14px;border-bottom:1px solid #ffffff0f;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#939aa3">
           <span></span><span>Host</span><span>Address</span><span>User</span><span>Last used</span><span>Auth</span>
         </div>
         <sc-for list="{{ hosts }}" as="s" hint-placeholder-count="10">
-          <div style="display:grid;grid-template-columns:12px minmax(170px,2.2fr) 1.15fr 78px 78px 54px;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid #ffffff08;font-size:12.5px" style-hover="background:#ffffff08">
+          <div style="display:grid;grid-template-columns:12px minmax(170px,2.2fr) 1.15fr 78px 78px 54px;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid #ffffff08;font-size:13.5px" style-hover="background:#ffffff08">
             <span style="width:7px;height:7px;border-radius:50%;background:{{ s.color }}"></span>
             <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
-            <span style="font:400 12px 'IBM Plex Mono';color:#a6aab1">{{ s.addr }}</span>
-            <span style="font:400 12px 'IBM Plex Mono';color:#a6aab1">{{ s.user }}</span>
-            <span style="color:#83878e;font-size:12px">{{ s.last }}</span>
-            <span style="font:400 11px 'IBM Plex Mono';color:#83878e">{{ s.auth }}</span>
+            <span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">{{ s.addr }}</span>
+            <span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">{{ s.user }}</span>
+            <span style="color:#a9afb7;font-size:13px">{{ s.last }}</span>
+            <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">{{ s.auth }}</span>
           </div>
         </sc-for>
-        <div style="margin-top:auto;padding:9px 14px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">70 hosts · 4 groups</div>
+        <div style="margin-top:auto;padding:9px 14px;border-top:1px solid #ffffff0f;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">70 hosts · 4 groups</div>
       </div>
 
-      <div style="width:276px;flex:none;border-left:1px solid #ffffff0f;background:#101114;display:flex;flex-direction:column">
+      <div style="width:276px;flex:none;border-left:1px solid #ffffff0f;background:#22262b;display:flex;flex-direction:column">
         <div style="padding:16px 16px 14px;border-bottom:1px solid #ffffff0f">
-          <div style="display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:50%;background:#d9776a"></span><span style="font:600 14px 'IBM Plex Sans'">db-primary.prod</span></div>
-          <div style="margin-top:6px;font:400 12px 'IBM Plex Mono';color:#83878e">postgres@10.20.4.31:22</div>
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:50%;background:#d9776a"></span><span style="font:600 14px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">db-primary.prod</span></div>
+          <div style="margin-top:6px;font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7">postgres@10.20.4.31:22</div>
           <div style="display:flex;gap:8px;margin-top:14px">
-            <div style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:12.5px;font-weight:500;color:#0c0d0f;background:{{ accent }}">SSH</div>
-            <div style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:12.5px;border:1px solid #ffffff1f;color:#e8e8e6" style-hover="background:#ffffff0f">SFTP</div>
+            <div style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:13.5px;font-weight:500;color:#1b1e22;background:{{ accent }}">SSH</div>
+            <div style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:13.5px;border:1px solid #ffffff1f;color:#f1f2f4" style-hover="background:#ffffff0f">SFTP</div>
           </div>
           <div style="display:flex;gap:6px;margin-top:8px">
-            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff1a">Edit</div>
-            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff1a">Duplicate</div>
-            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff1a">Terminal…</div>
-            <div style="flex:none;padding:6px 9px;border-radius:5px;font-size:11.5px;color:#d9776a;background:#ffffff0d" style-hover="background:#d9776a26">Del</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:12.5px;color:#c5cad1;background:#ffffff0d" style-hover="background:#ffffff1a">Edit</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:12.5px;color:#c5cad1;background:#ffffff0d" style-hover="background:#ffffff1a">Duplicate</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:12.5px;color:#c5cad1;background:#ffffff0d" style-hover="background:#ffffff1a">Terminal…</div>
+            <div style="flex:none;padding:6px 9px;border-radius:5px;font-size:12.5px;color:#d9776a;background:#ffffff0d" style-hover="background:#d9776a26">Del</div>
           </div>
         </div>
-        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:9px;font-size:12px">
-          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Auth</span><span style="font:400 12px 'IBM Plex Mono'">key · id_ed25519</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Passphrase</span><span style="font:400 12px 'IBM Plex Mono'">keychain</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Jump host</span><span style="font:400 12px 'IBM Plex Mono'">bastion.corp</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Agent forward</span><span style="font:400 12px 'IBM Plex Mono'">on</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Group</span><span>Production</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Last used</span><span>2 min ago</span></div>
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:9px;font-size:13px">
+          <div style="display:flex;justify-content:space-between"><span style="color:#939aa3">Auth</span><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">key · id_ed25519</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#939aa3">Passphrase</span><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">keychain</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#939aa3">Jump host</span><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">bastion.corp</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#939aa3">Agent forward</span><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">on</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#939aa3">Group</span><span>Production</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#939aa3">Last used</span><span>2 min ago</span></div>
         </div>
         <div style="padding:0 16px 14px">
-          <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:8px">Tags</div>
+          <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:8px">Tags</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
-            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">prod</span>
-            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">postgres</span>
-            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">eu-west</span>
+            <span style="padding:3px 8px;border-radius:4px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;background:#ffffff0f;color:#c5cad1">prod</span>
+            <span style="padding:3px 8px;border-radius:4px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;background:#ffffff0f;color:#c5cad1">postgres</span>
+            <span style="padding:3px 8px;border-radius:4px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;background:#ffffff0f;color:#c5cad1">eu-west</span>
           </div>
         </div>
-        <div style="margin-top:auto;padding:12px 16px;border-top:1px solid #ffffff0f;font:400 11px/1.6 'IBM Plex Mono';color:#6b7078">$ ssh -J bastion.corp postgres@10.20.4.31</div>
+        <div style="margin-top:auto;padding:12px 16px;border-top:1px solid #ffffff0f;font:400 12.5px/1.6 ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">$ ssh -J bastion.corp postgres@10.20.4.31</div>
       </div>
     </div>
   </div>
 </div></div>
 
 <div class="dv-opt" id="1b"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Grouped by environment — cards, status-forward</div>
-<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#e8e8e6">
-  <div style="width:62px;flex:none;background:#0a0b0c;border-right:1px solid #ffffff0f;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:6px">
-    <div style="width:22px;height:22px;border-radius:5px;background:#e8e8e6;margin-bottom:10px"></div>
-    <div style="width:40px;height:36px;border-radius:7px;background:#ffffff12;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans'">SRV</div>
-    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans';color:#83878e" style-hover="background:#ffffff08;color:#e8e8e6">KEY</div>
-    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans';color:#83878e" style-hover="background:#ffffff08;color:#e8e8e6">TUN</div>
-    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans';color:#83878e" style-hover="background:#ffffff08;color:#e8e8e6">HST</div>
-    <div style="margin-top:auto;width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans';color:#83878e" style-hover="background:#ffffff08;color:#e8e8e6">SET</div>
+<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#f1f2f4">
+  <div style="width:62px;flex:none;background:#14161a;border-right:1px solid #ffffff0f;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:6px">
+    <div style="width:22px;height:22px;border-radius:5px;background:#f1f2f4;margin-bottom:10px"></div>
+    <div style="width:40px;height:36px;border-radius:7px;background:#ffffff12;display:flex;align-items:center;justify-content:center;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">SRV</div>
+    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#a9afb7" style-hover="background:#ffffff08;color:#f1f2f4">KEY</div>
+    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#a9afb7" style-hover="background:#ffffff08;color:#f1f2f4">TUN</div>
+    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#a9afb7" style-hover="background:#ffffff08;color:#f1f2f4">HST</div>
+    <div style="margin-top:auto;width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#a9afb7" style-hover="background:#ffffff08;color:#f1f2f4">SET</div>
   </div>
   <div style="flex:1;min-width:0;display:flex;flex-direction:column">
     <div style="padding:16px 20px 12px;display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid #ffffff0f">
       <div>
-        <div style="font:600 17px 'IBM Plex Sans'">Servers</div>
-        <div style="margin-top:3px;font:400 11.5px 'IBM Plex Mono';color:#6b7078">70 hosts · 68 reachable · 2 unknown</div>
+        <div style="font:600 17px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">Servers</div>
+        <div style="margin-top:3px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">70 hosts · 68 reachable · 2 unknown</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <div style="display:flex;align-items:center;gap:8px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px;width:210px"><span style="font:400 12px 'IBM Plex Mono';color:#6b7078">⌘K</span><span style="font-size:12.5px;color:#83878e">Quick connect</span></div>
-        <div style="padding:7px 12px;border-radius:6px;font-size:12px;font-weight:500;color:#0c0d0f;background:{{ accent }}">New server</div>
+        <div style="display:flex;align-items:center;gap:8px;background:#2a2e34;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px;width:210px"><span style="font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">⌘K</span><span style="font-size:13.5px;color:#a9afb7">Quick connect</span></div>
+        <div style="padding:7px 12px;border-radius:6px;font-size:13px;font-weight:500;color:#1b1e22;background:{{ accent }}">New server</div>
       </div>
     </div>
     <div style="flex:1;overflow:hidden;padding:14px 20px;display:flex;flex-direction:column;gap:14px">
@@ -582,24 +597,24 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
         <div>
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">
             <span style="width:8px;height:8px;border-radius:2px;background:{{ g.color }}"></span>
-            <span style="font:600 11px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase">{{ g.name }}</span>
-            <span style="font:400 11px 'IBM Plex Mono';color:#6b7078">{{ g.count }} hosts</span>
+            <span style="font:600 12.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase">{{ g.name }}</span>
+            <span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">{{ g.count }} hosts</span>
             <span style="flex:1;height:1px;background:#ffffff0f"></span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
             <sc-for list="{{ g.items }}" as="s" hint-placeholder-count="3">
-              <div style="background:#131417;border:1px solid #ffffff12;border-radius:8px;padding:11px 12px" style-hover="border-color:#ffffff2e;background:#171a1d">
+              <div style="background:#262a30;border:1px solid #ffffff12;border-radius:8px;padding:11px 12px" style-hover="border-color:#ffffff2e;background:#2e323a">
                 <div style="display:flex;align-items:center;gap:7px">
                   <span style="width:6px;height:6px;border-radius:50%;background:{{ s.color }}"></span>
-                  <span style="font:500 12.5px 'IBM Plex Sans';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
-                  <span style="margin-left:auto;font:400 10px 'IBM Plex Mono';color:#6b7078">{{ s.auth }}</span>
+                  <span style="font:500 13.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+                  <span style="margin-left:auto;font:400 11.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">{{ s.auth }}</span>
                 </div>
-                <div style="margin-top:6px;font:400 11.5px 'IBM Plex Mono';color:#83878e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.user }}@{{ s.addr }}</div>
+                <div style="margin-top:6px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#a9afb7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.user }}@{{ s.addr }}</div>
                 <div style="margin-top:10px;display:flex;align-items:center;gap:6px">
-                  <span style="padding:4px 10px;border-radius:5px;font-size:11.5px;font-weight:500;color:#0c0d0f;background:{{ accent }}">SSH</span>
-                  <span style="padding:4px 10px;border-radius:5px;font-size:11.5px;border:1px solid #ffffff1f;color:#e8e8e6" style-hover="background:#ffffff0f">SFTP</span>
-                  <span style="margin-left:auto;font-size:11px;color:#6b7078">{{ s.last }}</span>
-                  <span style="padding:2px 6px;border-radius:4px;color:#83878e;background:#ffffff0d" style-hover="background:#ffffff1f;color:#e8e8e6">···</span>
+                  <span style="padding:4px 10px;border-radius:5px;font-size:12.5px;font-weight:500;color:#1b1e22;background:{{ accent }}">SSH</span>
+                  <span style="padding:4px 10px;border-radius:5px;font-size:12.5px;border:1px solid #ffffff1f;color:#f1f2f4" style-hover="background:#ffffff0f">SFTP</span>
+                  <span style="margin-left:auto;font-size:12.5px;color:#939aa3">{{ s.last }}</span>
+                  <span style="padding:2px 6px;border-radius:4px;color:#a9afb7;background:#ffffff0d" style-hover="background:#ffffff1f;color:#f1f2f4">···</span>
                 </div>
               </div>
             </sc-for>
@@ -611,98 +626,98 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
 </div></div>
 
 <div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Terminal-native — monospace index, keyboard-first</div>
-<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#d8dbd6;background:#0a0b0a;font-family:'IBM Plex Mono',monospace">
+<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#e9ece7;background:#15171a;font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">
   <div style="width:172px;flex:none;border-right:1px solid #ffffff0f;padding:14px 0;display:flex;flex-direction:column">
-    <div style="padding:0 14px 14px;font-size:11.5px;color:#5f6560">portway <span style="color:#3f453f">v0.4</span></div>
+    <div style="padding:0 14px 14px;font-size:12.5px;color:#a0a6a1">portway <span style="color:#767c76">v0.4</span></div>
     <sc-for list="{{ navMono }}" as="n" hint-placeholder-count="5">
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:12px;color:#8b918b" style-hover="background:#ffffff08;color:#d8dbd6">
-        <span style="color:#4a504a;width:14px">{{ n.key }}</span>{{ n.label }}
-        <span style="margin-left:auto;font-size:11px;color:#4a504a">{{ n.count }}</span>
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:13px;color:#b4bab4" style-hover="background:#ffffff08;color:#e9ece7">
+        <span style="color:#868c86;width:14px">{{ n.key }}</span>{{ n.label }}
+        <span style="margin-left:auto;font-size:12.5px;color:#868c86">{{ n.count }}</span>
       </div>
     </sc-for>
-    <div style="margin-top:18px;padding:0 14px 6px;font-size:10px;letter-spacing:.1em;color:#4a504a">FILTERS</div>
+    <div style="margin-top:18px;padding:0 14px 6px;font-size:11.5px;letter-spacing:.1em;color:#868c86">FILTERS</div>
     <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
-      <div style="display:flex;align-items:center;gap:8px;padding:5px 14px;font-size:11.5px;color:#8b918b" style-hover="background:#ffffff08">
-        <span style="color:{{ g.color }}">▍</span>{{ g.name }}<span style="margin-left:auto;font-size:11px;color:#4a504a">{{ g.count }}</span>
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 14px;font-size:12.5px;color:#b4bab4" style-hover="background:#ffffff08">
+        <span style="color:{{ g.color }}">▍</span>{{ g.name }}<span style="margin-left:auto;font-size:12.5px;color:#868c86">{{ g.count }}</span>
       </div>
     </sc-for>
-    <div style="margin-top:auto;padding:10px 14px;border-top:1px solid #ffffff0f;font-size:10.5px;color:#4a504a;line-height:1.7">↵ ssh · ⇧↵ sftp<br>e edit · d dup · ⌫ del</div>
+    <div style="margin-top:auto;padding:10px 14px;border-top:1px solid #ffffff0f;font-size:12px;color:#868c86;line-height:1.7">↵ ssh · ⇧↵ sftp<br>e edit · d dup · ⌫ del</div>
   </div>
   <div style="flex:1;min-width:0;display:flex;flex-direction:column">
-    <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #ffffff0f;font-size:13px">
-      <span style="color:{{ accent }}">~/hosts ❯</span><span style="color:#8b918b">prod</span><span style="width:7px;height:15px;background:{{ accent }};display:inline-block"></span>
-      <span style="margin-left:auto;font-size:11px;color:#4a504a">12 / 70 matched</span>
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #ffffff0f;font-size:14px">
+      <span style="color:{{ accent }}">~/hosts ❯</span><span style="color:#b4bab4">prod</span><span style="width:7px;height:15px;background:{{ accent }};display:inline-block"></span>
+      <span style="margin-left:auto;font-size:12.5px;color:#868c86">12 / 70 matched</span>
     </div>
-    <div style="display:grid;grid-template-columns:26px 1.4fr 1.1fr 90px 88px 68px 60px;gap:10px;padding:7px 16px;border-bottom:1px solid #ffffff0f;font-size:10px;letter-spacing:.08em;color:#4a504a">
+    <div style="display:grid;grid-template-columns:26px 1.4fr 1.1fr 90px 88px 68px 60px;gap:10px;padding:7px 16px;border-bottom:1px solid #ffffff0f;font-size:11.5px;letter-spacing:.08em;color:#868c86">
       <span>#</span><span>NAME</span><span>ADDRESS</span><span>USER</span><span>LAST</span><span>AUTH</span><span>ENV</span>
     </div>
     <sc-for list="{{ hosts }}" as="s" hint-placeholder-count="10">
-      <div style="display:grid;grid-template-columns:26px 1.4fr 1.1fr 90px 88px 68px 60px;gap:10px;align-items:center;padding:7px 16px;font-size:12px;color:#a8aea8;border-left:2px solid transparent" style-hover="background:#ffffff0a;color:#d8dbd6;border-left-color:#546b55">
-        <span style="color:#4a504a">{{ s.idx }}</span>
-        <span style="color:#d8dbd6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
-        <span>{{ s.addr }}</span><span>{{ s.user }}</span><span style="color:#7d837d">{{ s.last }}</span>
-        <span style="color:#7d837d">{{ s.auth }}</span>
+      <div style="display:grid;grid-template-columns:26px 1.4fr 1.1fr 90px 88px 68px 60px;gap:10px;align-items:center;padding:7px 16px;font-size:13px;color:#ced4ce;border-left:2px solid transparent" style-hover="background:#ffffff0a;color:#e9ece7;border-left-color:#546b55">
+        <span style="color:#868c86">{{ s.idx }}</span>
+        <span style="color:#e9ece7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+        <span>{{ s.addr }}</span><span>{{ s.user }}</span><span style="color:#a6aca6">{{ s.last }}</span>
+        <span style="color:#a6aca6">{{ s.auth }}</span>
         <span style="color:{{ s.color }}">{{ s.env }}</span>
       </div>
     </sc-for>
-    <div style="margin-top:auto;border-top:1px solid #ffffff0f;background:#0d0f0d;padding:12px 16px;display:flex;gap:26px;align-items:flex-start">
+    <div style="margin-top:auto;border-top:1px solid #ffffff0f;background:#1a1d1a;padding:12px 16px;display:flex;gap:26px;align-items:flex-start">
       <div style="min-width:250px">
-        <div style="font-size:12.5px;color:#d8dbd6">db-primary.prod</div>
-        <div style="margin-top:5px;font-size:11.5px;color:#7d837d">ssh -J bastion.corp postgres@10.20.4.31</div>
+        <div style="font-size:13.5px;color:#e9ece7">db-primary.prod</div>
+        <div style="margin-top:5px;font-size:12.5px;color:#a6aca6">ssh -J bastion.corp postgres@10.20.4.31</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:#7d837d">
+      <div style="display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:#a6aca6">
         <span>key   id_ed25519 (keychain)</span><span>agent forwarding on</span>
       </div>
-      <div style="margin-left:auto;display:flex;gap:6px;font-size:11.5px">
-        <span style="padding:5px 11px;border-radius:4px;color:#0a0b0a;font-weight:500;background:{{ accent }}">↵ ssh</span>
+      <div style="margin-left:auto;display:flex;gap:6px;font-size:12.5px">
+        <span style="padding:5px 11px;border-radius:4px;color:#15171a;font-weight:500;background:{{ accent }}">↵ ssh</span>
         <span style="padding:5px 11px;border-radius:4px;border:1px solid #ffffff1f" style-hover="background:#ffffff0f">⇧↵ sftp</span>
-        <span style="padding:5px 11px;border-radius:4px;border:1px solid #ffffff1f;color:#8b918b" style-hover="background:#ffffff0f">e edit</span>
+        <span style="padding:5px 11px;border-radius:4px;border:1px solid #ffffff1f;color:#b4bab4" style-hover="background:#ffffff0f">e edit</span>
       </div>
     </div>
   </div>
 </div></div>
 
 <div class="dv-opt" id="1d"><div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Index + host dossier — narrow list, rich detail</div>
-<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#e8e8e6">
-  <div style="width:176px;flex:none;background:#0a0b0c;border-right:1px solid #ffffff0f;display:flex;flex-direction:column;padding-top:14px">
-    <div style="padding:0 14px 14px;display:flex;align-items:center;gap:8px"><div style="width:16px;height:16px;border-radius:4px;background:{{ accent }}"></div><span style="font:600 12.5px 'IBM Plex Sans'">Portway</span></div>
+<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#f1f2f4">
+  <div style="width:176px;flex:none;background:#14161a;border-right:1px solid #ffffff0f;display:flex;flex-direction:column;padding-top:14px">
+    <div style="padding:0 14px 14px;display:flex;align-items:center;gap:8px"><div style="width:16px;height:16px;border-radius:4px;background:{{ accent }}"></div><span style="font:600 13.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">Portway</span></div>
     <sc-for list="{{ navMono }}" as="n" hint-placeholder-count="5">
-      <div style="display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">{{ n.label }}<span style="margin-left:auto;font:400 11px 'IBM Plex Mono';color:#6b7078">{{ n.count }}</span></div>
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:13.5px;color:#c5cad1" style-hover="background:#ffffff08;color:#f1f2f4">{{ n.label }}<span style="margin-left:auto;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">{{ n.count }}</span></div>
     </sc-for>
     <div style="margin-top:auto;padding:12px 14px;border-top:1px solid #ffffff0f">
-      <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:7px">Open sessions</div>
-      <div style="display:flex;flex-direction:column;gap:5px;font:400 11.5px 'IBM Plex Mono';color:#a6aab1">
+      <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:7px">Open sessions</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">
         <div style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:{{ accent }}"></span>web-01.prod</div>
         <div style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:{{ accent }}"></span>nas.home</div>
       </div>
     </div>
   </div>
 
-  <div style="width:236px;flex:none;border-right:1px solid #ffffff0f;background:#0e0f11;display:flex;flex-direction:column">
+  <div style="width:236px;flex:none;border-right:1px solid #ffffff0f;background:#1f2226;display:flex;flex-direction:column">
     <div style="padding:12px;border-bottom:1px solid #ffffff0f">
-      <div style="display:flex;align-items:center;gap:7px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:6px 9px"><span style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">⌘K</span><span style="font-size:12px;color:#83878e">Filter 70 hosts</span></div>
+      <div style="display:flex;align-items:center;gap:7px;background:#2a2e34;border:1px solid #ffffff12;border-radius:6px;padding:6px 9px"><span style="font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3">⌘K</span><span style="font-size:13px;color:#a9afb7">Filter 70 hosts</span></div>
     </div>
     <sc-for list="{{ hosts }}" as="s" hint-placeholder-count="10">
       <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid #ffffff08" style-hover="background:#ffffff0a">
         <span style="width:6px;height:6px;border-radius:50%;flex:none;background:{{ s.color }}"></span>
         <span style="min-width:0;flex:1">
-          <span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
-          <span style="display:block;margin-top:2px;font:400 11px 'IBM Plex Mono';color:#6b7078;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.addr }}</span>
+          <span style="display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+          <span style="display:block;margin-top:2px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.addr }}</span>
         </span>
-        <span style="flex:none;font-size:10.5px;color:#6b7078">{{ s.last }}</span>
+        <span style="flex:none;font-size:12px;color:#939aa3">{{ s.last }}</span>
       </div>
     </sc-for>
   </div>
 
-  <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#0c0d0f">
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#1b1e22">
     <div style="padding:22px 24px 18px;border-bottom:1px solid #ffffff0f">
-      <div style="display:flex;align-items:center;gap:9px;font:400 11px 'IBM Plex Mono';color:#6b7078"><span style="width:7px;height:7px;border-radius:50%;background:#d9776a"></span>PRODUCTION · eu-west</div>
-      <div style="margin-top:9px;font:600 26px/1.1 'IBM Plex Sans';letter-spacing:-.01em">db-primary.prod</div>
-      <div style="margin-top:8px;font:400 13px 'IBM Plex Mono';color:#a6aab1">postgres@10.20.4.31:22</div>
+      <div style="display:flex;align-items:center;gap:9px;font:400 12.5px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#939aa3"><span style="width:7px;height:7px;border-radius:50%;background:#d9776a"></span>PRODUCTION · eu-west</div>
+      <div style="margin-top:9px;font:600 26px/1.1 system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:-.01em">db-primary.prod</div>
+      <div style="margin-top:8px;font:400 14px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">postgres@10.20.4.31:22</div>
       <div style="display:flex;gap:8px;margin-top:18px;align-items:center">
-        <div style="padding:9px 20px;border-radius:6px;font-size:13px;font-weight:500;color:#0c0d0f;background:{{ accent }}">Open SSH</div>
-        <div style="padding:9px 18px;border-radius:6px;font-size:13px;border:1px solid #ffffff24;color:#e8e8e6" style-hover="background:#ffffff0f">Open SFTP</div>
-        <div style="margin-left:auto;display:flex;gap:6px;font-size:11.5px;color:#a6aab1">
+        <div style="padding:9px 20px;border-radius:6px;font-size:14px;font-weight:500;color:#1b1e22;background:{{ accent }}">Open SSH</div>
+        <div style="padding:9px 18px;border-radius:6px;font-size:14px;border:1px solid #ffffff24;color:#f1f2f4" style-hover="background:#ffffff0f">Open SFTP</div>
+        <div style="margin-left:auto;display:flex;gap:6px;font-size:12.5px;color:#c5cad1">
           <span style="padding:7px 11px;border-radius:5px;background:#ffffff0d" style-hover="background:#ffffff1a">Edit</span>
           <span style="padding:7px 11px;border-radius:5px;background:#ffffff0d" style-hover="background:#ffffff1a">Duplicate</span>
           <span style="padding:7px 11px;border-radius:5px;background:#ffffff0d" style-hover="background:#ffffff1a">Terminal…</span>
@@ -712,27 +727,27 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
     </div>
     <div style="padding:18px 24px;display:grid;grid-template-columns:1fr 1fr;gap:22px 30px">
       <div>
-        <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Authentication</div>
-        <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px">
-          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Method</span><span style="font-family:'IBM Plex Mono'">private key</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Key</span><span style="font-family:'IBM Plex Mono'">~/.ssh/id_ed25519</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Passphrase</span><span style="font-family:'IBM Plex Mono'">stored</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Agent forward</span><span style="font-family:'IBM Plex Mono'">enabled</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Jump host</span><span style="font-family:'IBM Plex Mono'">bastion.corp</span></div>
+        <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:9px">Authentication</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px">
+          <div style="display:flex;justify-content:space-between"><span style="color:#a9afb7">Method</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">private key</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#a9afb7">Key</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">~/.ssh/id_ed25519</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#a9afb7">Passphrase</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">stored</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#a9afb7">Agent forward</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">enabled</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#a9afb7">Jump host</span><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace">bastion.corp</span></div>
         </div>
       </div>
       <div>
-        <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Recent sessions</div>
-        <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px">
-          <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">ssh · 14m</span><span style="color:#6b7078">2 min ago</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">sftp · 3 files</span><span style="color:#6b7078">yesterday</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">ssh · 2h</span><span style="color:#6b7078">Jul 22</span></div>
+        <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:9px">Recent sessions</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px">
+          <div style="display:flex;justify-content:space-between"><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">ssh · 14m</span><span style="color:#939aa3">2 min ago</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">sftp · 3 files</span><span style="color:#939aa3">yesterday</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1">ssh · 2h</span><span style="color:#939aa3">Jul 22</span></div>
         </div>
       </div>
       <div style="grid-column:1 / -1">
-        <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Command</div>
-        <div style="background:#101114;border:1px solid #ffffff12;border-radius:6px;padding:11px 13px;font:400 12px 'IBM Plex Mono';color:#a6aab1;display:flex;justify-content:space-between;gap:12px">
-          <span>ssh -J bastion.corp -i ~/.ssh/id_ed25519 postgres@10.20.4.31</span><span style="color:#6b7078">copy</span>
+        <div style="font:500 11.5px system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#939aa3;margin-bottom:9px">Command</div>
+        <div style="background:#22262b;border:1px solid #ffffff12;border-radius:6px;padding:11px 13px;font:400 13px ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;color:#c5cad1;display:flex;justify-content:space-between;gap:12px">
+          <span>ssh -J bastion.corp -i ~/.ssh/id_ed25519 postgres@10.20.4.31</span><span style="color:#939aa3">copy</span>
         </div>
       </div>
     </div>
@@ -743,7 +758,7 @@ a{color:#2a78d6}a:hover{color:#1b5fae}
 <p class="dv-next">Try next: "build <a class="dv-oid" href="#1a">1a</a> full — thêm màn SSH/SFTP side-by-side và form tạo server" · "trộn list của <a class="dv-oid" href="#1a">1a</a> với detail của <a class="dv-oid" href="#1d">1d</a>" · "cho mình thêm hướng khác"</p>
 </section>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#5ec8b0&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#5ec8b0&quot;,&quot;#c9a15f&quot;,&quot;#9b8fd6&quot;,&quot;#e8e8e6&quot;],&quot;section&quot;:&quot;Theme&quot;},&quot;envColorMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;color&quot;,&quot;options&quot;:[&quot;color&quot;,&quot;mono&quot;],&quot;tsType&quot;:&quot;'color'|'mono'&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#5ec8b0&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#5ec8b0&quot;,&quot;#c9a15f&quot;,&quot;#9b8fd6&quot;,&quot;#f1f2f4&quot;],&quot;section&quot;:&quot;Theme&quot;},&quot;envColorMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;color&quot;,&quot;options&quot;:[&quot;color&quot;,&quot;mono&quot;],&quot;tsType&quot;:&quot;'color'|'mono'&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
 class Component extends DCLogic {
   state = { screen: 'servers', sel: 3, drawer: false, auth: 'key', tab: 0 };
 
@@ -762,7 +777,7 @@ class Component extends DCLogic {
     const accent = this.props.accent ?? '#5ec8b0';
     const mono = (this.props.envColorMode ?? 'color') === 'mono';
     const C = { prod: '#d9776a', staging: '#c9a15f', dev: '#5ec8b0', home: '#9b8fd6' };
-    const col = e => mono ? '#6b7078' : C[e];
+    const col = e => mono ? '#939aa3' : C[e];
     const raw = [
       ['web-01.prod', '10.20.4.11:22', 'deploy', 'prod', '2 min ago', 'key'],
       ['web-02.prod', '10.20.4.12:22', 'deploy', 'prod', '2 min ago', 'key'],
@@ -823,8 +838,8 @@ class Component extends DCLogic {
       { name: 'nas.home', kind: 'SFTP' }
     ].map((t, i) => ({
       ...t,
-      bg: i === st.tab ? '#131417' : 'transparent',
-      fg: i === st.tab ? '#e8e8e6' : '#83878e',
+      bg: i === st.tab ? '#262a30' : 'transparent',
+      fg: i === st.tab ? '#f1f2f4' : '#a9afb7',
       onOpen: () => this.setState({ screen: 'session', tab: i })
     }));
     const authTabs = [
@@ -834,17 +849,17 @@ class Component extends DCLogic {
     ].map(a => ({
       label: a.label,
       bg: st.auth === a.id ? '#ffffff14' : 'transparent',
-      fg: st.auth === a.id ? '#e8e8e6' : '#83878e',
+      fg: st.auth === a.id ? '#f1f2f4' : '#a9afb7',
       onPick: () => this.setState({ auth: a.id })
     }));
     const files = [
-      ['..', '', '', '#83878e'], ['base/', '—', 'Jul 28 09:12', '#e8e8e6'],
-      ['pg_wal/', '—', 'Jul 30 11:40', '#e8e8e6'], ['global/', '—', 'Jul 12 22:03', '#e8e8e6'],
-      ['dump-2026-07-30.sql.gz', '412 MB', 'Jul 30 11:38', '#a6aab1'],
-      ['postgresql.conf', '28 KB', 'Jul 24 15:02', '#a6aab1'],
-      ['pg_hba.conf', '4.6 KB', 'Jul 24 15:02', '#a6aab1'],
-      ['postmaster.pid', '96 B', 'Jul 30 06:00', '#a6aab1'],
-      ['server.log', '81 MB', 'Jul 30 11:41', '#a6aab1']
+      ['..', '', '', '#a9afb7'], ['base/', '—', 'Jul 28 09:12', '#f1f2f4'],
+      ['pg_wal/', '—', 'Jul 30 11:40', '#f1f2f4'], ['global/', '—', 'Jul 12 22:03', '#f1f2f4'],
+      ['dump-2026-07-30.sql.gz', '412 MB', 'Jul 30 11:38', '#c5cad1'],
+      ['postgresql.conf', '28 KB', 'Jul 24 15:02', '#c5cad1'],
+      ['pg_hba.conf', '4.6 KB', 'Jul 24 15:02', '#c5cad1'],
+      ['postmaster.pid', '96 B', 'Jul 30 06:00', '#c5cad1'],
+      ['server.log', '81 MB', 'Jul 30 11:41', '#c5cad1']
     ].map(f => ({ name: f[0], size: f[1], mod: f[2], color: f[3] }));
     const termText = 'Last login: Thu Jul 30 11:22:04 2026 from 203.0.113.7\n'
       + cur.user + '@' + cur.name + ':~$ systemctl is-active postgresql\nactive\n'
@@ -862,7 +877,7 @@ class Component extends DCLogic {
       return {
         label: n.label, count: n.count,
         bg: on ? '#ffffff0f' : 'transparent',
-        fg: on ? '#e8e8e6' : '#a6aab1',
+        fg: on ? '#f1f2f4' : '#c5cad1',
         onGo: () => this.setState({ screen: n.id, drawer: false })
       };
     });
@@ -870,13 +885,13 @@ class Component extends DCLogic {
       ['id_ed25519', 'ed25519', 'SHA256:9pQ7…hK4', '38 hosts', 'Mar 2026', accent],
       ['id_ed25519_infra', 'ed25519', 'SHA256:4bV1…tZ8', '14 hosts', 'Jan 2026', accent],
       ['id_rsa_legacy', 'rsa 4096', 'SHA256:2fT9…mQ1', '6 hosts', 'Aug 2024', '#c9a15f'],
-      ['deploy_ci', 'ed25519', 'SHA256:7xC3…nR6', '2 hosts', 'Jun 2026', '#6b7078']
+      ['deploy_ci', 'ed25519', 'SHA256:7xC3…nR6', '2 hosts', 'Jun 2026', '#939aa3']
     ].map(k => ({ name: k[0], type: k[1], fp: k[2], used: k[3], added: k[4], dot: k[5] }));
     const tunnels = [
       ['pg replica', 'local', '127.0.0.1:5432 → 10.20.4.31:5432', 'db-primary.prod', 'on session', accent, 'active'],
       ['grafana', 'local', '127.0.0.1:3000 → 10.20.4.20:3000', 'api-gw.prod', 'on launch', accent, 'active'],
-      ['socks proxy', 'dynamic', '127.0.0.1:1080', 'bastion.corp', 'manual', '#6b7078', 'idle'],
-      ['nas webui', 'local', '127.0.0.1:5000 → 192.168.1.20:5000', 'nas.home', 'manual', '#6b7078', 'idle']
+      ['socks proxy', 'dynamic', '127.0.0.1:1080', 'bastion.corp', 'manual', '#939aa3', 'idle'],
+      ['nas webui', 'local', '127.0.0.1:5000 → 192.168.1.20:5000', 'nas.home', 'manual', '#939aa3', 'idle']
     ].map(t => ({ label: t[0], type: t[1], fwd: t[2], via: t[3], auto: t[4], color: t[5], state: t[6] }));
     const known = [
       ['10.20.4.11', 'ed25519', 'SHA256:Kd8s…pW2', 'Mar 2026', accent, 'Verified'],
@@ -888,8 +903,10 @@ class Component extends DCLogic {
       ['192.168.1.20', 'ed25519', 'SHA256:Hj3p…gT5', 'Nov 2025', accent, 'Verified'],
       ['192.168.1.31', 'ed25519', 'SHA256:Vc6r…xN4', 'Nov 2025', accent, 'Verified']
     ].map(h => ({ host: h[0], type: h[1], fp: h[2], seen: h[3], color: h[4], action: h[5] }));
+    const [navS, navK, navT, navH, navSet] = nav;
     return {
       accent, hosts, groups, grouped, navMono, cur, tabs, authTabs, files, termText, nav, keys, tunnels, known,
+      navS, navK, navT, navH, navSet,
       isServers: st.screen === 'servers', isSession: st.screen === 'session', isForm: st.screen === 'form',
       isKeys: st.screen === 'keys', isTunnels: st.screen === 'tunnels', isKnown: st.screen === 'known', isSettings: st.screen === 'settings',
       goServers: () => this.setState({ screen: 'servers' }),

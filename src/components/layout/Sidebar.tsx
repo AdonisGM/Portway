@@ -3,6 +3,7 @@ import { groupCounts } from '@/data/groups'
 import { AGENT_STATUS, KNOWN_HOSTS_TOTAL, SSH_KEYS, TUNNELS } from '@/data/mock'
 import { GroupDot, SectionLabel, StatusDot } from '@/components/ui/primitives'
 import { useApp, type Screen } from '@/store/appStore'
+import { NAV_ICONS } from './NavIcons'
 
 /**
  * Fixed 194px rail. Four blocks: nav list, Groups, the Sessions list pinned to
@@ -39,18 +40,24 @@ export function Sidebar() {
           const active =
             screen === item.id ||
             (item.id === 'servers' && (screen === 'session' || screen === 'form'))
+          const Icon = NAV_ICONS[item.id]
           return (
             <button
               key={item.id}
               type="button"
               onClick={() => goScreen(item.id)}
-              className={`flex items-center justify-between rounded-nav px-2.25 py-1.75 text-body transition-colors ${
-                active ? 'bg-w06 text-fg' : 'text-fg-2 hover:bg-w05'
+              // The count moves to `ml-auto` rather than `justify-between`,
+              // because the icon and the label have to sit together at the left
+              // with the design's 11px between them — `justify-between` would
+              // push all three apart evenly.
+              className={`flex items-center gap-2.75 rounded-nav px-2.25 py-1.75 text-body transition-colors ${
+                active ? 'bg-w06 text-fg' : 'text-fg-2 hover:bg-w09'
               }`}
             >
+              {Icon ? <Icon /> : null}
               {item.label}
               {item.count !== null ? (
-                <span className="font-mono text-mono text-faint">{item.count}</span>
+                <span className="ml-auto font-mono text-mono text-faint">{item.count}</span>
               ) : null}
             </button>
           )

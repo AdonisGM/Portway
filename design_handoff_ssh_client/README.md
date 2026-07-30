@@ -1,5 +1,24 @@
 # Handoff: Portway — SSH/SFTP desktop client
 
+> **`SSH Client.dc.html` beside this file is newer than the spec written below.**
+> It was re-imported from the Claude Design project (`SSH Desktop App Design`,
+> `a221556e-0f42-419b-9878-7cc3316bc0e3`) and carries a revision that lifts the
+> whole palette off near-black, adds five nav icons, and — separately — moves
+> typography from IBM Plex to system stacks with every size up about a point,
+> and widens the nav rail 194 → 214px.
+>
+> The app implements the **colour and icon** half of that revision. The
+> typography and sizing half is not implemented, so the "Typography" section
+> below still describes what the code does. Read the prototype for colour and
+> icons; read this file for type.
+>
+> One disagreement worth knowing if you work from the newer prototype's own
+> token table: it claims the white hairline alphas roughly tripled
+> (`.03 → .09`, `.06 → .13`, and so on). Its markup does not — nav rail border,
+> table row divider, field border and chip fills are byte-identical to the first
+> handoff. The only overlay it actually adds is `#ffffff17`, on the five nav
+> items' hover. The markup was taken as the source of truth.
+
 ## Overview
 A personal cross-platform SSH desktop client. Left nav (Servers, SSH Keys, Tunnels, Known hosts, Settings), main area on the right. The Servers screen is a dense full-width table; clicking a row slides a detail drawer **over** the table (the table never resizes). SSH/SFTP opens a session screen with horizontal tabs, terminal on the left and an SFTP file browser on the right. A New/Edit server form covers password, private key + passphrase, ssh-agent, jump host and agent forwarding.
 

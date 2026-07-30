@@ -139,6 +139,16 @@ a hex value or raw px measurement appears. The design's awkward values become na
 Spacing uses a fixed 4px base, so the design's odd values are ordinary scale steps:
 9px = `2.25`, 7px = `1.75`, 11px = `2.75`, 18px = `4.5`, 26px = `6.5`.
 
+That token block is also what makes a recolour a small change. The design's second
+revision lifted every surface off near-black (base `#0c0d0f` → `#1b1e22`) and brightened
+the text with it; because nothing outside `@theme` names a colour, the app followed from
+editing that one block. Four values do *not* live there and have to be moved by hand —
+`--color-ink` (a separate token that happens to equal the base, since `text-base` is
+already Tailwind's font size), the window `backgroundColor` in both Tauri configs, and
+the splash in `index.html`. Miss the last two and a cold start shows the old black for a
+third of a second before the UI paints over it, which is the exact flash the splash
+exists to prevent.
+
 **2. Primitives — `src/components/ui/`.** `Button`, `Chip`, `Segmented`, `Toggle`, `Field`,
 `Select`, `StatusDot`, `Drawer` and friends. Variants are declared once per component with
 `tailwind-variants`, so call sites read `<Button variant="soft" size="sm">` instead of carrying

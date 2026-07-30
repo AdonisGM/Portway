@@ -22,7 +22,14 @@
     color: var(--color-fg);
     font-family: var(--font-sans);
     font-size: var(--text-body);
-    -webkit-font-smoothing: antialiased;
+    /* Deliberately no `-webkit-font-smoothing: antialiased`. It was here, and
+       it is the reason the interface read as spindly once the webfont went
+       away: on macOS it replaces subpixel antialiasing with greyscale, which
+       takes roughly a fifth of the ink out of every glyph — and light text on
+       a dark background is exactly where that is most visible. Measured on the
+       nav labels, dropping it puts back 19% of the total ink and 28% of the
+       solid stem pixels. The prototype sets no smoothing hint at all, so the
+       browser default is what the design is supposed to look like. */
     text-rendering: optimizeLegibility;
   }
 

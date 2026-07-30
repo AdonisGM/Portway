@@ -208,6 +208,13 @@ plus search/filter/accent for the parts that are live.
   claims mousedown for anything inside one, turning button clicks into window drags.
 - **Window IPC needs `src-tauri/capabilities/default.json`.** Tauri v2 denies every command not
   listed there; without it minimize/maximize/close silently do nothing.
+- **Don't put `-webkit-font-smoothing: antialiased` back.** It reads like a polish setting and
+  is nearly a reflex in web projects, but on macOS it swaps subpixel antialiasing for
+  greyscale, and light text on a dark background is where that costs the most — measured on the
+  nav labels it took out 19% of the ink and 28% of the solid stem pixels, which is the whole
+  difference between "crisp" and "spindly". It mattered little against the vendored IBM Plex
+  and a great deal against a system stack. The prototype sets no smoothing hint, so the
+  browser default *is* the design.
 - **The CSP needs `style-src-elem 'unsafe-inline'`, or the terminal loses every colour in
   release builds and only in release builds.** xterm's DOM renderer paints colour by creating
   a `<style>` element and writing `.xterm-fg-N { color: … }` into it. Tauri rewrites the CSP

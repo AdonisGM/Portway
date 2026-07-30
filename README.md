@@ -4,9 +4,9 @@ SSH/SFTP desktop client — Tauri (Rust) + React + TypeScript.
 
 **SSH and SFTP are live.** Hosts are stored in SQLite, sessions open a real PTY over SSH
 (`russh`), the SFTP pane browses the remote filesystem, and every command that reaches a host
-is written to an audit trail. Still mock: the SSH Keys, Tunnels and Known hosts screens, and
-the OS keychain — so password and encrypted-key auth are refused with a message rather than
-guessed at.
+is written to an audit trail. Key passphrases go to the OS keychain, so an encrypted key
+opens. Still mock: the SSH Keys, Tunnels and Known hosts screens. Password auth is still
+refused with a message rather than guessed at.
 
 The UI is built from `design_handoff_ssh_client/`, which is high-fidelity: colours, type, and
 spacing in that handoff are final and were transcribed rather than reinterpreted.
@@ -38,11 +38,29 @@ already in use. The logic exists twice on purpose: `nextCopyName` in `src/lib/na
 the form, and `next_free_name` in `db.rs` so the v2 migration can renumber databases written
 before the constraint existed. Keep the two in step.
 
-**No secrets are stored.** The summary column in the form promises that credentials live in
-the OS keychain and the app keeps only references — so the database holds the auth *method*,
-the key path, and the keychain toggles, and never a password or passphrase. Those two fields
-are component-local state that is discarded on save. Wiring them to the real keychain is the
-next backend step; `HostInput` is the seam.
+**No secrets are stored in the database.** The summary column in the form promises that
+credentials live in the OS keychain and the app keeps only references — so the database holds
+the auth *method*, the key path, and the keychain toggles, and never a password or passphrase.
+
+The passphrase now honours that literally. It rides in on `HostInput` — the seam this was
+always meant to use — and `hosts.rs` diverts it to `keychain.rs` after the row is written;
+every other field of the input is bound to a column, that one never is. It is a `Secret`
+rather than a `String` so that `HostInput`'s `derive(Debug)` cannot print it into a panic or
+a future trace line. Password is still component-local state discarded on save, because
+password auth has no backend yet.
+
+Three behaviours are worth knowing because none of them is visible from the UI:
+
+- **An empty passphrase box means "unchanged", not "clear".** The box is empty every time a
+  host is opened for editing, including one whose passphrase is stored, because nothing reads
+  a secret back out. Treating empty as "clear" would drop the secret on any unrelated edit.
+- **Turning "Unlock via keychain" off is how you forget one**, and it is the only way.
+- **Deleting a host deletes its entry**, best-effort: the row is gone either way, and failing
+  the delete over a credential store would leave a host that cannot be removed.
+
+Entries are keyed by host id (`host:{id}:passphrase` under service `com.portway.ssh`), not by
+key path. The toggle is per-host on a per-host form, so per-host entries keep turning it off,
+or deleting a host, from reaching into another host that uses the same key file.
 
 ## SSH, SFTP and the audit trail
 

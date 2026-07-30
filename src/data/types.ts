@@ -35,7 +35,16 @@ export interface Host {
 }
 
 /** What the form sends on save — a Host without the server-assigned fields. */
-export type HostInput = Omit<Host, 'id' | 'lastUsedAt' | 'createdAt' | 'updatedAt'>
+/**
+ * Asymmetric with `Host` on purpose: the passphrase travels in and never comes
+ * back. It is written to the OS keychain, never to a column, so there is
+ * nothing to read it out of — and the form is not meant to redisplay a secret
+ * anyway. Empty or omitted means "leave what is stored alone"; clearing one is
+ * what turning `unlockViaKeychain` off does.
+ */
+export type HostInput = Omit<Host, 'id' | 'lastUsedAt' | 'createdAt' | 'updatedAt'> & {
+  passphrase?: string | null
+}
 
 /**
  * Semantic status, never a colour. Writing the accent hex into data would make

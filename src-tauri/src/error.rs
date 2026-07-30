@@ -20,6 +20,12 @@ pub enum Error {
     /// shown in the terminal pane, so it says what to do about it.
     #[error("{0}")]
     Ssh(String),
+
+    /// The OS credential store refused. Carries the store's own wording, which
+    /// is the only thing that distinguishes "the user denied the prompt" from
+    /// "the keychain is locked".
+    #[error("keychain: {0}")]
+    Keychain(String),
 }
 
 /// Tauri needs the error type to serialise before it can cross to the webview.

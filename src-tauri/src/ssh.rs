@@ -12,6 +12,7 @@ use tokio::sync::mpsc;
 use crate::audit::{self, Kind, LineReader, Origin};
 use crate::db::Db;
 use crate::error::{Error, Result};
+use crate::keychain;
 use crate::hosts;
 use crate::models::Host;
 
@@ -375,10 +376,23 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
     match host.auth.as_str() {
         "key" => {
             let path = expand_home(host.key_path.as_deref().unwrap_or("~/.ssh/id_ed25519"));
-            let key = load_secret_key(&path, None).map_err(|e| {
+
+            // Reading the credential store can put a system prompt on screen and
+            // block for as long as the user looks at it, so it does not run on a
+            // runtime worker.
+            let passphrase = if host.unlock_via_keychain {
+                let id = host.id;
+                tokio::task::spawn_blocking(move || keychain::passphrase(id))
+                    .await
+                    .map_err(|e| Error::Ssh(format!("keychain lookup did not finish: {e}")))??
+            } else {
+                None
+            };
+
+            let key = load_secret_key(&path, passphrase.as_deref()).map_err(|e| {
                 Error::Ssh(format!(
-                    "could not read {} — {e}. An encrypted key needs a passphrase, \
-                     which Portway cannot ask for yet.",
+                    "could not read {} — {e}. If the key is encrypted, put its \
+                     passphrase in the host's form with \"Unlock via keychain\" on.",
                     path.display()
                 ))
             })?;
@@ -400,9 +414,11 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
         "agent" => Err(Error::Ssh(
             "ssh-agent auth is not wired up yet — use a private key for now".into(),
         )),
+        // The keychain exists now — `keychain.rs` holds key passphrases — but
+        // nothing writes or reads a *password* through it yet, so this stays a
+        // refusal rather than a guess.
         _ => Err(Error::Ssh(
-            "password auth needs the OS keychain, which is not wired up yet — use a private key"
-                .into(),
+            "password auth is not wired up yet — use a private key for now".into(),
         )),
     }
 }

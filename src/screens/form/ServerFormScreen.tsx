@@ -32,10 +32,15 @@ const NO_JUMP = '—'
  * through the same builder the drawer footer uses, so the two can never
  * disagree.
  *
- * Password and passphrase are intentionally *not* saved. The summary column
+ * Neither credential field is written to the database. The summary column
  * promises credentials live in the OS keychain and the app stores only
- * references, so they stay local to this component until the keychain layer
- * exists.
+ * references, and that is now literally true of the passphrase: it is sent with
+ * the host and diverted to the keychain by `hosts.rs`, never bound to a column.
+ * Password stays local to this component — password auth has no backend yet.
+ *
+ * The passphrase box is empty every time a host is opened, including one that
+ * has a stored passphrase, because nothing reads a secret back out. An empty
+ * box therefore means "unchanged", not "clear it".
  */
 export function ServerFormScreen() {
   const goScreen = useApp((s) => s.goScreen)
@@ -155,11 +160,17 @@ export function ServerFormScreen() {
       saveToKeychain,
       unlockViaKeychain,
       favorite: source?.favorite ?? false,
+      // Only for `auth === 'key'`, and only when the user actually typed one —
+      // an untouched box must not disturb a passphrase already in the keychain.
+      passphrase: auth === 'key' && passphrase ? passphrase : null,
     }
 
     try {
       if (editing) await updateHost(editing.id, input)
       else await createHost(input)
+      // Drop it as soon as the keychain has it, so a secret does not sit in
+      // component state for as long as the app is open.
+      setPassphrase('')
       goScreen('servers')
     } catch (e) {
       setError(message(e))

@@ -35,6 +35,32 @@ pub struct Host {
     pub updated_at: i64,
 }
 
+/// A value that must not reach a log, a `Debug` print or the database.
+///
+/// `HostInput` derives `Debug`, so a plain `String` passphrase would be one
+/// `{:?}` away from appearing in a panic message or a future trace line. The
+/// only way out of this type is `expose`, which is deliberately awkward to
+/// read past in review.
+#[derive(Clone, Deserialize)]
+#[serde(transparent)]
+pub struct Secret(String);
+
+impl Secret {
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(redacted)")
+    }
+}
+
 /// What the form sends. `id` is absent — create assigns it, update takes it
 /// separately — so the same shape serves both.
 #[derive(Debug, Clone, Deserialize)]
@@ -55,6 +81,15 @@ pub struct HostInput {
     pub unlock_via_keychain: bool,
     #[serde(default)]
     pub favorite: bool,
+    /// The key's passphrase, on its way to the OS keychain and nowhere else.
+    ///
+    /// Asymmetric on purpose: it arrives on the way in and never appears on
+    /// `Host` on the way out, because nothing reads a secret back into the UI.
+    /// `None` or empty means "leave whatever is stored alone" — the form cannot
+    /// populate this field when editing, so an empty box is not a request to
+    /// clear anything. Clearing is what `unlock_via_keychain: false` does.
+    #[serde(default)]
+    pub passphrase: Option<Secret>,
 }
 
 const GROUPS: [&str; 4] = ["prod", "staging", "dev", "home"];

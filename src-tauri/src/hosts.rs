@@ -3,6 +3,7 @@ use tauri::State;
 
 use crate::db::{now_ms, Db};
 use crate::error::{Error, Result};
+use crate::keychain;
 use crate::models::{Host, HostInput};
 
 const COLUMNS: &str = "id, name, address, port, user, group_id, auth, key_path, jump_host, \
@@ -98,7 +99,38 @@ pub fn create_host(db: State<'_, Db>, input: HostInput) -> Result<Host> {
     )
     .map_err(|e| map_conflict(e, &input.name))?;
 
-    fetch(&conn, conn.last_insert_rowid())
+    let host = fetch(&conn, conn.last_insert_rowid())?;
+    // The keychain can put a prompt on screen and wait as long as the user
+    // does, so the database lock is released first — otherwise every other
+    // query in the app waits behind a dialog.
+    drop(conn);
+    store_passphrase(host.id, &input).map_err(saved_but)?;
+    Ok(host)
+}
+
+/// Applies the form's intent for the passphrase. The secret goes to the OS
+/// keychain and never to a column — `INSERT`/`UPDATE` above bind every field of
+/// `HostInput` except this one.
+///
+/// Absent or empty means "leave what is stored alone", because the form has no
+/// way to show an existing passphrase: the box is empty every time a host is
+/// opened for editing, and treating that as "clear it" would silently drop the
+/// secret on any unrelated edit. Turning "Unlock via keychain" off is the
+/// deliberate way to forget one.
+fn store_passphrase(id: i64, input: &HostInput) -> Result<()> {
+    if !input.unlock_via_keychain {
+        return keychain::forget_passphrase(id);
+    }
+    match &input.passphrase {
+        Some(secret) if !secret.is_empty() => keychain::set_passphrase(id, secret.expose()),
+        _ => Ok(()),
+    }
+}
+
+/// The row is already written by the time the keychain is touched, so a refused
+/// prompt must not read as "nothing happened".
+fn saved_but(e: Error) -> Error {
+    Error::Keychain(format!("{e} — the host was saved, but its passphrase was not"))
 }
 
 #[tauri::command]
@@ -137,7 +169,10 @@ pub fn update_host(db: State<'_, Db>, id: i64, input: HostInput) -> Result<Host>
     if changed == 0 {
         return Err(Error::NotFound(id));
     }
-    fetch(&conn, id)
+    let host = fetch(&conn, id)?;
+    drop(conn);
+    store_passphrase(id, &input).map_err(saved_but)?;
+    Ok(host)
 }
 
 #[tauri::command]
@@ -147,6 +182,11 @@ pub fn delete_host(db: State<'_, Db>, id: i64) -> Result<()> {
     if changed == 0 {
         return Err(Error::NotFound(id));
     }
+    drop(conn);
+    // Best effort: the host is gone either way, and a stranded keychain entry
+    // is inert. Failing the delete over it would leave the user with a host
+    // they cannot remove.
+    let _ = keychain::forget_passphrase(id);
     Ok(())
 }
 

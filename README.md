@@ -101,7 +101,13 @@ npm run tauri dev      # dev app with HMR
 npm run tauri build    # installer in src-tauri/target/release/bundle/
 ```
 
-Requires Rust (MSVC toolchain) and WebView2 (ships with Windows 11).
+On Windows: Rust (MSVC toolchain) and WebView2, which ships with Windows 11.
+
+On macOS: Rust and the Xcode Command Line Tools — `rusqlite` is built from bundled C, so a
+compiler has to be there. WKWebView is part of the OS. `npm run tauri build` produces both
+`bundle/macos/Portway.app` and `bundle/dmg/`, for whichever architecture you are on; the binary
+is ad-hoc signed, so on any machine that did not build it Gatekeeper will refuse to open it until
+it is signed and notarised, or the first launch goes through right-click → Open.
 
 ## How it's put together
 
@@ -174,6 +180,45 @@ plus search/filter/accent for the parts that are live.
   claims mousedown for anything inside one, turning button clicks into window drags.
 - **Window IPC needs `src-tauri/capabilities/default.json`.** Tauri v2 denies every command not
   listed there; without it minimize/maximize/close silently do nothing.
+- **The private key field's two buttons read the real machine, not the mock.** "From SSH Keys"
+  lists a scan of `~/.ssh` (`keys.rs`), not `SSH_KEYS` from `data/mock.ts`, because the path it
+  writes is handed straight to `load_secret_key` on connect — offering the mock's invented names
+  would build a host that cannot authenticate, and the failure would only surface at the first
+  connection. The Keys *screen* is still mock, so the two disagree until it is given a real
+  backend. That scan sniffs each file's header rather than matching names: `config`,
+  `known_hosts` and `.pub` files share the directory and nothing but the content distinguishes
+  them.
+- **`tauri.macos.conf.json` repeats the whole window object, and has to.** Tauri merges the
+  platform config with RFC 7396 semantics, where arrays are *replaced*, not merged — so
+  `app.windows` there is the entire window, not a patch of it. Change a window property in
+  `tauri.conf.json` and you must change it in both. The one that hurts if you forget is
+  `visible: false`: drop it and the splash handoff below is gone, and macOS launches into a
+  blank dark rectangle until the webview paints.
+
+## Window chrome is per-platform
+
+Windows keeps the frameless look the app was built with: `decorations: false`, and the caption
+buttons in `components/chrome/WindowControls.tsx` are ours, drawn from the same tokens as
+everything else.
+
+macOS cannot use that — a frameless Tauri window there has no traffic lights at all, so the
+window loses the one control cluster every Mac user reaches for, at the corner they reach for it
+in. `tauri.macos.conf.json` therefore keeps the real frame and hides only its title bar:
+`decorations: true` + `titleBarStyle: "Overlay"` + `hiddenTitle: true`. The system draws the
+traffic lights over our content; we draw nothing on the right.
+
+- **`trafficLightPosition` is measured, not computed.** `{ x: 14, y: 18 }` centres the lights in
+  the 32px `--spacing-titlebar` bar. The `x` lands where you'd expect; `y` does not — it sits
+  about 8px above the value you give it, so `18` puts the button tops at 10 and their centres at
+  16. If the titlebar height ever changes, re-measure rather than re-derive: screenshot the
+  corner and read the pixels.
+- **`--spacing-lights` (86px) is the gutter the brand block indents by** so "Portway" clears the
+  lights, which end at x≈74. The block stays 194px wide — that width continues the sidebar's
+  column hairline, so widening it to make room would misalign every row beneath it. The accent
+  dot is dropped on macOS instead: three coloured circles already do that job in that corner.
+- **Platform is detected synchronously** in `src/lib/platform.ts`, off `navigator.userAgent`,
+  not via `@tauri-apps/plugin-os` whose `platform()` is async. The titlebar is in the first
+  paint; an awaited answer would draw Windows caption buttons for a frame and then swap them.
 
 ## Deliberate departures from the mock
 

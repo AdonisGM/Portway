@@ -26,6 +26,26 @@ export const setHostFavorite = (id: number, favorite: boolean) =>
   invoke<Host>('set_host_favorite', { id, favorite })
 
 /* ---------------------------------------------------------------------------
+   Private keys on this machine
+--------------------------------------------------------------------------- */
+
+/**
+ * A key found by scanning `~/.ssh`. Not `SshKey` from `data/types.ts`: that is
+ * the shape the Keys screen's mock renders — fingerprint, "used by", added date
+ * — and a directory scan can produce none of it. This is what the server form
+ * needs to fill its field, and nothing else.
+ */
+export interface KeyFile {
+  name: string
+  /** In `~/` form, matching what the field shows and what the backend expands. */
+  path: string
+  /** `ed25519`, `rsa`, … or null when there is no `.pub` beside the key. */
+  kind: string | null
+}
+
+export const listSshKeys = () => invoke<KeyFile[]>('list_ssh_keys')
+
+/* ---------------------------------------------------------------------------
    SSH / SFTP
    Bytes cross as base64 so control characters and binary output survive JSON.
 --------------------------------------------------------------------------- */

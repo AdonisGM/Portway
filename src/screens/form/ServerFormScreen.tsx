@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { homeDir } from '@tauri-apps/api/path'
+import { open } from '@tauri-apps/plugin-dialog'
 import { GROUP_IDS, GROUP_SHORT } from '@/data/groups'
 import { AGENT_KEYS } from '@/data/mock'
 import type { AuthMethod, GroupId, HostInput } from '@/data/types'
@@ -12,6 +14,7 @@ import { Select } from '@/components/ui/Select'
 import { ToggleField } from '@/components/ui/Toggle'
 import { CommandText, SectionLabel } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
+import { KeyPicker } from './KeyPicker'
 
 const AUTH_METHODS: { value: AuthMethod; label: string }[] = [
   { value: 'password', label: 'Password' },
@@ -106,6 +109,31 @@ export function ServerFormScreen() {
     portNumber >= 1 &&
     portNumber <= 65535
   const valid = filledIn && !nameTaken
+
+  /**
+   * Native file picker for the key path.
+   *
+   * A webview `<input type="file">` is no use here: it hands back a File whose
+   * path is withheld, and what has to reach the backend is a filesystem path.
+   *
+   * Two details are deliberate. It opens *in* `~/.ssh` because a panel cannot
+   * browse into a hidden directory without the user knowing Cmd+Shift+period,
+   * and it sets no file-type filter because private keys carry no extension —
+   * any filter would hide every key in the folder.
+   */
+  const chooseKeyFile = async () => {
+    setError(null)
+    try {
+      const home = (await homeDir()).replace(/\/$/, '')
+      const picked = await open({ multiple: false, directory: false, defaultPath: `${home}/.ssh` })
+      if (typeof picked !== 'string') return // dismissed
+      // Store it the way the field shows it and the way `expand_home` reads it;
+      // an absolute path outside home is kept as-is, which it also accepts.
+      setKeyPath(picked.startsWith(`${home}/`) ? `~/${picked.slice(home.length + 1)}` : picked)
+    } catch (e) {
+      setError(message(e))
+    }
+  }
 
   const save = async () => {
     if (!valid) return
@@ -251,12 +279,15 @@ export function ServerFormScreen() {
                         className="w-full font-mono text-body text-fg-2"
                       />
                     </div>
-                    <Button variant="outline" size="md" className="flex-none py-2">
+                    <Button
+                      variant="outline"
+                      size="md"
+                      className="flex-none py-2"
+                      onClick={() => void chooseKeyFile()}
+                    >
                       Choose file…
                     </Button>
-                    <Button size="md" className="flex-none py-2">
-                      From SSH Keys
-                    </Button>
+                    <KeyPicker onPick={setKeyPath} />
                   </div>
                 </Labelled>
 

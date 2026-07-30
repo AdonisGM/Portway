@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Window chrome only. The frame is custom (decorations:false), so the UI has to drive minimize / maximize / close / drag itself — Tauri v2 denies every IPC command that isn't listed here.",
+  "description": "Window chrome only. Tauri v2 denies every IPC command that isn't listed here. On Windows the frame is custom (decorations:false) so the UI drives minimize / maximize / close / drag itself; on macOS the system frame draws the traffic lights and only show and start-dragging are still reached, but the rest must stay listed for the Windows build.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -11,6 +11,8 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-is-maximized",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+
+    "dialog:allow-open"
   ]
 }

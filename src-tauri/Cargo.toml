@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.4.1"
+version = "0.0.1"
 description = "Portway — SSH/SFTP desktop client"
 authors = ["you"]
 edition = "2021"
@@ -20,6 +20,7 @@ russh = { version = "0.53", default-features = false, features = ["ring", "flate
 russh-sftp = "2.3.0"
 serde = { version = "1.0.229", features = ["derive"] }
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 thiserror = "2.0.19"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time", "net"] }
 

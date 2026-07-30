@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod error;
 mod hosts;
+mod keys;
 mod models;
 mod sftp;
 mod ssh;
@@ -18,6 +19,9 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Powers the form's "Choose file…" — the file field needs a real
+        // filesystem path, and a webview <input type="file"> never yields one.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let home = app
                 .path()
@@ -50,6 +54,7 @@ pub fn run() {
             hosts::delete_host,
             hosts::touch_host,
             hosts::set_host_favorite,
+            keys::list_ssh_keys,
             commands::ssh_connect,
             commands::ssh_write,
             commands::ssh_resize,

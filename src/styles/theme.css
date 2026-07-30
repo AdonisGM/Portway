@@ -28,6 +28,7 @@
   --spacing-sftp: 470px; /* session SFTP pane    */
   --spacing-summary: 300px; /* form summary column  */
   --spacing-titlebar: 32px; /* custom window chrome */
+  --spacing-lights: 86px; /* macOS traffic-light gutter — see TitleBar */
   --spacing-dialog: 360px; /* confirm dialog — not in the handoff, see ConfirmDialog */
 
   /* -- surfaces ------------------------------------------------------------

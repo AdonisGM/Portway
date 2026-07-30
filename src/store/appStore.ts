@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import * as api from '@/lib/api'
+import type { KeyFile } from '@/lib/api'
 import type { AuthMethod, GroupId, Host, HostInput, Session, SessionStatus } from '@/data/types'
 
 export type Screen = 'servers' | 'session' | 'form' | 'keys' | 'tunnels' | 'known' | 'settings'
@@ -38,6 +39,9 @@ interface AppState {
   screen: Screen
 
   hosts: Host[]
+  /** Real keys from `~/.ssh`. The rail's count, the Keys screen and the form's
+   *  picker all read this, so they cannot disagree about what is on the disk. */
+  keys: KeyFile[]
   loading: boolean
   /** Set when the database itself is unreachable, not for form validation. */
   loadError: string | null
@@ -61,6 +65,8 @@ interface AppState {
   settings: Settings
 
   loadHosts: () => Promise<void>
+  loadKeys: () => Promise<void>
+  copyPublicKey: (key: KeyFile) => Promise<boolean>
   createHost: (input: HostInput) => Promise<Host>
   updateHost: (id: number, input: HostInput) => Promise<Host>
   deleteHost: (id: number) => Promise<void>
@@ -93,6 +99,7 @@ export const useApp = create<AppState>((set, get) => ({
   screen: 'servers',
 
   hosts: [],
+  keys: [],
   loading: true,
   loadError: null,
 
@@ -125,6 +132,34 @@ export const useApp = create<AppState>((set, get) => ({
       set({ hosts, loading: false, loadError: null })
     } catch (error) {
       set({ loading: false, loadError: api.message(error) })
+    }
+  },
+
+  /**
+   * Scans `~/.ssh` and asks the agent what it is holding. Failures leave the
+   * list empty rather than surfacing: the rail would otherwise show an error
+   * for a directory the user may simply not have, and the Keys screen has its
+   * own empty state for that.
+   */
+  loadKeys: async () => {
+    try {
+      set({ keys: await api.listSshKeys() })
+    } catch {
+      set({ keys: [] })
+    }
+  },
+
+  /**
+   * Public half to the clipboard — what you paste into a host's
+   * `authorized_keys`. Returns whether it landed, so the row can say "Copied"
+   * only when it actually did.
+   */
+  copyPublicKey: async (key) => {
+    try {
+      await navigator.clipboard.writeText(await api.readPublicKey(key.name))
+      return true
+    } catch {
+      return false
     }
   },
 

@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { homeDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
 import { GROUP_IDS, GROUP_SHORT } from '@/data/groups'
-import { AGENT_KEYS } from '@/data/mock'
 import type { AuthMethod, GroupId, HostInput } from '@/data/types'
 import { message } from '@/lib/api'
 import { buildSshCommand, DEFAULT_KEY_PATH } from '@/lib/command'
@@ -48,6 +47,7 @@ export function ServerFormScreen() {
   const hosts = useApp((s) => s.hosts)
   const createHost = useApp((s) => s.createHost)
   const updateHost = useApp((s) => s.updateHost)
+  const agentKeys = useApp((s) => s.keys).filter((k) => k.inAgent)
 
   const editing = formMode.kind === 'edit' ? formMode.host : null
   const source = editing ?? (formMode.kind === 'new' ? formMode.prefill : null)
@@ -335,18 +335,28 @@ export function ServerFormScreen() {
                 <p className="text-body text-fg-2">
                   Use a key already loaded in ssh-agent — no credentials stored in the app.
                 </p>
-                <div className="flex flex-col gap-px overflow-hidden rounded-field border border-w08">
-                  {AGENT_KEYS.map((key) => (
-                    <div
-                      key={key.name}
-                      className="flex gap-2.5 bg-field px-2.75 py-2 font-mono text-cell text-fg-2"
-                    >
-                      <span className={key.usable ? 'text-accent' : 'text-faint'}>●</span>
-                      {key.name}
-                      <span className="ml-auto text-faint">{key.fingerprint}</span>
-                    </div>
-                  ))}
-                </div>
+                {/* The same scan the Keys screen renders, filtered to what the
+                    agent is actually holding — so the form cannot claim a key
+                    is available when the rail says the agent is empty. */}
+                {agentKeys.length === 0 ? (
+                  <div className="rounded-field border border-w08 bg-field px-2.75 py-2 font-mono text-cell text-muted">
+                    No keys loaded — add one with{' '}
+                    <span className="text-fg-2">ssh-add ~/.ssh/id_ed25519</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-px overflow-hidden rounded-field border border-w08">
+                    {agentKeys.map((key) => (
+                      <div
+                        key={key.path}
+                        className="flex gap-2.5 bg-field px-2.75 py-2 font-mono text-cell text-fg-2"
+                      >
+                        <span className={key.weak ? 'text-warn' : 'text-accent'}>●</span>
+                        {key.name}
+                        <span className="ml-auto cell-ellipsis text-faint">{key.fingerprint}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : null}
           </section>

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { groupCounts } from '@/data/groups'
-import { AGENT_STATUS, KNOWN_HOSTS_TOTAL, SSH_KEYS, TUNNELS } from '@/data/mock'
+import { KNOWN_HOSTS_TOTAL, TUNNELS } from '@/data/mock'
 import { GroupDot, SectionLabel, StatusDot } from '@/components/ui/primitives'
 import { useApp, type Screen } from '@/store/appStore'
 import { NAV_ICONS } from './NavIcons'
@@ -16,16 +16,18 @@ export function Sidebar() {
   const hosts = useApp((s) => s.hosts)
   const groupFilter = useApp((s) => s.groupFilter)
   const sessions = useApp((s) => s.sessions)
+  const keys = useApp((s) => s.keys)
   const goScreen = useApp((s) => s.goScreen)
   const toggleGroup = useApp((s) => s.toggleGroup)
   const activateTab = useApp((s) => s.activateTab)
 
   // Counts follow the database, so creating or deleting a host moves them.
   const groups = useMemo(() => groupCounts(hosts), [hosts])
+  const loadedInAgent = keys.filter((k) => k.inAgent).length
 
   const nav: { id: Screen; label: string; count: number | null }[] = [
     { id: 'servers', label: 'Servers', count: hosts.length },
-    { id: 'keys', label: 'SSH Keys', count: SSH_KEYS.length },
+    { id: 'keys', label: 'SSH Keys', count: keys.length },
     { id: 'tunnels', label: 'Tunnels', count: TUNNELS.filter((t) => t.state === 'active').length },
     { id: 'known', label: 'Known hosts', count: KNOWN_HOSTS_TOTAL },
     { id: 'settings', label: 'Settings', count: null },
@@ -104,7 +106,11 @@ export function Sidebar() {
       </div>
 
       <div className="flex-none border-t border-w06 px-4 py-2.75 font-mono text-mono text-faint">
-        {AGENT_STATUS}
+        {/* The rail's one live reading of the agent. `0 keys loaded` is a real
+            answer — no agent running, or nothing added to it — so it is shown
+            rather than hidden. The mock's string was always plural because it
+            was always 3; a real count reaches 1. */}
+        agent · {loadedInAgent} {loadedInAgent === 1 ? 'key' : 'keys'} loaded
       </div>
     </nav>
   )

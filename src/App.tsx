@@ -25,6 +25,7 @@ export default function App() {
   const screen = useApp((s) => s.screen)
   const accent = useApp((s) => s.settings.accent)
   const loadHosts = useApp((s) => s.loadHosts)
+  const loadKeys = useApp((s) => s.loadKeys)
 
   // Reveal the window as soon as the shell is painted. Deliberately not
   // waiting on loadHosts: the table has its own "loading hosts…" state, and
@@ -39,6 +40,13 @@ export default function App() {
   useEffect(() => {
     void loadHosts()
   }, [loadHosts])
+
+  // Keys are read once too, but they are a directory and an agent rather than a
+  // database — both can change while the app is open, so the Keys screen offers
+  // a refresh rather than pretending this snapshot stays true.
+  useEffect(() => {
+    void loadKeys()
+  }, [loadKeys])
 
   // One variable write repaints every accent surface in the app, because each
   // Tailwind utility compiles down to var(--color-accent).

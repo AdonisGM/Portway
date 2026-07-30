@@ -56,6 +56,7 @@ pub fn run() {
             hosts::touch_host,
             hosts::set_host_favorite,
             keys::list_ssh_keys,
+            keys::read_public_key,
             commands::ssh_connect,
             commands::ssh_write,
             commands::ssh_resize,

@@ -5,8 +5,8 @@ SSH/SFTP desktop client — Tauri (Rust) + React + TypeScript.
 **SSH and SFTP are live.** Hosts are stored in SQLite, sessions open a real PTY over SSH
 (`russh`), the SFTP pane browses the remote filesystem, and every command that reaches a host
 is written to an audit trail. Key passphrases go to the OS keychain, so an encrypted key
-opens. Still mock: the SSH Keys, Tunnels and Known hosts screens. Password auth is still
-refused with a message rather than guessed at.
+opens. The SSH Keys screen reads `~/.ssh` and a running ssh-agent. Still mock: the Tunnels
+and Known hosts screens. Password auth is still refused with a message rather than guessed at.
 
 The UI is built from `design_handoff_ssh_client/`, which is high-fidelity: colours, type, and
 spacing in that handoff are final and were transcribed rather than reinterpreted.
@@ -239,6 +239,22 @@ plus search/filter/accent for the parts that are live.
   extension, so a server too old to send one costs a second and then correctly falls back to
   SHA-1. Non-RSA keys are unaffected: `PrivateKeyWithHashAlg::new` drops the hash algorithm for
   anything that is not RSA.
+- **One scan feeds three places.** `list_ssh_keys` is read by the Keys screen, the rail's
+  count and agent line, and the server form — both its "From SSH Keys" picker and the list of
+  agent-loaded keys under the Agent auth method. They were separate mocks and disagreed; a
+  single command is what keeps them honest. It is deliberately not cached in Rust: a directory
+  and an agent both change behind the app's back, which is why the screen has a Refresh rather
+  than a promise.
+- **Nothing on that screen opens a private key.** Type, size and fingerprint all come from the
+  `.pub` beside it, age from the directory entry. A key with no readable `.pub` lists with `—`
+  in those columns rather than being decrypted to fill them — the footer's "private keys never
+  leave this machine" would be a strange thing to print underneath a screen that had just read
+  one. `read_public_key` takes a *name*, not a path, and appends `.pub` itself, so it cannot be
+  pointed anywhere else.
+- **`weak` and `inAgent` are separate fields, not one status.** The design draws three dot
+  colours — loaded, legacy, not loaded — which reads as an enum, but a key can be weak *and*
+  loaded, and then the header's "N loaded in agent" has to count agent membership rather than
+  the dot. Collapsing them is what makes that number start lying.
 - **The private key field's two buttons read the real machine, not the mock.** "From SSH Keys"
   lists a scan of `~/.ssh` (`keys.rs`), not `SSH_KEYS` from `data/mock.ts`, because the path it
   writes is handed straight to `load_secret_key` on connect — offering the mock's invented names

@@ -1,45 +1,10 @@
-import type { KnownHost, SftpFile, SshKey, Tunnel } from './types'
+import type { KnownHost, SftpFile, Tunnel } from './types'
 
 /**
  * Everything the prototype's data script holds beyond the host list
  * (SSH Client.dc.html:840-890), with the accent hex stripped out in favour of
  * semantic status — see the note in types.ts.
  */
-
-export const SSH_KEYS: SshKey[] = [
-  {
-    name: 'id_ed25519',
-    type: 'ed25519',
-    fingerprint: 'SHA256:9pQ7…hK4',
-    usedBy: '38 hosts',
-    added: 'Mar 2026',
-    status: 'loaded',
-  },
-  {
-    name: 'id_ed25519_infra',
-    type: 'ed25519',
-    fingerprint: 'SHA256:4bV1…tZ8',
-    usedBy: '14 hosts',
-    added: 'Jan 2026',
-    status: 'loaded',
-  },
-  {
-    name: 'id_rsa_legacy',
-    type: 'rsa 4096',
-    fingerprint: 'SHA256:2fT9…mQ1',
-    usedBy: '6 hosts',
-    added: 'Aug 2024',
-    status: 'legacy',
-  },
-  {
-    name: 'deploy_ci',
-    type: 'ed25519',
-    fingerprint: 'SHA256:7xC3…nR6',
-    usedBy: '2 hosts',
-    added: 'Jun 2026',
-    status: 'unloaded',
-  },
-]
 
 export const TUNNELS: Tunnel[] = [
   {
@@ -112,13 +77,6 @@ export const TRANSFER = {
 }
 
 /** Keys the ssh-agent reports, for the form's Agent auth method. */
-export const AGENT_KEYS = [
-  { name: 'id_ed25519', fingerprint: 'SHA256:9pQ…hK4', usable: true },
-  { name: 'id_rsa_legacy', fingerprint: 'SHA256:2fT…mQ1', usable: false },
-]
-
-export const AGENT_STATUS = 'agent · 3 keys loaded'
-
 /** Fake shell output, interpolated with the active host (SSH Client.dc.html:849-852). */
 export function terminalText(user: string, host: string): string {
   return (

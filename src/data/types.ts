@@ -50,17 +50,6 @@ export type HostInput = Omit<Host, 'id' | 'lastUsedAt' | 'createdAt' | 'updatedA
  * Semantic status, never a colour. Writing the accent hex into data would make
  * the Settings accent picker recolour unrelated status dots.
  */
-export type KeyStatus = 'loaded' | 'legacy' | 'unloaded'
-
-export interface SshKey {
-  name: string
-  type: string
-  fingerprint: string
-  usedBy: string
-  added: string
-  status: KeyStatus
-}
-
 export type TunnelType = 'local' | 'dynamic' | 'remote'
 export type TunnelState = 'active' | 'idle'
 

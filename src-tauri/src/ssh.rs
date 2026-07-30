@@ -145,7 +145,7 @@ fn known_hosts_path() -> PathBuf {
         .join("known_hosts")
 }
 
-fn expand_home(path: &str) -> PathBuf {
+pub fn expand_home(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
         return dirs::home_dir().unwrap_or_default().join(rest);
     }

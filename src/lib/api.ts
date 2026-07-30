@@ -30,20 +30,38 @@ export const setHostFavorite = (id: number, favorite: boolean) =>
 --------------------------------------------------------------------------- */
 
 /**
- * A key found by scanning `~/.ssh`. Not `SshKey` from `data/types.ts`: that is
- * the shape the Keys screen's mock renders — fingerprint, "used by", added date
- * — and a directory scan can produce none of it. This is what the server form
- * needs to fill its field, and nothing else.
+ * A key found by scanning `~/.ssh`, plus what can be known about it without
+ * opening the private half: type and fingerprint from the `.pub`, age from the
+ * directory entry, agent membership from a running ssh-agent, and a use count
+ * from the saved hosts. The Keys screen, the rail's count and the server form's
+ * picker all read the same record, so none of them can disagree.
  */
 export interface KeyFile {
   name: string
   /** In `~/` form, matching what the field shows and what the backend expands. */
   path: string
-  /** `ed25519`, `rsa`, … or null when there is no `.pub` beside the key. */
+  /** `ed25519`, `rsa 4096`, … or null when there is no readable `.pub`. */
   kind: string | null
+  /** `SHA256:…`, or null for the same reason. */
+  fingerprint: string | null
+  /** Offered by a running ssh-agent. */
+  inAgent: boolean
+  /**
+   * An algorithm or size not to start new work with. Orthogonal to `inAgent` —
+   * a key can be weak *and* loaded, which is why these are two fields and not
+   * one status enum.
+   */
+  weak: boolean
+  /** Saved hosts whose key path resolves to this file. */
+  usedBy: number
+  /** File mtime, epoch ms. */
+  addedAt: number | null
 }
 
 export const listSshKeys = () => invoke<KeyFile[]>('list_ssh_keys')
+
+/** The `.pub` beside a key, by key name. Never returns private key material. */
+export const readPublicKey = (name: string) => invoke<string>('read_public_key', { name })
 
 /* ---------------------------------------------------------------------------
    SSH / SFTP

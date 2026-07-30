@@ -1,26 +1,42 @@
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
 
+use russh::keys::{HashAlg, PublicKey};
 use serde::Serialize;
+use tauri::State;
 
-use crate::error::Result;
+use crate::db::Db;
+use crate::error::{Error, Result};
+use crate::ssh::expand_home;
 
 /// One private key found in `~/.ssh`.
 ///
-/// Deliberately not `models::SshKey`-shaped: the mock the Keys screen renders
-/// carries a fingerprint, a "used by" count and an added date, none of which a
-/// directory scan can produce without parsing key material. This carries only
-/// what the form needs to fill its field, plus the type when it is free.
+/// Everything here is read from the *public* half or from the filesystem entry.
+/// The private key is never opened: it may be encrypted, and the Keys screen
+/// promises that private keys do not leave the machine — reading their material
+/// to fill a column would be a strange way to honour that.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyFile {
     pub name: String,
-    /// Written back in `~/` form, which is what the field displays and what
-    /// `ssh::expand_home` reads.
+    /// In `~/` form, matching what the form's field shows and what the backend
+    /// expands on connect.
     pub path: String,
-    /// `ed25519`, `rsa`, … or `None` when there is no readable `.pub` beside it.
+    /// `ed25519`, `rsa 4096`, … or `None` when there is no readable `.pub`.
     pub kind: Option<String>,
+    /// `SHA256:…`, or `None` for the same reason.
+    pub fingerprint: Option<String>,
+    /// The key is offered by a running ssh-agent.
+    pub in_agent: bool,
+    /// An algorithm or size that should not be used for new work. Orthogonal to
+    /// `in_agent`: a key can be both weak and loaded, or neither.
+    pub weak: bool,
+    /// Saved hosts whose `key_path` resolves to this file.
+    pub used_by: usize,
+    /// File mtime, epoch ms — formatted in the UI, like every other date here.
+    pub added_at: Option<i64>,
 }
 
 /// Private keys have no extension and no fixed name, so the only honest test is
@@ -39,30 +55,92 @@ fn is_private_key(path: &Path) -> bool {
     head.starts_with("-----BEGIN") && head.contains("PRIVATE KEY")
 }
 
-/// The algorithm, taken from the companion `<name>.pub` rather than the private
-/// key: an OpenSSH-format private key names no algorithm in its header, and the
-/// public half states it in the clear as its first field.
-fn kind_from_pub(path: &Path) -> Option<String> {
+/// What the companion `<name>.pub` says about the key.
+///
+/// One parse yields all three facts the screen needs. An OpenSSH-format private
+/// key names no algorithm in its own header and a fingerprint cannot be derived
+/// without the key material, so a key with no `.pub` beside it is listed with
+/// both columns empty rather than guessed at.
+struct PubFacts {
+    kind: String,
+    fingerprint: String,
+    weak: bool,
+}
+
+fn read_pub(path: &Path) -> Option<PubFacts> {
     let text = fs::read_to_string(path.with_extension("pub")).ok()?;
-    let algo = text.split_whitespace().next()?;
-    Some(match algo {
-        "ssh-ed25519" => "ed25519".into(),
-        "ssh-rsa" => "rsa".into(),
-        "ssh-dss" => "dsa".into(),
-        other if other.starts_with("ecdsa-") => "ecdsa".into(),
-        other if other.starts_with("sk-") => "hardware".into(),
-        other => other.to_string(),
+    let key = PublicKey::from_openssh(&text).ok()?;
+    let data = key.key_data();
+
+    // The design's Type column reads `ed25519` / `rsa 4096`, so size is only
+    // spelled out where it varies.
+    let (kind, weak) = if let Some(rsa) = data.rsa() {
+        // The russh fork of ssh-key predates `key_size()`, so the modulus is
+        // measured directly. `as_positive_bytes` drops the sign byte, and an
+        // RSA modulus always has its top bit set, so the byte count is exact.
+        let bits = rsa.n.as_positive_bytes().map_or(0, |b| b.len() * 8);
+        // NIST has considered 2048-bit RSA end-of-life since 2030 planning
+        // began, and OpenSSH treats sha1-signed RSA as legacy. 3072 is the
+        // first size that is not on someone's deprecation list.
+        (format!("rsa {bits}"), bits < 3072)
+    } else if data.ed25519().is_some() {
+        ("ed25519".to_string(), false)
+    } else if let Some(ec) = data.ecdsa() {
+        (format!("ecdsa {}", ec.curve()), false)
+    } else {
+        // DSA and anything else this build does not name: all long deprecated.
+        (key.algorithm().as_str().to_string(), true)
+    };
+
+    Some(PubFacts {
+        kind,
+        fingerprint: key.fingerprint(HashAlg::Sha256).to_string(),
+        weak,
     })
 }
 
-/// Every private key in `~/.ssh`, for the form's "From SSH Keys" picker.
+/// Fingerprints the running ssh-agent is holding.
 ///
-/// Never returns key material — name, display path and algorithm only. An
-/// unreadable entry is skipped rather than failing the whole listing, and a
-/// missing `~/.ssh` is an empty list, not an error: neither is something the
-/// user can act on from a picker.
+/// No agent is an ordinary state, not an error: `SSH_AUTH_SOCK` is unset on a
+/// fresh login shell and on Windows without the service running. Every key then
+/// reads as "not loaded", which is true.
+async fn agent_fingerprints() -> HashSet<String> {
+    use russh::keys::agent::client::AgentClient;
+
+    let Ok(mut agent) = AgentClient::connect_env().await else {
+        return HashSet::new();
+    };
+    let Ok(identities) = agent.request_identities().await else {
+        return HashSet::new();
+    };
+    identities
+        .iter()
+        .map(|k| k.fingerprint(HashAlg::Sha256).to_string())
+        .collect()
+}
+
+/// Every saved host's key path, expanded, so `~/.ssh/id_ed25519` and
+/// `/Users/you/.ssh/id_ed25519` count as the same key — both are things a user
+/// can end up with, since the picker writes tilde form and the field accepts
+/// anything typed.
+fn key_paths_in_use(db: &Db) -> Vec<std::path::PathBuf> {
+    let Ok(conn) = db.0.lock() else { return Vec::new() };
+    let Ok(mut stmt) = conn.prepare("SELECT key_path FROM hosts WHERE key_path IS NOT NULL") else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) else {
+        return Vec::new();
+    };
+    rows.flatten().map(|p| expand_home(&p)).collect()
+}
+
+/// Every private key in `~/.ssh`, with what the Keys screen shows about it.
+///
+/// Also feeds the server form's "From SSH Keys" picker, which uses `name`,
+/// `path` and `kind` — one scan serves both so the two can never disagree about
+/// what is on the machine.
 #[tauri::command]
-pub fn list_ssh_keys() -> Result<Vec<KeyFile>> {
+pub async fn list_ssh_keys(db: State<'_, Db>) -> Result<Vec<KeyFile>> {
     let Some(dir) = dirs::home_dir().map(|h| h.join(".ssh")) else {
         return Ok(Vec::new());
     };
@@ -70,15 +148,34 @@ pub fn list_ssh_keys() -> Result<Vec<KeyFile>> {
         return Ok(Vec::new());
     };
 
+    let in_agent = agent_fingerprints().await;
+    let in_use = key_paths_in_use(&db);
+
     let mut keys: Vec<KeyFile> = entries
         .flatten()
         .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
         .filter(|e| is_private_key(&e.path()))
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;
+            let facts = read_pub(&e.path());
+            let added_at = e
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64);
+
+            let full = e.path();
             Some(KeyFile {
                 path: format!("~/.ssh/{name}"),
-                kind: kind_from_pub(&e.path()),
+                used_by: in_use.iter().filter(|p| **p == full).count(),
+                in_agent: facts
+                    .as_ref()
+                    .is_some_and(|f| in_agent.contains(&f.fingerprint)),
+                weak: facts.as_ref().is_some_and(|f| f.weak),
+                kind: facts.as_ref().map(|f| f.kind.clone()),
+                fingerprint: facts.map(|f| f.fingerprint),
+                added_at,
                 name,
             })
         })
@@ -86,6 +183,26 @@ pub fn list_ssh_keys() -> Result<Vec<KeyFile>> {
 
     keys.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(keys)
+}
+
+/// The public half of one key, for "Copy pub".
+///
+/// Only ever the `.pub` file — the path is rebuilt from the scan's own naming
+/// rather than trusted from the caller, so this cannot be pointed at an
+/// arbitrary file, and it can never return private key material.
+#[tauri::command]
+pub fn read_public_key(name: String) -> Result<String> {
+    let Some(dir) = dirs::home_dir().map(|h| h.join(".ssh")) else {
+        return Err(Error::Invalid("no home directory".into()));
+    };
+    // A name is a single filename inside ~/.ssh, never a path.
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err(Error::Invalid(format!("not a key name: {name}")));
+    }
+    let path = dir.join(&name).with_extension("pub");
+    fs::read_to_string(&path)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| Error::Invalid(format!("could not read {}: {e}", path.display())))
 }
 
 #[cfg(test)]
@@ -131,17 +248,39 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
+    /// A real ed25519 public key: type, fingerprint and strength all come from
+    /// this one parse.
     #[test]
-    fn reads_the_algorithm_from_the_public_half() {
-        let dir = std::env::temp_dir().join("portway-keys-kind");
+    fn reads_type_and_fingerprint_from_the_public_half() {
+        let dir = std::env::temp_dir().join("portway-keys-pub");
         fs::create_dir_all(&dir).unwrap();
         let key = write(&dir, "id_ed25519", "-----BEGIN OPENSSH PRIVATE KEY-----\n");
-        write(&dir, "id_ed25519.pub", "ssh-ed25519 AAAAC3Nz user@host\n");
-        assert_eq!(kind_from_pub(&key).as_deref(), Some("ed25519"));
+        write(
+            &dir,
+            "id_ed25519.pub",
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIzOEZbrfnNMDCVWQ2/PtP1D3AoDGfL5vsPTGvbRQZDL portway\n",
+        );
+        let facts = read_pub(&key).expect("parses");
+        assert_eq!(facts.kind, "ed25519");
+        assert!(facts.fingerprint.starts_with("SHA256:"));
+        assert!(!facts.weak);
 
-        // A key with no .pub beside it is listed, just without a type.
+        // No `.pub` beside it: listed, but with both columns unknown rather
+        // than filled in from the private key.
         let bare = write(&dir, "id_bare", "-----BEGIN OPENSSH PRIVATE KEY-----\n");
-        assert_eq!(kind_from_pub(&bare), None);
+        assert!(read_pub(&bare).is_none());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A `.pub` that is present but corrupt must degrade the same way a missing
+    /// one does, not take the whole listing down.
+    #[test]
+    fn survives_an_unparseable_public_half() {
+        let dir = std::env::temp_dir().join("portway-keys-bad");
+        fs::create_dir_all(&dir).unwrap();
+        let key = write(&dir, "id_broken", "-----BEGIN OPENSSH PRIVATE KEY-----\n");
+        write(&dir, "id_broken.pub", "not a key at all\n");
+        assert!(read_pub(&key).is_none());
         fs::remove_dir_all(&dir).ok();
     }
 }

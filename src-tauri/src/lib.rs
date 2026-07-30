@@ -32,6 +32,7 @@ pub fn run() {
             let conn = db::open(&path)?;
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(ssh::Sessions::default());
+            app.manage(sftp::Editing::default());
 
             // The window is created hidden and the frontend reveals it once it
             // has painted, so a cold start never shows a blank rectangle. This
@@ -68,6 +69,7 @@ pub fn run() {
             commands::sftp_rename,
             commands::sftp_chmod,
             commands::sftp_chown,
+            commands::sftp_edit,
             commands::host_log,
         ])
         .run(tauri::generate_context!())

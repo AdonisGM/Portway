@@ -239,6 +239,18 @@ plus search/filter/accent for the parts that are live.
   extension, so a server too old to send one costs a second and then correctly falls back to
   SHA-1. Non-RSA keys are unaffected: `PrivateKeyWithHashAlg::new` drops the hash algorithm for
   anything that is not RSA.
+- **Editing hands the file to a local application rather than embedding an editor.** A bundled
+  editor is several megabytes of somebody else's preferences, needs web workers the CSP would
+  have to be widened for, and would still be the wrong editor. Instead the file is downloaded to
+  `~/.portway/edit/<session>/`, opened with the OS's registered application (or one chosen from
+  a picker), and *watched*: the backend polls the scratch copy's mtime and uploads it when it
+  moves. Polling rather than a filesystem watcher, because editors save by writing a temp file
+  and renaming it over the original at least as often as they write in place, and a stat does
+  not care which happened.
+- **The 5MB edit limit is enforced in Rust, not the dialog.** The dialog is the courtesy; the
+  backend check is what stops a mis-click reading a gigabyte over the wire. The frontend passes
+  `confirmedLarge` only after the user has answered, so the guard cannot be reached by accident
+  and cannot be argued with by a caller that forgets to ask.
 - **The native context menu is off everywhere** (`App.tsx`), because a desktop app that opens
   the webview's "Reload / Inspect Element" menu reads as a web page in a frame. The terminal was
   the one candidate for an exception — some terminals paste on right-click — but xterm does not

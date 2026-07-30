@@ -157,6 +157,21 @@ export const sftpChown = (
   recursive: boolean,
 ) => invoke<number>('sftp_chown', { sessionId, path, uid, gid, recursive })
 
+/** Anything above this asks first — see `sftp.rs::LARGE_FILE`. */
+export const LARGE_FILE = 5 * 1024 * 1024
+
+/**
+ * Opens a remote file in a local application and keeps it in sync: the file is
+ * downloaded to a scratch copy, handed to the app, and written back whenever
+ * that app saves. Returns the local path.
+ */
+export const sftpEdit = (
+  sessionId: string,
+  remote: string,
+  opener: string | null,
+  confirmedLarge = false,
+) => invoke<string>('sftp_edit', { sessionId, remote, opener, confirmedLarge })
+
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })
 

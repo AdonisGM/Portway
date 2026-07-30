@@ -118,6 +118,22 @@ pub async fn sftp_chown(
     sftp::chown(&app, &session_id, &path, uid, gid, recursive).await
 }
 
+/// Downloads a file to a scratch copy, opens it in a local application and
+/// watches it: saving there writes back to the server.
+///
+/// `opener` is a chosen application, or `None` for whatever the OS has
+/// registered. `confirmed_large` is the user having seen the size warning.
+#[tauri::command]
+pub async fn sftp_edit(
+    app: AppHandle,
+    session_id: String,
+    remote: String,
+    opener: Option<String>,
+    confirmed_large: bool,
+) -> Result<String> {
+    sftp::edit(&app, &session_id, &remote, opener, confirmed_large).await
+}
+
 /// The audit trail for one host, newest first.
 #[tauri::command]
 pub fn host_log(db: State<'_, Db>, host_id: i64, limit: Option<i64>) -> Result<Vec<LogEntry>> {

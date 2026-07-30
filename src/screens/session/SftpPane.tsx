@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RemoteFile } from '@/lib/api'
-import { message, sftpChmod, sftpChown, sftpList, sftpRename } from '@/lib/api'
+import { LARGE_FILE, message, sftpChmod, sftpChown, sftpList, sftpRename } from '@/lib/api'
 import { formatMtime, formatSize } from '@/lib/bytes'
 import type { Session } from '@/data/types'
 import { Chip } from '@/components/ui/Chip'
@@ -12,6 +12,9 @@ import { ColumnPicker } from './ColumnPicker'
 import { useDropUpload } from './useDropUpload'
 import { ContextMenu, MenuItem, MenuSeparator, type MenuPoint } from '@/components/ui/ContextMenu'
 import { OwnerDialog, PermissionsDialog, RenameDialog } from './FileDialogs'
+import { useEditing } from './useEditing'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { formatSize as size } from '@/lib/bytes'
 
 /**
  * Real SFTP browsing over the session's existing SSH connection, with a
@@ -59,6 +62,9 @@ export function SftpPane({ session, width, resizing }: Props) {
   // replaces the table. A failed rename or chmod must leave the listing where
   // it is — losing your place is a worse outcome than the failure itself.
   const [opError, setOpError] = useState<string | null>(null)
+  // Held separately from `dialog` because it is a question about a file rather
+  // than a change to one: answering it opens the editor, cancelling does nothing.
+  const [confirmLarge, setConfirmLarge] = useState<RemoteFile | null>(null)
 
   const load = useCallback(
     async (target: string, system = false) => {
@@ -126,6 +132,22 @@ export function SftpPane({ session, width, resizing }: Props) {
     setActing(menu?.file ?? null)
     setDialog(kind)
     setMenu(null)
+  }
+
+  const editing = useEditing(session.id, () => void load(path))
+
+  /**
+   * Opening for edit. Files over 5MB ask first: "edit" means handing the file
+   * to a text editor, and a 200MB log opened by accident freezes whichever one
+   * the user has.
+   */
+  const openFile = (file: RemoteFile, choose: boolean) => {
+    setMenu(null)
+    if ((file.size ?? 0) > LARGE_FILE && !choose) {
+      setConfirmLarge(file)
+      return
+    }
+    void editing.edit(file, pathOf(file), choose)
   }
 
   const RENDERERS: Record<SftpColumnId, Column<RemoteFile>> = {
@@ -238,16 +260,17 @@ export function SftpPane({ session, width, resizing }: Props) {
 
       {/* Upload and file-operation failures share one dismissible line: both
           are things that went wrong *to* the listing, not instead of it. */}
-      {drop.error ?? opError ? (
+      {drop.error ?? opError ?? editing.error ? (
         <button
           type="button"
           onClick={() => {
             drop.clearError()
             setOpError(null)
+            editing.clearError()
           }}
           className="flex-none border-b border-w06 px-3 py-2 text-left font-mono text-mono/cmd break-words text-warn"
         >
-          ! {drop.error ?? opError}
+          ! {drop.error ?? opError ?? editing.error}
         </button>
       ) : null}
 
@@ -281,7 +304,14 @@ export function SftpPane({ session, width, resizing }: Props) {
           }}
         />
       )}
-      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={130}>
+      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 210 : 130}>
+        {menu?.file.kind === 'file' ? (
+          <>
+            <MenuItem onClick={() => menu && openFile(menu.file, false)}>Open</MenuItem>
+            <MenuItem onClick={() => menu && openFile(menu.file, true)}>Open with…</MenuItem>
+            <MenuSeparator />
+          </>
+        ) : null}
         <MenuItem onClick={() => openDialog('rename')}>Rename…</MenuItem>
         <MenuItem onClick={() => openDialog('mode')}>Permissions…</MenuItem>
         <MenuItem onClick={() => openDialog('owner')}>Owner…</MenuItem>
@@ -295,6 +325,50 @@ export function SftpPane({ session, width, resizing }: Props) {
           Copy path
         </MenuItem>
       </ContextMenu>
+
+      {/* What is open elsewhere, and whether the last save landed. Editing is
+          invisible otherwise: the file is in another app and the write-back
+          happens without anyone pressing anything here. */}
+      {editing.open.length > 0 ? (
+        <div className="flex-none border-t border-w06 px-3 py-2 font-mono text-mono text-faint">
+          {editing.saved ? (
+            <span className="text-accent">
+              saved {editing.saved.remote.split('/').pop()} · {size(editing.saved.bytes)}
+            </span>
+          ) : (
+            <>
+              editing {editing.open.length}{' '}
+              {editing.open.length === 1 ? 'file' : 'files'} · saves upload
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {confirmLarge ? (
+        <ConfirmDialog
+          open
+          title="Large file"
+          confirmVariant="accent"
+          confirmLabel="Open anyway"
+          onCancel={() => setConfirmLarge(null)}
+          onConfirm={() => {
+            const file = confirmLarge
+            setConfirmLarge(null)
+            void editing.edit(file, pathOf(file), false)
+          }}
+        >
+          <div className="flex flex-col gap-2">
+            <span>
+              <span className="font-mono text-cell text-fg">{confirmLarge.name}</span> is{' '}
+              {size(confirmLarge.size)} — over the 5 MB edit limit.
+            </span>
+            <span className="text-muted">
+              It is downloaded in full and handed to a local application, which may take a
+              moment to open it.
+            </span>
+          </div>
+        </ConfirmDialog>
+      ) : null}
 
       {dialog === 'rename' && acting ? (
         <RenameDialog

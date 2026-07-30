@@ -11,6 +11,12 @@ use crate::error::Result;
 /// pool.
 pub struct Db(pub Mutex<Connection>);
 
+/// Everything Portway keeps on this machine: the database, and the scratch
+/// copies of files opened for editing.
+pub fn app_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(".portway")
+}
+
 /// `~/.portway/portway.db`, alongside the `config.toml` the design refers to.
 pub fn database_path(home: PathBuf) -> PathBuf {
     home.join(".portway").join("portway.db")

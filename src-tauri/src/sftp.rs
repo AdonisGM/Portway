@@ -1,7 +1,10 @@
+use std::collections::HashSet;
+use std::sync::Mutex;
+
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audit::{self, Kind, Origin};
 use crate::db::Db;
@@ -393,4 +396,202 @@ pub async fn chown(
         }
     }
     Ok(changed)
+}
+
+/// Files opened for editing, so re-opening one does not start a second watcher
+/// against the same copy.
+#[derive(Default)]
+pub struct Editing(pub Mutex<HashSet<String>>);
+
+/// A file the user is editing has been saved and pushed back up.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedEvent {
+    session_id: String,
+    remote: String,
+    bytes: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveFailedEvent {
+    session_id: String,
+    remote: String,
+    error: String,
+}
+
+/// Anything larger than this needs the user to have said so. It is not about
+/// what the transfer can carry — it is that "edit" implies opening the thing in
+/// a text editor, and a 200MB log opened by accident freezes whatever opens it.
+pub const LARGE_FILE: u64 = 5 * 1024 * 1024;
+
+/// Downloads a file to a scratch copy, opens it in a local application, and
+/// watches it so that saving in that application writes back to the server.
+///
+/// This is the alternative to embedding an editor: the user already has one
+/// they like, with their own keybindings and language support, and a few
+/// megabytes of bundled editor would still be the wrong one. The cost is that
+/// "save" has to be noticed rather than handled, which is what the watcher does.
+pub async fn edit(
+    app: &AppHandle,
+    session_id: &str,
+    remote: &str,
+    opener: Option<String>,
+    confirmed_large: bool,
+) -> Result<String> {
+    let (sftp, host_id) = open(app, session_id).await?;
+
+    let size = sftp
+        .metadata(remote)
+        .await
+        .map_err(|e| Error::Ssh(format!("no such file {remote}: {}", tidy(e))))?
+        .size
+        .unwrap_or(0);
+    // Enforced here rather than only in the dialog: the dialog is a courtesy,
+    // this is what stops a mis-click reading a gigabyte over the wire.
+    if size > LARGE_FILE && !confirmed_large {
+        return Err(Error::Invalid(format!(
+            "{remote} is {size} bytes — larger than the {LARGE_FILE} byte edit limit"
+        )));
+    }
+
+    let name = remote.rsplit('/').next().unwrap_or("file");
+    let dir = crate::db::app_dir().join("edit").join(session_id);
+    tokio::fs::create_dir_all(&dir).await?;
+    let local = dir.join(name);
+
+    let bytes = get_file(&sftp, remote, &local).await?;
+    log(
+        app,
+        host_id,
+        session_id,
+        Origin::User,
+        &format!("sftp edit {remote} ({bytes} bytes)"),
+    );
+
+    launch(&local, opener.as_deref())?;
+
+    // One watcher per remote path. Opening the same file twice should hand it
+    // back to the editor already holding it, not race two uploads.
+    let key = format!("{session_id}\u{0}{remote}");
+    {
+        let editing = app.state::<Editing>();
+        let mut open_files = editing.0.lock().unwrap();
+        if !open_files.insert(key.clone()) {
+            return Ok(local.to_string_lossy().into_owned());
+        }
+    }
+    watch(app.clone(), session_id.to_string(), remote.to_string(), local.clone(), key);
+
+    Ok(local.to_string_lossy().into_owned())
+}
+
+/// Hands the scratch copy to a local application.
+///
+/// `open` on macOS and `cmd /c start` on Windows are the shells' own "use
+/// whatever is registered for this" — the same thing double-clicking does, so
+/// the user's existing choice of editor is respected without asking.
+fn launch(local: &std::path::Path, opener: Option<&str>) -> Result<()> {
+    let mut command = if cfg!(target_os = "macos") {
+        let mut c = std::process::Command::new("open");
+        if let Some(app_path) = opener {
+            c.arg("-a").arg(app_path);
+        }
+        c.arg(local);
+        c
+    } else if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("cmd");
+        c.arg("/C").arg("start").arg("");
+        if let Some(app_path) = opener {
+            c.arg(app_path);
+        }
+        c.arg(local);
+        c
+    } else {
+        let mut c = std::process::Command::new(opener.unwrap_or("xdg-open"));
+        c.arg(local);
+        c
+    };
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| Error::Invalid(format!("could not open {}: {e}", local.display())))
+}
+
+/// Polls the scratch copy's mtime and uploads it back when it moves.
+///
+/// Polling rather than a filesystem watcher: editors save by writing a new file
+/// and renaming it over the old one at least as often as they write in place,
+/// and a rename fires events a naive watcher misses while a stat does not care
+/// which happened. One second is under the threshold where a save feels
+/// unacknowledged.
+fn watch(app: AppHandle, session_id: String, remote: String, local: std::path::PathBuf, key: String) {
+    tokio::spawn(async move {
+        let mut last = tokio::fs::metadata(&local).await.ok().and_then(|m| m.modified().ok());
+
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+            // The session going away is what ends the watch — there is nothing
+            // to upload to any more.
+            if ssh::session(&app, &session_id).is_err() {
+                break;
+            }
+            let Ok(meta) = tokio::fs::metadata(&local).await else { continue };
+            let Ok(modified) = meta.modified() else { continue };
+            if Some(modified) == last {
+                continue;
+            }
+            last = Some(modified);
+
+            match upload(&app, &session_id, &local.to_string_lossy(), &remote).await {
+                Ok(bytes) => {
+                    let _ = app.emit(
+                        "sftp://saved",
+                        SavedEvent { session_id: session_id.clone(), remote: remote.clone(), bytes },
+                    );
+                }
+                Err(e) => {
+                    let _ = app.emit(
+                        "sftp://save-failed",
+                        SaveFailedEvent {
+                            session_id: session_id.clone(),
+                            remote: remote.clone(),
+                            error: e.to_string(),
+                        },
+                    );
+                }
+            }
+        }
+
+        app.state::<Editing>().0.lock().unwrap().remove(&key);
+    });
+}
+
+/// Downloads to a local path, shared by `download` and `edit`.
+async fn get_file(
+    sftp: &SftpSession,
+    remote: &str,
+    local: &std::path::Path,
+) -> Result<u64> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut source = sftp
+        .open(remote)
+        .await
+        .map_err(|e| Error::Ssh(format!("could not read {remote}: {}", tidy(e))))?;
+    let mut target = tokio::fs::File::create(local).await?;
+
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut total = 0u64;
+    loop {
+        let read = source.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        target.write_all(&buffer[..read]).await?;
+        total += read as u64;
+    }
+    target.flush().await?;
+    Ok(total)
 }

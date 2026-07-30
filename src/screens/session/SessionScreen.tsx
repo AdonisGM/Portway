@@ -1,10 +1,14 @@
+import { useRef } from 'react'
 import { Badge, StatusDot } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
 import { TerminalPane } from './TerminalPane'
 import { SftpPane } from './SftpPane'
+import { useSplit } from './useSplit'
 
 /** Terminal on the left, SFTP browser on the right, one tab per session. */
 export function SessionScreen() {
+  const body = useRef<HTMLDivElement>(null)
+  const split = useSplit(body)
   const sessions = useApp((s) => s.sessions)
   const hosts = useApp((s) => s.hosts)
   const tab = useApp((s) => s.tab)
@@ -73,11 +77,40 @@ export function SessionScreen() {
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      <div ref={body} className="flex min-h-0 flex-1">
         {/* Keyed on the session so switching tabs gives each its own terminal
             instance rather than replaying one pane's scrollback into another. */}
         <TerminalPane key={active.id} session={active} />
-        <SftpPane key={`${active.id}-sftp`} session={active} />
+
+        {/* The divider. Four pixels wide with a negative right margin, so it
+            overlaps the SFTP pane's border and stays a hairline to look at
+            while being a real target to hit. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the SFTP pane"
+          tabIndex={0}
+          onPointerDown={split.onPointerDown}
+          onPointerMove={split.onPointerMove}
+          onPointerUp={split.onPointerUp}
+          onKeyDown={split.onKeyDown}
+          // Three states, loudest last: accent while dragging, a quieter accent
+          // once focused — WebKit treats the explicit focus() as focus-visible,
+          // so a full-strength bar would linger after every click — and a plain
+          // overlay on hover. `outline-none` because global.css only clears the
+          // native ring for input/select/button, and a focusable div otherwise
+          // gets WebKit's blue one straight through the app's own palette.
+          className={`z-10 -mr-1 w-1 flex-none cursor-col-resize outline-none transition-colors focus-visible:bg-accent-27 ${
+            split.dragging ? 'bg-accent' : 'hover:bg-w15'
+          }`}
+        />
+
+        <SftpPane
+          key={`${active.id}-sftp`}
+          session={active}
+          width={split.width}
+          resizing={split.dragging}
+        />
       </div>
     </div>
   )

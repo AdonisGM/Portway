@@ -13,7 +13,15 @@ import { DataTable, type Column } from '@/components/layout/DataTable'
  * `..` is synthesised rather than taken from the server listing so it is
  * always first and always present, which is what the design draws.
  */
-export function SftpPane({ session }: { session: Session }) {
+interface Props {
+  session: Session
+  /** Live width from the divider — dynamic, so it cannot be a token. */
+  width: number
+  /** True mid-drag: text selection would otherwise fight the pointer. */
+  resizing: boolean
+}
+
+export function SftpPane({ session, width, resizing }: Props) {
   const [path, setPath] = useState('')
   const [files, setFiles] = useState<RemoteFile[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -83,7 +91,12 @@ export function SftpPane({ session }: { session: Session }) {
   ]
 
   return (
-    <div className="flex w-sftp flex-none flex-col border-l border-w08 bg-panel">
+    <div
+      style={{ width }}
+      className={`flex flex-none flex-col border-l border-w08 bg-panel ${
+        resizing ? 'select-none' : ''
+      }`}
+    >
       <div className="flex flex-none items-center gap-2 border-b border-w06 px-3 py-2 font-mono text-mono text-faint">
         <StatusDot tone={session.status === 'open' ? 'warn' : 'faint'} size="sm" />
         SFTP

@@ -25,7 +25,7 @@
   /* Structural widths from the handoff, so they read by name in markup. */
   --spacing-nav: 214px; /* left nav          */
   --spacing-drawer: 348px; /* servers detail drawer */
-  --spacing-sftp: 470px; /* session SFTP pane    */
+  --spacing-sftp: 470px; /* session SFTP pane — starting width; the divider is draggable */
   --spacing-summary: 300px; /* form summary column  */
   --spacing-titlebar: 32px; /* custom window chrome */
   --spacing-lights: 86px; /* macOS traffic-light gutter — see TitleBar */

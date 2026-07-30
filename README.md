@@ -239,6 +239,14 @@ plus search/filter/accent for the parts that are live.
   extension, so a server too old to send one costs a second and then correctly falls back to
   SHA-1. Non-RSA keys are unaffected: `PrivateKeyWithHashAlg::new` drops the hash algorithm for
   anything that is not RSA.
+- **The session split is dragged, clamped and remembered.** The handoff fixes the SFTP pane at
+  470px and then asks for exactly this — "make this divider draggable in production; remember
+  the split" — so 470 is a starting width, not the width, and it stays in `@theme` because that
+  is still where the design value belongs. Both sides have a floor for a reason worth keeping:
+  the terminal's is a *column* count, and because the PTY is told its real size, dragging past
+  it would reflow the remote shell's own output and outlive the drag. The width lives in
+  `localStorage` rather than the database — it is a property of this window on this machine,
+  not of the hosts.
 - **One scan feeds three places.** `list_ssh_keys` is read by the Keys screen, the rail's
   count and agent line, and the server form — both its "From SSH Keys" picker and the list of
   agent-loaded keys under the Agent auth method. They were separate mocks and disagreed; a

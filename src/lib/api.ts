@@ -85,6 +85,13 @@ export interface RemoteFile {
   /** Epoch seconds, or null when the server does not report one. */
   modified: number | null
   kind: 'dir' | 'file'
+  /** Numeric only — SFTP carries owner *names* in a field russh-sftp drops. */
+  uid: number | null
+  gid: number | null
+  /** `755`. */
+  mode: string | null
+  /** `rwxr-xr-x` — the same bits, read rather than typed. */
+  modeText: string | null
 }
 
 export interface Listing {
@@ -129,6 +136,10 @@ export const sftpDownload = (sessionId: string, remote: string, local: string) =
 
 export const sftpUpload = (sessionId: string, local: string, remote: string) =>
   invoke<number>('sftp_upload', { sessionId, local, remote })
+
+/** A dropped path — file or whole directory — into the folder being shown. */
+export const sftpUploadPath = (sessionId: string, local: string, remoteDir: string) =>
+  invoke<number>('sftp_upload_path', { sessionId, local, remoteDir })
 
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })

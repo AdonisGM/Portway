@@ -71,6 +71,18 @@ pub async fn sftp_upload(
     sftp::upload(&app, &session_id, &local, &remote).await
 }
 
+/// A dropped path — one file, or a directory and everything under it — into the
+/// folder the pane is showing.
+#[tauri::command]
+pub async fn sftp_upload_path(
+    app: AppHandle,
+    session_id: String,
+    local: String,
+    remote_dir: String,
+) -> Result<u64> {
+    sftp::upload_path(&app, &session_id, &local, &remote_dir).await
+}
+
 /// The audit trail for one host, newest first.
 #[tauri::command]
 pub fn host_log(db: State<'_, Db>, host_id: i64, limit: Option<i64>) -> Result<Vec<LogEntry>> {

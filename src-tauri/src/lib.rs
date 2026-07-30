@@ -64,6 +64,7 @@ pub fn run() {
             commands::sftp_list,
             commands::sftp_download,
             commands::sftp_upload,
+            commands::sftp_upload_path,
             commands::host_log,
         ])
         .run(tauri::generate_context!())

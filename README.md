@@ -239,6 +239,22 @@ plus search/filter/accent for the parts that are live.
   extension, so a server too old to send one costs a second and then correctly falls back to
   SHA-1. Non-RSA keys are unaffected: `PrivateKeyWithHashAlg::new` drops the hash algorithm for
   anything that is not RSA.
+- **A dropped file cannot come from an HTML5 `drop` handler.** The webview hands JavaScript a
+  `File` with its path withheld — the same wall "Choose file…" hit — so OS drops arrive through
+  `getCurrentWebview().onDragDropEvent()` with real paths instead. That event is *window*-wide,
+  not per-element, so the SFTP pane hit-tests the drop position against its own rectangle;
+  without that, dropping on the terminal would upload. The positions are physical pixels and
+  `getBoundingClientRect` is CSS pixels, so they are divided by `devicePixelRatio` — on a 2×
+  display, skipping that makes the pane appear to start halfway across the window.
+- **The SFTP table's grid template and its column list are derived from one array.** They were
+  two independent strings; a hidden column has to leave both in lockstep, and missing one puts
+  every header over the wrong cell — which reads as a data bug, not a layout one. `Name` has no
+  toggle, because a file browser with the filenames off is not a state worth reaching.
+- **Owner is numeric, and that is the ceiling.** SFTP v3 carries owner and group *names* only in
+  the `longname` field of a readdir reply, and russh-sftp's client drops it before the caller
+  sees it. Names would mean reading `/etc/passwd` and `/etc/group` off the host — two reads the
+  user never asked for, plus a cache and a fallback for servers that refuse them. `1000:1000` is
+  always correct; names are a follow-up, not a missing piece of this one.
 - **The session split is dragged, clamped and remembered.** The handoff fixes the SFTP pane at
   470px and then asks for exactly this — "make this divider draggable in production; remember
   the split" — so 470 is a starting width, not the width, and it stays in `@theme` because that

@@ -208,6 +208,15 @@ plus search/filter/accent for the parts that are live.
   claims mousedown for anything inside one, turning button clicks into window drags.
 - **Window IPC needs `src-tauri/capabilities/default.json`.** Tauri v2 denies every command not
   listed there; without it minimize/maximize/close silently do nothing.
+- **The CSP needs `style-src-elem 'unsafe-inline'`, or the terminal loses every colour in
+  release builds and only in release builds.** xterm's DOM renderer paints colour by creating
+  a `<style>` element and writing `.xterm-fg-N { color: … }` into it. Tauri rewrites the CSP
+  at build time to add a nonce to `style-src` — and by the CSP spec a nonce *disables*
+  `'unsafe-inline'`, so that element is blocked. What you get is a terminal that parses escape
+  sequences correctly (underline works, the codes are not echoed) and renders every one of
+  them in the plain foreground. `npm run tauri dev` applies no CSP, so it looks perfect right
+  up until you ship. `style-src-elem` is consulted before `style-src` for `<style>` elements,
+  which is what buys the exception back without widening anything else.
 - **The terminal's 16 ANSI colours must be named in the xterm theme.** With only `background`
   and `foreground` given, `@xterm/xterm` 6 renders every colour a program emits as the plain
   foreground: escape sequences are parsed — underline works, the codes are not echoed — but

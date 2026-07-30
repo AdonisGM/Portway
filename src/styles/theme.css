@@ -55,30 +55,33 @@
      it constantly — ls, git, systemctl, every prompt — and xterm has to be
      told what the palette is.
 
-     Chosen to be unmistakable as hues (red reads as red) while staying at the
-     app's low glare: full-strength ANSI red on a #08090a background is a
-     different design language to everything above. `red` and `yellow` are the
-     existing danger and warn tokens, so a failed unit in the terminal is the
-     same red as a failed field in a form; `white` is the terminal foreground
-     and `brightWhite` the app foreground, so unstyled output does not shift
-     when a program turns bold on. `black` is lifted well off the background
-     because true black is invisible here — a common way for prompts that draw
-     boxes in black to disappear entirely. */
-  --color-ansi-black: #3b4043;
-  --color-ansi-red: #d9776a;
-  --color-ansi-green: #7fbf8a;
-  --color-ansi-yellow: #c9a15f;
-  --color-ansi-blue: #6f9fd8;
-  --color-ansi-magenta: #b48ac4;
-  --color-ansi-cyan: #5ec8b0;
+     These were first set to the app's own muted status colours — danger for
+     red, warn for yellow — on the theory that a failure in the terminal should
+     match a failure in a form. That was wrong twice over. A terminal palette is
+     read at 13px in short runs against a lifted background, where the UI's low
+     chroma turns to grey; and the two jobs are different, since a status dot
+     marks one thing on a quiet surface while `git diff` needs two colours to
+     separate at a glance. They now carry real chroma.
+
+     `white` stays the terminal foreground and `brightWhite` the app foreground,
+     so unstyled output does not shift when a program turns bold on. `black` is
+     lifted well off the background because true black is invisible here — a
+     common way for prompts that draw boxes in it to disappear entirely. */
+  --color-ansi-black: #484f58;
+  --color-ansi-red: #e5534b;
+  --color-ansi-green: #3fb950;
+  --color-ansi-yellow: #d29922;
+  --color-ansi-blue: #58a6ff;
+  --color-ansi-magenta: #bc8cff;
+  --color-ansi-cyan: #39c5cf;
   --color-ansi-white: #ced4ce;
-  --color-ansi-bright-black: #939aa3;
-  --color-ansi-bright-red: #e89184;
-  --color-ansi-bright-green: #98d3a2;
-  --color-ansi-bright-yellow: #dbb877;
-  --color-ansi-bright-blue: #8ab6e6;
-  --color-ansi-bright-magenta: #c9a4d8;
-  --color-ansi-bright-cyan: #7fd9c4;
+  --color-ansi-bright-black: #6e7681;
+  --color-ansi-bright-red: #ff7b72;
+  --color-ansi-bright-green: #56d364;
+  --color-ansi-bright-yellow: #e3b341;
+  --color-ansi-bright-blue: #79c0ff;
+  --color-ansi-bright-magenta: #d2a8ff;
+  --color-ansi-bright-cyan: #56d4dd;
   --color-ansi-bright-white: #f1f2f4;
 
   /* -- white overlays, named by the README's alpha -------------------------

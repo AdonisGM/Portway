@@ -50,6 +50,37 @@
   --color-term-fg: #a8aea8;
   --color-term-dim: #4f545a;
 
+  /* -- the terminal's 16 ANSI colours --------------------------------------
+     Not in the handoff, which never drew coloured output, but a shell emits
+     it constantly — ls, git, systemctl, every prompt — and xterm has to be
+     told what the palette is.
+
+     Chosen to be unmistakable as hues (red reads as red) while staying at the
+     app's low glare: full-strength ANSI red on a #08090a background is a
+     different design language to everything above. `red` and `yellow` are the
+     existing danger and warn tokens, so a failed unit in the terminal is the
+     same red as a failed field in a form; `white` is the terminal foreground
+     and `brightWhite` the app foreground, so unstyled output does not shift
+     when a program turns bold on. `black` is lifted well off the background
+     because true black is invisible here — a common way for prompts that draw
+     boxes in black to disappear entirely. */
+  --color-ansi-black: #3b4043;
+  --color-ansi-red: #d9776a;
+  --color-ansi-green: #7fbf8a;
+  --color-ansi-yellow: #c9a15f;
+  --color-ansi-blue: #6f9fd8;
+  --color-ansi-magenta: #b48ac4;
+  --color-ansi-cyan: #5ec8b0;
+  --color-ansi-white: #a8aea8;
+  --color-ansi-bright-black: #6b7078;
+  --color-ansi-bright-red: #e89184;
+  --color-ansi-bright-green: #98d3a2;
+  --color-ansi-bright-yellow: #dbb877;
+  --color-ansi-bright-blue: #8ab6e6;
+  --color-ansi-bright-magenta: #c9a4d8;
+  --color-ansi-bright-cyan: #7fd9c4;
+  --color-ansi-bright-white: #e8e8e6;
+
   /* -- white overlays, named by the README's alpha -------------------------
      bg-w05, border-w06, hover:bg-w15, … */
   --color-w03: #ffffff08; /* row divider              */

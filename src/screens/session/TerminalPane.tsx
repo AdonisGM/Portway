@@ -54,6 +54,26 @@ export function TerminalPane({ session }: { session: Session }) {
         cursor: token('--color-accent', '#5ec8b0'),
         cursorAccent: token('--color-term', '#08090a'),
         selectionBackground: token('--color-w15', '#ffffff26'),
+        // The palette has to be given explicitly. Left out, every colour a
+        // program emits renders as the plain foreground — `ls` loses its
+        // directories, `git diff` loses its sides, and the pane looks like it
+        // does not support colour at all.
+        black: token('--color-ansi-black', '#3b4043'),
+        red: token('--color-ansi-red', '#d9776a'),
+        green: token('--color-ansi-green', '#7fbf8a'),
+        yellow: token('--color-ansi-yellow', '#c9a15f'),
+        blue: token('--color-ansi-blue', '#6f9fd8'),
+        magenta: token('--color-ansi-magenta', '#b48ac4'),
+        cyan: token('--color-ansi-cyan', '#5ec8b0'),
+        white: token('--color-ansi-white', '#a8aea8'),
+        brightBlack: token('--color-ansi-bright-black', '#6b7078'),
+        brightRed: token('--color-ansi-bright-red', '#e89184'),
+        brightGreen: token('--color-ansi-bright-green', '#98d3a2'),
+        brightYellow: token('--color-ansi-bright-yellow', '#dbb877'),
+        brightBlue: token('--color-ansi-bright-blue', '#8ab6e6'),
+        brightMagenta: token('--color-ansi-bright-magenta', '#c9a4d8'),
+        brightCyan: token('--color-ansi-bright-cyan', '#7fd9c4'),
+        brightWhite: token('--color-ansi-bright-white', '#e8e8e6'),
       },
     })
     const fit = new FitAddon()

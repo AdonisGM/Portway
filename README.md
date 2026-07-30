@@ -198,6 +198,13 @@ plus search/filter/accent for the parts that are live.
   claims mousedown for anything inside one, turning button clicks into window drags.
 - **Window IPC needs `src-tauri/capabilities/default.json`.** Tauri v2 denies every command not
   listed there; without it minimize/maximize/close silently do nothing.
+- **The terminal's 16 ANSI colours must be named in the xterm theme.** With only `background`
+  and `foreground` given, `@xterm/xterm` 6 renders every colour a program emits as the plain
+  foreground: escape sequences are parsed — underline works, the codes are not echoed — but
+  `ls` loses its directories and `git diff` loses its sides, and the pane reads as though it
+  has no colour support at all. The palette lives in `@theme` with everything else; the
+  fallbacks in `TerminalPane` exist only for the plain-browser dev path where the tokens are
+  present anyway.
 - **Never pass `None` as the hash algorithm for a public-key auth.** For an RSA key russh maps
   `None` to `ssh-rsa`, which is RSA over SHA-1, and OpenSSH has refused that by default since
   8.8 — so a perfectly good RSA key gets "the server rejected the key" and the search goes

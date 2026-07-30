@@ -1,0 +1,85 @@
+/* Vendored so the packaged app never reaches for fonts.googleapis.com the way
+   the prototype does. Sans 400/500/600, Mono 400/500 — the weights the
+   handoff's typography section calls for. */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+@import './theme.css';
+
+/* Everything below MUST stay inside `@layer base`. Unlayered rules outperform
+   every layered one, so an unlayered `button { background: none }` silently
+   beats `.bg-accent` and strips the styling off every button in the app. */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-base);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Desktop chrome: no text selection or native drag on the shell, the way a
+     native app behaves. Terminal output and resolved commands opt back in. */
+  * {
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .selectable,
+  input,
+  textarea {
+    user-select: text;
+  }
+
+  input,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    outline: none;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  /* Thin dark scrollbars — the design shows none, so keep them out of the way
+     without hiding them entirely. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-w06);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-w10);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}

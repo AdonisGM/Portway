@@ -1,0 +1,31 @@
+[package]
+name = "portway"
+version = "0.4.1"
+description = "Portway — SSH/SFTP desktop client"
+authors = ["you"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "portway_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+dirs = "6.0.0"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+russh = { version = "0.53", default-features = false, features = ["ring", "flate2"] }
+russh-sftp = "2.3.0"
+serde = { version = "1.0.229", features = ["derive"] }
+tauri = { version = "2", features = [] }
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time", "net"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

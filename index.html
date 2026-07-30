@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portway</title>
+    <!--
+      Deliberately inline. The webview paints this document before it has
+      fetched or parsed the JS bundle, so anything that depends on
+      styles/theme.css arrives too late to cover the gap this is here to fill.
+      Values are copied from the design tokens; the accent is the default,
+      because the picker's choice lives in JS that has not run yet.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0c0d0f;
+      }
+
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #0c0d0f;
+        transition: opacity 180ms ease;
+      }
+
+      #splash.is-hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #splash-brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+
+      #splash-mark {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        background: #5ec8b0;
+        animation: splash-pulse 1.4s ease-in-out infinite;
+      }
+
+      #splash-word {
+        font:
+          600 12.5px system-ui,
+          sans-serif;
+        letter-spacing: 0.02em;
+        color: #e8e8e6;
+      }
+
+      #splash-hint {
+        font:
+          400 11px ui-monospace,
+          monospace;
+        color: #6b7078;
+      }
+
+      /* The only motion in the app; it exists so a slow cold start reads as
+         "working" instead of "hung". */
+      @keyframes splash-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #splash-mark {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- data-tauri-drag-region so the window can still be moved if a cold
+         start ever takes long enough for that to matter. -->
+    <div id="splash" data-tauri-drag-region role="status" aria-label="Starting Portway">
+      <div id="splash-brand" data-tauri-drag-region>
+        <span id="splash-mark"></span>
+        <span id="splash-word">Portway</span>
+      </div>
+      <span id="splash-hint">starting…</span>
+    </div>
+
+    <!--
+      Reveal the window as soon as *this* document has painted, rather than
+      waiting for the React bundle. The window is created hidden, so the
+      alternative is a longer stretch of nothing on screen: measured, the
+      document paints at ~440ms but React mounts at ~885ms.
+
+      Plain (non-module) and placed after the splash markup so it runs at parse
+      time, before the deferred module script. Everything here is best effort —
+      `revealApp()` in the bundle shows the window too, and lib.rs shows it
+      after five seconds regardless, so a failure here only costs latency.
+    -->
+    <script>
+      ;(function () {
+        var deadline = performance.now() + 1500
+
+        function show() {
+          var api = window.__TAURI__
+          if (!api || !api.window) {
+            // Tauri injects its globals at document start, but don't assume
+            // ordering — retry briefly, then give up and let the bundle do it.
+            if (performance.now() < deadline) requestAnimationFrame(show)
+            return
+          }
+          api.window
+            .getCurrentWindow()
+            .show()
+            .then(function () {
+              // Read by lib/splash.ts to work out how much of the splash's
+              // minimum on-screen time has already elapsed.
+              window.__portwayShownAt = performance.now()
+            })
+            .catch(function () {})
+        }
+
+        // Two frames: the first schedules the paint, the second runs after it.
+        requestAnimationFrame(function () {
+          requestAnimationFrame(show)
+        })
+      })()
+    </script>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

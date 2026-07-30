@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><style>
+body{margin:0;background:#f0eee9;font-family:'IBM Plex Sans',system-ui,sans-serif}
+a{color:#2a78d6}a:hover{color:#1b5fae}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px 'IBM Plex Mono',monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'IBM Plex Sans',sans-serif;color:#1a1a1a}
+.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px 'IBM Plex Mono',monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 'IBM Plex Sans',sans-serif;color:rgba(0,0,0,.55)}
+.dv-card{max-width:100%;background:#0c0d0f;border:1px solid rgba(0,0,0,.5);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);overflow:hidden}
+.dv-opt:target .dv-oid{background:#2a78d6;color:#fff}
+.dv-next{margin:22px 0 0;font:12px/1.5 'IBM Plex Sans',sans-serif;color:rgba(0,0,0,.5)}
+.dv-note{margin:0 0 22px;max-width:70ch;font:13px/1.6 'IBM Plex Sans',sans-serif;color:rgba(0,0,0,.62)}
+</style></helmet>
+
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Built out from <a class="dv-oid" href="#1a">1a</a> — table full width, detail slides over</span></div>
+<p class="dv-note">Table không bao giờ co lại: click một row thì panel chi tiết trượt vào từ phải, phủ lên bảng (Esc hoặc × để đóng). Bấm SSH/SFTP mở màn session tab ngang, terminal trái + file browser phải. Nút New server mở form đủ password / private key + passphrase / agent forwarding / jump host. Card dưới đây bấm được thật.</p>
+<div class="dv-opts">
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Interactive — Servers · Session · New server</div>
+<div class="dv-card" style="width:1240px;height:780px;display:flex;color:#e8e8e6;font-family:'IBM Plex Sans',sans-serif">
+
+  <div style="width:194px;flex:none;background:#0a0b0c;border-right:1px solid #ffffff0f;display:flex;flex-direction:column">
+    <div style="padding:16px 16px 14px;display:flex;align-items:center;gap:9px">
+      <div style="width:18px;height:18px;border-radius:4px;background:{{ accent }}"></div>
+      <span style="font:600 12.5px 'IBM Plex Sans';letter-spacing:.02em">Portway</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:1px;padding:4px 8px">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="5">
+        <div onClick="{{ n.onGo }}" style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;font-size:12.5px;cursor:pointer;background:{{ n.bg }};color:{{ n.fg }}" style-hover="background:#ffffff08">
+          {{ n.label }}<span style="font:400 11px 'IBM Plex Mono';color:#6b7078">{{ n.count }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:18px;padding:0 16px 6px;font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078">Groups</div>
+    <div style="display:flex;flex-direction:column;gap:1px;padding:0 8px">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:5px;font-size:12px;color:#a6aab1;cursor:pointer" style-hover="background:#ffffff08">
+          <span style="width:6px;height:6px;border-radius:50%;background:{{ g.color }}"></span>{{ g.name }}
+          <span style="margin-left:auto;font:400 11px 'IBM Plex Mono';color:#6b7078">{{ g.count }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:auto;padding:0 8px 8px">
+      <div style="padding:0 8px 6px;font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078">Sessions</div>
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="2">
+        <div onClick="{{ t.onOpen }}" style="display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:5px;font:400 11.5px 'IBM Plex Mono';color:#a6aab1;cursor:pointer" style-hover="background:#ffffff08;color:#e8e8e6">
+          <span style="width:5px;height:5px;border-radius:50%;background:{{ accent }}"></span>{{ t.name }}
+          <span style="margin-left:auto;font-size:10px;color:#6b7078">{{ t.kind }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="padding:11px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">agent · 3 keys loaded</div>
+  </div>
+
+  <div style="flex:1;min-width:0;position:relative;overflow:hidden">
+
+    <sc-if value="{{ isServers }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
+          <div style="flex:1;display:flex;align-items:center;gap:8px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px">
+            <span style="font:400 12px 'IBM Plex Mono';color:#6b7078">/</span>
+            <span style="font-size:12.5px;color:#83878e">Search host, user, tag…</span>
+          </div>
+          <div style="display:flex;background:#15171a;border:1px solid #ffffff12;border-radius:6px;overflow:hidden;font-size:11.5px">
+            <span style="padding:6px 11px;background:#ffffff12;color:#e8e8e6;cursor:pointer">All</span>
+            <span style="padding:6px 11px;color:#83878e;cursor:pointer" style-hover="color:#e8e8e6">Recent</span>
+            <span style="padding:6px 11px;color:#83878e;cursor:pointer" style-hover="color:#e8e8e6">Favorites</span>
+          </div>
+          <div onClick="{{ goForm }}" style="padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">New server</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:12px 2.1fr 1.5fr 96px 104px 100px 68px 118px;gap:10px;padding:8px 16px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+          <span></span><span>Host</span><span>Address</span><span>User</span><span>Group</span><span>Last used</span><span>Auth</span><span></span>
+        </div>
+        <div style="flex:1;overflow:hidden">
+          <sc-for list="{{ hosts }}" as="s" hint-placeholder-count="11">
+            <div onClick="{{ s.onSelect }}" style="display:grid;grid-template-columns:12px 2.1fr 1.5fr 96px 104px 100px 68px 118px;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid #ffffff08;font-size:12.5px;cursor:pointer;background:{{ s.bg }}" style-hover="background:#ffffff0a">
+              <span style="width:7px;height:7px;border-radius:50%;background:{{ s.color }}"></span>
+              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+              <span style="font:400 12px 'IBM Plex Mono';color:#a6aab1">{{ s.addr }}</span>
+              <span style="font:400 12px 'IBM Plex Mono';color:#a6aab1">{{ s.user }}</span>
+              <span style="color:#a6aab1">{{ s.group }}</span>
+              <span style="color:#83878e;font-size:12px">{{ s.last }}</span>
+              <span style="font:400 11px 'IBM Plex Mono';color:#83878e">{{ s.auth }}</span>
+              <span style="display:flex;gap:5px;justify-content:flex-end">
+                <span onClick="{{ s.onSSH }}" style="padding:3px 9px;border-radius:4px;font-size:11px;color:#e8e8e6;background:#ffffff12" style-hover="background:#ffffff26">SSH</span>
+                <span onClick="{{ s.onSFTP }}" style="padding:3px 9px;border-radius:4px;font-size:11px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff26;color:#e8e8e6">SFTP</span>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078;display:flex;gap:16px">
+          <span>70 hosts · 4 groups</span><span style="margin-left:auto">click row → details · ↵ ssh · ⇧↵ sftp</span>
+        </div>
+      </div>
+
+      <div onClick="{{ closeDrawer }}" style="position:absolute;inset:0;background:#00000059;transition:opacity .18s ease;opacity:{{ scrimOpacity }};pointer-events:{{ scrimEvents }}"></div>
+
+      <div style="position:absolute;top:0;right:0;bottom:0;width:330px;background:#101114;border-left:1px solid #ffffff1a;box-shadow:-18px 0 40px #00000073;display:flex;flex-direction:column;transition:transform .22s cubic-bezier(.32,.72,0,1);transform:{{ drawerTransform }}">
+        <div style="padding:15px 16px 14px;border-bottom:1px solid #ffffff0f">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{ cur.color }}"></span>
+            <span style="font:600 14.5px 'IBM Plex Sans';min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cur.name }}</span>
+            <span onClick="{{ closeDrawer }}" style="margin-left:auto;flex:none;width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#83878e;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1f;color:#e8e8e6">×</span>
+          </div>
+          <div style="margin-top:6px;font:400 12px 'IBM Plex Mono';color:#83878e">{{ cur.user }}@{{ cur.addr }}</div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <div onClick="{{ cur.onSSH }}" style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">SSH</div>
+            <div onClick="{{ cur.onSFTP }}" style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:12.5px;border:1px solid #ffffff1f;color:#e8e8e6;cursor:pointer" style-hover="background:#ffffff0f">SFTP</div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <div onClick="{{ goForm }}" style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Edit</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Duplicate</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Terminal…</div>
+            <div style="flex:none;padding:6px 9px;border-radius:5px;font-size:11.5px;color:#d9776a;cursor:pointer;background:#ffffff0d" style-hover="background:#d9776a26">Del</div>
+          </div>
+        </div>
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:9px;font-size:12px;border-bottom:1px solid #ffffff0f">
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Auth</span><span style="font:400 12px 'IBM Plex Mono';text-align:right">{{ cur.authLong }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Passphrase</span><span style="font:400 12px 'IBM Plex Mono'">{{ cur.passphrase }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Jump host</span><span style="font:400 12px 'IBM Plex Mono'">{{ cur.jump }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Agent forward</span><span style="font:400 12px 'IBM Plex Mono'">{{ cur.agent }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Group</span><span>{{ cur.group }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#6b7078">Last used</span><span>{{ cur.last }}</span></div>
+        </div>
+        <div style="padding:14px 16px;border-bottom:1px solid #ffffff0f">
+          <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Recent activity</div>
+          <div style="display:flex;flex-direction:column;gap:7px;font-size:12px">
+            <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">ssh · 14m</span><span style="color:#6b7078">2 min ago</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">sftp · 3 files</span><span style="color:#6b7078">yesterday</span></div>
+          </div>
+        </div>
+        <div style="padding:14px 16px">
+          <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:8px">Tags</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">{{ cur.env }}</span>
+            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">eu-west</span>
+          </div>
+        </div>
+        <div style="margin-top:auto;padding:12px 16px;border-top:1px solid #ffffff0f;font:400 11px/1.6 'IBM Plex Mono';color:#6b7078;word-break:break-all">$ {{ cur.cmd }}</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSession }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:stretch;border-bottom:1px solid #ffffff0f;background:#0a0b0c">
+          <div onClick="{{ goServers }}" style="flex:none;display:flex;align-items:center;padding:0 13px;font:400 12px 'IBM Plex Mono';color:#83878e;cursor:pointer;border-right:1px solid #ffffff0f" style-hover="color:#e8e8e6">‹ hosts</div>
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+            <div onClick="{{ t.onOpen }}" style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-right:1px solid #ffffff0f;font-size:12px;cursor:pointer;background:{{ t.bg }};color:{{ t.fg }}">
+              <span style="width:6px;height:6px;border-radius:50%;background:{{ accent }}"></span>
+              <span style="font-family:'IBM Plex Mono'">{{ t.name }}</span>
+              <span style="padding:1px 5px;border-radius:3px;font-size:9.5px;letter-spacing:.06em;background:#ffffff14;color:#a6aab1">{{ t.kind }}</span>
+              <span style="color:#6b7078" style-hover="color:#e8e8e6">×</span>
+            </div>
+          </sc-for>
+          <div style="display:flex;align-items:center;padding:0 12px;color:#6b7078;cursor:pointer;font-size:14px" style-hover="color:#e8e8e6">+</div>
+        </div>
+
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#08090a">
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 14px;border-bottom:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">
+              <span style="width:6px;height:6px;border-radius:50%;background:{{ accent }}"></span>TERMINAL · {{ cur.user }}@{{ cur.name }}
+              <span style="margin-left:auto">ed25519 · 14m</span>
+            </div>
+            <div style="flex:1;overflow:hidden;padding:12px 14px;font:400 12px/1.75 'IBM Plex Mono';color:#a8aea8;white-space:pre-wrap">{{ termText }}<span style="display:inline-block;width:7px;height:14px;vertical-align:-2px;background:{{ accent }}"></span></div>
+            <div style="padding:7px 14px;border-top:1px solid #ffffff0f;font:400 10.5px 'IBM Plex Mono';color:#4f545a;display:flex;gap:18px">
+              <span>utf-8</span><span>80×24</span><span style="margin-left:auto">⌘T new tab · ⌘D split</span>
+            </div>
+          </div>
+
+          <div style="width:470px;flex:none;border-left:1px solid #ffffff14;background:#0e0f11;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">
+              <span style="width:6px;height:6px;border-radius:50%;background:#c9a15f"></span>SFTP
+              <span style="margin-left:auto;cursor:pointer" style-hover="color:#e8e8e6">local ⇄ remote</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid #ffffff0f;font:400 11.5px 'IBM Plex Mono';color:#a6aab1">
+              <span style="color:#6b7078;cursor:pointer">↑</span><span style="color:#6b7078">/</span>var<span style="color:#6b7078">/</span>lib<span style="color:#6b7078">/</span>postgresql
+              <span style="margin-left:auto;padding:2px 7px;border-radius:4px;background:#ffffff0d;cursor:pointer;font-size:11px" style-hover="background:#ffffff1f">Upload</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1.7fr 78px 100px;gap:10px;padding:6px 12px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+              <span>Name</span><span style="text-align:right">Size</span><span>Modified</span>
+            </div>
+            <div style="flex:1;overflow:hidden">
+              <sc-for list="{{ files }}" as="f" hint-placeholder-count="9">
+                <div style="display:grid;grid-template-columns:1.7fr 78px 100px;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid #ffffff08;font:400 12px 'IBM Plex Mono';color:#a6aab1;cursor:pointer" style-hover="background:#ffffff0a;color:#e8e8e6">
+                  <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{{ f.color }}">{{ f.name }}</span>
+                  <span style="text-align:right;color:#83878e">{{ f.size }}</span>
+                  <span style="color:#6b7078;font-size:11.5px">{{ f.mod }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="padding:9px 12px;border-top:1px solid #ffffff0f;display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;justify-content:space-between;font:400 11px 'IBM Plex Mono';color:#83878e"><span>dump-2026-07-30.sql.gz</span><span>62% · 3.1 MB/s</span></div>
+              <div style="height:3px;border-radius:2px;background:#ffffff14;overflow:hidden"><div style="height:3px;width:62%;background:{{ accent }}"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isForm }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#0c0d0f">
+        <div style="display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid #ffffff0f">
+          <span onClick="{{ goServers }}" style="font:400 12px 'IBM Plex Mono';color:#83878e;cursor:pointer" style-hover="color:#e8e8e6">‹ hosts</span>
+          <span style="font:600 14px 'IBM Plex Sans'">New server</span>
+          <span style="margin-left:auto;display:flex;gap:8px">
+            <span onClick="{{ goServers }}" style="padding:7px 14px;border-radius:6px;font-size:12px;color:#a6aab1;cursor:pointer;background:#ffffff0d" style-hover="background:#ffffff1a">Cancel</span>
+            <span style="padding:7px 14px;border-radius:6px;font-size:12px;border:1px solid #ffffff24;color:#e8e8e6;cursor:pointer" style-hover="background:#ffffff0f">Test connection</span>
+            <span onClick="{{ goServers }}" style="padding:7px 16px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">Save</span>
+          </span>
+        </div>
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="flex:1;min-width:0;overflow:hidden;padding:20px 24px;display:flex;flex-direction:column;gap:22px">
+            <div>
+              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:11px">Connection</div>
+              <div style="display:grid;grid-template-columns:1.6fr 74px;gap:12px">
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Label</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono'">db-replica.prod</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Group</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font-size:12.5px;color:#a6aab1">Prod ⌄</div></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1.6fr 74px 1fr;gap:12px;margin-top:12px">
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Host</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid {{ accent }}44;font:400 12.5px 'IBM Plex Mono'">10.20.4.32</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Port</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono'">22</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Username</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono'">postgres</div></div>
+              </div>
+            </div>
+
+            <div>
+              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:11px">Authentication</div>
+              <div style="display:flex;background:#15171a;border:1px solid #ffffff14;border-radius:6px;overflow:hidden;font-size:12px;width:max-content">
+                <sc-for list="{{ authTabs }}" as="a" hint-placeholder-count="3">
+                  <span onClick="{{ a.onPick }}" style="padding:7px 14px;cursor:pointer;background:{{ a.bg }};color:{{ a.fg }}">{{ a.label }}</span>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ authIsPassword }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:13px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                  <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Password</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1;display:flex;justify-content:space-between">••••••••••<span style="color:#6b7078;font-size:11px;cursor:pointer">show</span></div></div>
+                  <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end"><div style="display:flex;align-items:center;gap:9px;font-size:12px;color:#a6aab1;padding:8px 0"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span>Save to system keychain</div></div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ authIsKey }}" hint-placeholder-val="{{ true }}">
+                <div style="margin-top:13px;display:flex;flex-direction:column;gap:12px">
+                  <div style="display:flex;flex-direction:column;gap:6px">
+                    <span style="font-size:11.5px;color:#83878e">Private key</span>
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <div style="flex:1;padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1">~/.ssh/id_ed25519</div>
+                      <span style="padding:8px 13px;border-radius:6px;font-size:12px;border:1px solid #ffffff24;cursor:pointer" style-hover="background:#ffffff0f">Choose file…</span>
+                      <span style="padding:8px 13px;border-radius:6px;font-size:12px;color:#a6aab1;background:#ffffff0d;cursor:pointer" style-hover="background:#ffffff1a">From SSH Keys</span>
+                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Passphrase <span style="color:#6b7078">(nếu key có)</span></span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1;display:flex;justify-content:space-between">••••••••<span style="color:#6b7078;font-size:11px;cursor:pointer">show</span></div></div>
+                    <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end"><div style="display:flex;align-items:center;gap:9px;font-size:12px;color:#a6aab1;padding:8px 0"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span>Unlock via keychain</div></div>
+                  </div>
+                  <div style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">fingerprint SHA256:9pQ…hK4 · ed25519 · added Mar 2026</div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ authIsAgent }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:13px;display:flex;flex-direction:column;gap:10px">
+                  <div style="font-size:12.5px;color:#a6aab1">Dùng key đang nạp trong ssh-agent — không lưu credential nào trong app.</div>
+                  <div style="display:flex;flex-direction:column;gap:1px;border:1px solid #ffffff14;border-radius:6px;overflow:hidden">
+                    <div style="display:flex;gap:10px;padding:8px 11px;background:#15171a;font:400 12px 'IBM Plex Mono';color:#a6aab1"><span style="color:{{ accent }}">●</span>id_ed25519<span style="margin-left:auto;color:#6b7078">SHA256:9pQ…hK4</span></div>
+                    <div style="display:flex;gap:10px;padding:8px 11px;background:#15171a;font:400 12px 'IBM Plex Mono';color:#a6aab1"><span style="color:#6b7078">●</span>id_rsa_legacy<span style="margin-left:auto;color:#6b7078">SHA256:2fT…mQ1</span></div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+
+            <div>
+              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:11px">Advanced</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Jump host / bastion</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1">bastion.corp ⌄</div></div>
+                <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;color:#83878e">Run on connect</span><div style="padding:8px 10px;border-radius:6px;background:#15171a;border:1px solid #ffffff14;font:400 12.5px 'IBM Plex Mono';color:#a6aab1">tmux attach -t main</div></div>
+              </div>
+              <div style="display:flex;gap:26px;margin-top:13px;font-size:12px;color:#a6aab1">
+                <div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span>Agent forwarding</div>
+                <div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:17px;border-radius:9px;background:#ffffff1f;position:relative;display:inline-block"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#83878e"></span></span>Keep alive (60s)</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="width:300px;flex:none;border-left:1px solid #ffffff0f;background:#0e0f11;padding:18px 18px;display:flex;flex-direction:column;gap:16px">
+            <div>
+              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Resulting command</div>
+              <div style="background:#101114;border:1px solid #ffffff14;border-radius:6px;padding:11px 12px;font:400 11.5px/1.7 'IBM Plex Mono';color:#a6aab1;word-break:break-all">{{ formCmd }}</div>
+            </div>
+            <div>
+              <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Checks</div>
+              <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:#a6aab1">
+                <div style="display:flex;gap:9px"><span style="color:{{ accent }}">✓</span>DNS / host reachable</div>
+                <div style="display:flex;gap:9px"><span style="color:{{ accent }}">✓</span>Port 22 open via bastion</div>
+                <div style="display:flex;gap:9px"><span style="color:#c9a15f">!</span>Host key chưa có trong known_hosts</div>
+              </div>
+            </div>
+            <div style="margin-top:auto;font:400 11px/1.7 'IBM Plex Mono';color:#6b7078">Credentials luôn nằm trong OS keychain. App chỉ lưu tham chiếu.</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isKeys }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
+          <span style="font:600 14px 'IBM Plex Sans'">SSH Keys</span>
+          <span style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">4 keys · 3 loaded in agent</span>
+          <span style="margin-left:auto;display:flex;gap:8px">
+            <span style="padding:6px 12px;border-radius:6px;font-size:12px;border:1px solid #ffffff24;color:#e8e8e6;cursor:pointer" style-hover="background:#ffffff0f">Import…</span>
+            <span style="padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">Generate key</span>
+          </span>
+        </div>
+        <div style="display:grid;grid-template-columns:12px 1.5fr 82px 1.6fr 90px 96px 118px;gap:10px;padding:8px 16px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+          <span></span><span>Name</span><span>Type</span><span>Fingerprint</span><span>Used by</span><span>Added</span><span></span>
+        </div>
+        <div style="flex:1;overflow:hidden">
+          <sc-for list="{{ keys }}" as="k" hint-placeholder-count="4">
+            <div style="display:grid;grid-template-columns:12px 1.5fr 82px 1.6fr 90px 96px 118px;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid #ffffff08;font-size:12.5px;cursor:pointer" style-hover="background:#ffffff0a">
+              <span style="width:7px;height:7px;border-radius:50%;background:{{ k.dot }}"></span>
+              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'IBM Plex Mono'">{{ k.name }}</span>
+              <span style="font:400 11.5px 'IBM Plex Mono';color:#a6aab1">{{ k.type }}</span>
+              <span style="font:400 11.5px 'IBM Plex Mono';color:#83878e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ k.fp }}</span>
+              <span style="color:#a6aab1">{{ k.used }}</span>
+              <span style="color:#83878e;font-size:12px">{{ k.added }}</span>
+              <span style="display:flex;gap:5px;justify-content:flex-end">
+                <span style="padding:3px 9px;border-radius:4px;font-size:11px;color:#e8e8e6;background:#ffffff12" style-hover="background:#ffffff26">Copy pub</span>
+                <span style="padding:3px 9px;border-radius:4px;font-size:11px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff26;color:#e8e8e6">···</span>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078;display:flex;gap:16px"><span>private keys không bao giờ rời khỏi máy</span><span style="margin-left:auto">passphrase lưu trong OS keychain</span></div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isTunnels }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
+          <span style="font:600 14px 'IBM Plex Sans'">Tunnels</span>
+          <span style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">2 active · 2 idle</span>
+          <span style="margin-left:auto;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;color:#0c0d0f;background:{{ accent }}">New tunnel</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.2fr 78px 2fr 1.1fr 88px 96px;gap:10px;padding:8px 16px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+          <span>Label</span><span>Type</span><span>Forward</span><span>Via host</span><span>Autostart</span><span>State</span>
+        </div>
+        <div style="flex:1;overflow:hidden">
+          <sc-for list="{{ tunnels }}" as="t" hint-placeholder-count="4">
+            <div style="display:grid;grid-template-columns:1.2fr 78px 2fr 1.1fr 88px 96px;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid #ffffff08;font-size:12.5px;cursor:pointer" style-hover="background:#ffffff0a">
+              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.label }}</span>
+              <span style="font:400 11px 'IBM Plex Mono';color:#a6aab1">{{ t.type }}</span>
+              <span style="font:400 11.5px 'IBM Plex Mono';color:#83878e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.fwd }}</span>
+              <span style="font:400 11.5px 'IBM Plex Mono';color:#a6aab1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.via }}</span>
+              <span style="color:#83878e;font-size:12px">{{ t.auto }}</span>
+              <span style="display:flex;align-items:center;gap:8px;font:400 11.5px 'IBM Plex Mono';color:{{ t.color }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.color }}"></span>{{ t.state }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">tunnel tự mở lại khi session tương ứng reconnect</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isKnown }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
+          <span style="font:600 14px 'IBM Plex Sans'">Known hosts</span>
+          <div style="flex:1;max-width:280px;display:flex;align-items:center;gap:8px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:5px 10px">
+            <span style="font:400 12px 'IBM Plex Mono';color:#6b7078">/</span><span style="font-size:12.5px;color:#83878e">Filter ~/.ssh/known_hosts</span>
+          </div>
+          <span style="margin-left:auto;font:400 11.5px 'IBM Plex Mono';color:#c9a15f">1 host key changed</span>
+        </div>
+        <div style="display:grid;grid-template-columns:12px 1.6fr 90px 2fr 100px 118px;gap:10px;padding:8px 16px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+          <span></span><span>Host</span><span>Key type</span><span>Fingerprint</span><span>First seen</span><span></span>
+        </div>
+        <div style="flex:1;overflow:hidden">
+          <sc-for list="{{ known }}" as="h" hint-placeholder-count="8">
+            <div style="display:grid;grid-template-columns:12px 1.6fr 90px 2fr 100px 118px;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid #ffffff08;font-size:12.5px;cursor:pointer" style-hover="background:#ffffff0a">
+              <span style="width:7px;height:7px;border-radius:50%;background:{{ h.color }}"></span>
+              <span style="font:400 12px 'IBM Plex Mono';min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ h.host }}</span>
+              <span style="font:400 11.5px 'IBM Plex Mono';color:#a6aab1">{{ h.type }}</span>
+              <span style="font:400 11.5px 'IBM Plex Mono';color:#83878e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ h.fp }}</span>
+              <span style="color:#83878e;font-size:12px">{{ h.seen }}</span>
+              <span style="display:flex;gap:5px;justify-content:flex-end">
+                <span style="padding:3px 9px;border-radius:4px;font-size:11px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff26;color:#e8e8e6">{{ h.action }}</span>
+                <span style="padding:3px 9px;border-radius:4px;font-size:11px;color:#d9776a;background:#ffffff0d" style-hover="background:#d9776a26">Remove</span>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">41 entries · đọc trực tiếp từ ~/.ssh/known_hosts</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #ffffff0f">
+          <span style="font:600 14px 'IBM Plex Sans'">Settings</span>
+          <span style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">config lưu tại ~/.portway/config.toml</span>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:26px 34px;align-content:start">
+          <div>
+            <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:12px">Appearance</div>
+            <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Theme</span><span style="display:flex;background:#15171a;border:1px solid #ffffff14;border-radius:6px;overflow:hidden;font-size:11.5px"><span style="padding:5px 11px;color:#83878e;cursor:pointer">Auto</span><span style="padding:5px 11px;background:#ffffff14;cursor:pointer">Dark</span></span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Accent</span><span style="display:flex;gap:6px"><span style="width:17px;height:17px;border-radius:50%;background:#5ec8b0;cursor:pointer;box-shadow:0 0 0 2px #ffffff26"></span><span style="width:17px;height:17px;border-radius:50%;background:#c9a15f;cursor:pointer"></span><span style="width:17px;height:17px;border-radius:50%;background:#9b8fd6;cursor:pointer"></span><span style="width:17px;height:17px;border-radius:50%;background:#e8e8e6;cursor:pointer"></span></span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Row density</span><span style="font-family:'IBM Plex Mono';color:#83878e">compact ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Colour hosts by group</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span></div>
+            </div>
+          </div>
+          <div>
+            <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:12px">Terminal</div>
+            <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Font</span><span style="font-family:'IBM Plex Mono';color:#83878e">IBM Plex Mono · 13px ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Cursor</span><span style="font-family:'IBM Plex Mono';color:#83878e">block · blink ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Scrollback</span><span style="font-family:'IBM Plex Mono';color:#83878e">10 000 lines</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Bell</span><span style="width:30px;height:17px;border-radius:9px;background:#ffffff1f;position:relative;display:inline-block"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#83878e"></span></span></div>
+            </div>
+          </div>
+          <div>
+            <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:12px">Security</div>
+            <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Store secrets in OS keychain</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Confirm before connecting to prod</span><span style="width:30px;height:17px;border-radius:9px;background:{{ accent }};position:relative;display:inline-block"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#0c0d0f"></span></span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Lock app after idle</span><span style="font-family:'IBM Plex Mono';color:#83878e">15 min ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Strict host key checking</span><span style="font-family:'IBM Plex Mono';color:#83878e">ask ⌄</span></div>
+            </div>
+          </div>
+          <div>
+            <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:12px">Transfers &amp; sync</div>
+            <div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Default download folder</span><span style="font-family:'IBM Plex Mono';color:#83878e">~/Downloads ⌄</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Parallel transfers</span><span style="font-family:'IBM Plex Mono';color:#83878e">4</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Import from ~/.ssh/config</span><span style="padding:4px 10px;border-radius:5px;font-size:11.5px;color:#e8e8e6;background:#ffffff12;cursor:pointer" style-hover="background:#ffffff26">Sync now</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#a6aab1">Config backup</span><span style="font-family:'IBM Plex Mono';color:#83878e">local only ⌄</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:9px 16px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">Portway 0.4.1 · openssh 9.7p1</div>
+      </div>
+    </sc-if>
+
+  </div>
+</div></div>
+</div>
+<p class="dv-next">Try next: "drawer nên rộng hơn / cho resize" · "làm search + filter bấm được" · "thêm màn snippets / port forward khi đang trong session"</p>
+</section>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Servers screen — 4 directions</span></div>
+<p class="dv-note">Assumptions: cross-platform dark UI, dense pro-tool density, English labels, ~70 hosts so grouping + search matter, list + right detail panel as the base pattern. Type: IBM Plex Sans for UI, IBM Plex Mono for anything a shell would print (hosts, ports, keys, commands). Left nav is fixed: Servers, SSH Keys, Tunnels, Known hosts, Settings. Each option below is the same screen, different information model. Pick one and I'll build the full flow: SSH/SFTP side-by-side session, new-server form with password / key / passphrase / agent forwarding / jump host, and tabs.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>By the book — flat table + detail panel</div>
+<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#e8e8e6">
+  <div style="width:186px;flex:none;background:#0a0b0c;border-right:1px solid #ffffff0f;display:flex;flex-direction:column">
+    <div style="padding:16px 16px 14px;display:flex;align-items:center;gap:9px">
+      <div style="width:18px;height:18px;border-radius:4px;background:#e8e8e6"></div>
+      <span style="font:600 12.5px 'IBM Plex Sans';letter-spacing:.02em">Portway</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:1px;padding:4px 8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;background:#ffffff0f;font-size:12.5px;font-weight:500">Servers<span style="font:400 11px 'IBM Plex Mono';color:#83878e">70</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">SSH Keys<span style="font:400 11px 'IBM Plex Mono';color:#6b7078">4</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:5px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">Tunnels<span style="font:400 11px 'IBM Plex Mono';color:#6b7078">2</span></div>
+      <div style="padding:7px 9px;border-radius:5px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">Known hosts</div>
+      <div style="padding:7px 9px;border-radius:5px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">Settings</div>
+    </div>
+    <div style="margin-top:18px;padding:0 16px 6px;font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078">Groups</div>
+    <div style="display:flex;flex-direction:column;gap:1px;padding:0 8px">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:5px;font-size:12px;color:#a6aab1" style-hover="background:#ffffff08">
+          <span style="width:6px;height:6px;border-radius:50%;background:{{ g.color }}"></span>{{ g.name }}
+          <span style="margin-left:auto;font:400 11px 'IBM Plex Mono';color:#6b7078">{{ g.count }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:auto;padding:12px 14px;border-top:1px solid #ffffff0f;display:flex;align-items:center;gap:8px;font:400 11px 'IBM Plex Mono';color:#6b7078">agent: 3 keys loaded</div>
+  </div>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #ffffff0f">
+      <div style="flex:1;display:flex;align-items:center;gap:8px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px">
+        <span style="font:400 12px 'IBM Plex Mono';color:#6b7078">/</span>
+        <span style="font-size:12.5px;color:#83878e">Search host, user, tag…</span>
+      </div>
+      <div style="display:flex;background:#15171a;border:1px solid #ffffff12;border-radius:6px;overflow:hidden;font-size:11.5px">
+        <span style="padding:6px 10px;background:#ffffff12;color:#e8e8e6">All</span>
+        <span style="padding:6px 10px;color:#83878e" style-hover="color:#e8e8e6">Recent</span>
+        <span style="padding:6px 10px;color:#83878e" style-hover="color:#e8e8e6">Favorites</span>
+      </div>
+      <div style="padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;color:#0c0d0f;background:{{ accent }}">New server</div>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:grid;grid-template-columns:12px minmax(170px,2.2fr) 1.15fr 78px 78px 54px;gap:10px;padding:8px 14px;border-bottom:1px solid #ffffff0f;font:500 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;color:#6b7078">
+          <span></span><span>Host</span><span>Address</span><span>User</span><span>Last used</span><span>Auth</span>
+        </div>
+        <sc-for list="{{ hosts }}" as="s" hint-placeholder-count="10">
+          <div style="display:grid;grid-template-columns:12px minmax(170px,2.2fr) 1.15fr 78px 78px 54px;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid #ffffff08;font-size:12.5px" style-hover="background:#ffffff08">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{ s.color }}"></span>
+            <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+            <span style="font:400 12px 'IBM Plex Mono';color:#a6aab1">{{ s.addr }}</span>
+            <span style="font:400 12px 'IBM Plex Mono';color:#a6aab1">{{ s.user }}</span>
+            <span style="color:#83878e;font-size:12px">{{ s.last }}</span>
+            <span style="font:400 11px 'IBM Plex Mono';color:#83878e">{{ s.auth }}</span>
+          </div>
+        </sc-for>
+        <div style="margin-top:auto;padding:9px 14px;border-top:1px solid #ffffff0f;font:400 11px 'IBM Plex Mono';color:#6b7078">70 hosts · 4 groups</div>
+      </div>
+
+      <div style="width:276px;flex:none;border-left:1px solid #ffffff0f;background:#101114;display:flex;flex-direction:column">
+        <div style="padding:16px 16px 14px;border-bottom:1px solid #ffffff0f">
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:50%;background:#d9776a"></span><span style="font:600 14px 'IBM Plex Sans'">db-primary.prod</span></div>
+          <div style="margin-top:6px;font:400 12px 'IBM Plex Mono';color:#83878e">postgres@10.20.4.31:22</div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <div style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:12.5px;font-weight:500;color:#0c0d0f;background:{{ accent }}">SSH</div>
+            <div style="flex:1;text-align:center;padding:8px;border-radius:6px;font-size:12.5px;border:1px solid #ffffff1f;color:#e8e8e6" style-hover="background:#ffffff0f">SFTP</div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff1a">Edit</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff1a">Duplicate</div>
+            <div style="flex:1;text-align:center;padding:6px;border-radius:5px;font-size:11.5px;color:#a6aab1;background:#ffffff0d" style-hover="background:#ffffff1a">Terminal…</div>
+            <div style="flex:none;padding:6px 9px;border-radius:5px;font-size:11.5px;color:#d9776a;background:#ffffff0d" style-hover="background:#d9776a26">Del</div>
+          </div>
+        </div>
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:9px;font-size:12px">
+          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Auth</span><span style="font:400 12px 'IBM Plex Mono'">key · id_ed25519</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Passphrase</span><span style="font:400 12px 'IBM Plex Mono'">keychain</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Jump host</span><span style="font:400 12px 'IBM Plex Mono'">bastion.corp</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Agent forward</span><span style="font:400 12px 'IBM Plex Mono'">on</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Group</span><span>Production</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#6b7078">Last used</span><span>2 min ago</span></div>
+        </div>
+        <div style="padding:0 16px 14px">
+          <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:8px">Tags</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">prod</span>
+            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">postgres</span>
+            <span style="padding:3px 8px;border-radius:4px;font:400 11px 'IBM Plex Mono';background:#ffffff0f;color:#a6aab1">eu-west</span>
+          </div>
+        </div>
+        <div style="margin-top:auto;padding:12px 16px;border-top:1px solid #ffffff0f;font:400 11px/1.6 'IBM Plex Mono';color:#6b7078">$ ssh -J bastion.corp postgres@10.20.4.31</div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1b"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Grouped by environment — cards, status-forward</div>
+<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#e8e8e6">
+  <div style="width:62px;flex:none;background:#0a0b0c;border-right:1px solid #ffffff0f;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:6px">
+    <div style="width:22px;height:22px;border-radius:5px;background:#e8e8e6;margin-bottom:10px"></div>
+    <div style="width:40px;height:36px;border-radius:7px;background:#ffffff12;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans'">SRV</div>
+    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans';color:#83878e" style-hover="background:#ffffff08;color:#e8e8e6">KEY</div>
+    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans';color:#83878e" style-hover="background:#ffffff08;color:#e8e8e6">TUN</div>
+    <div style="width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans';color:#83878e" style-hover="background:#ffffff08;color:#e8e8e6">HST</div>
+    <div style="margin-top:auto;width:40px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:500 10px 'IBM Plex Sans';color:#83878e" style-hover="background:#ffffff08;color:#e8e8e6">SET</div>
+  </div>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <div style="padding:16px 20px 12px;display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid #ffffff0f">
+      <div>
+        <div style="font:600 17px 'IBM Plex Sans'">Servers</div>
+        <div style="margin-top:3px;font:400 11.5px 'IBM Plex Mono';color:#6b7078">70 hosts · 68 reachable · 2 unknown</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;align-items:center;gap:8px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:6px 10px;width:210px"><span style="font:400 12px 'IBM Plex Mono';color:#6b7078">⌘K</span><span style="font-size:12.5px;color:#83878e">Quick connect</span></div>
+        <div style="padding:7px 12px;border-radius:6px;font-size:12px;font-weight:500;color:#0c0d0f;background:{{ accent }}">New server</div>
+      </div>
+    </div>
+    <div style="flex:1;overflow:hidden;padding:14px 20px;display:flex;flex-direction:column;gap:14px">
+      <sc-for list="{{ grouped }}" as="g" hint-placeholder-count="3">
+        <div>
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">
+            <span style="width:8px;height:8px;border-radius:2px;background:{{ g.color }}"></span>
+            <span style="font:600 11px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase">{{ g.name }}</span>
+            <span style="font:400 11px 'IBM Plex Mono';color:#6b7078">{{ g.count }} hosts</span>
+            <span style="flex:1;height:1px;background:#ffffff0f"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+            <sc-for list="{{ g.items }}" as="s" hint-placeholder-count="3">
+              <div style="background:#131417;border:1px solid #ffffff12;border-radius:8px;padding:11px 12px" style-hover="border-color:#ffffff2e;background:#171a1d">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span style="width:6px;height:6px;border-radius:50%;background:{{ s.color }}"></span>
+                  <span style="font:500 12.5px 'IBM Plex Sans';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+                  <span style="margin-left:auto;font:400 10px 'IBM Plex Mono';color:#6b7078">{{ s.auth }}</span>
+                </div>
+                <div style="margin-top:6px;font:400 11.5px 'IBM Plex Mono';color:#83878e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.user }}@{{ s.addr }}</div>
+                <div style="margin-top:10px;display:flex;align-items:center;gap:6px">
+                  <span style="padding:4px 10px;border-radius:5px;font-size:11.5px;font-weight:500;color:#0c0d0f;background:{{ accent }}">SSH</span>
+                  <span style="padding:4px 10px;border-radius:5px;font-size:11.5px;border:1px solid #ffffff1f;color:#e8e8e6" style-hover="background:#ffffff0f">SFTP</span>
+                  <span style="margin-left:auto;font-size:11px;color:#6b7078">{{ s.last }}</span>
+                  <span style="padding:2px 6px;border-radius:4px;color:#83878e;background:#ffffff0d" style-hover="background:#ffffff1f;color:#e8e8e6">···</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Terminal-native — monospace index, keyboard-first</div>
+<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#d8dbd6;background:#0a0b0a;font-family:'IBM Plex Mono',monospace">
+  <div style="width:172px;flex:none;border-right:1px solid #ffffff0f;padding:14px 0;display:flex;flex-direction:column">
+    <div style="padding:0 14px 14px;font-size:11.5px;color:#5f6560">portway <span style="color:#3f453f">v0.4</span></div>
+    <sc-for list="{{ navMono }}" as="n" hint-placeholder-count="5">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:12px;color:#8b918b" style-hover="background:#ffffff08;color:#d8dbd6">
+        <span style="color:#4a504a;width:14px">{{ n.key }}</span>{{ n.label }}
+        <span style="margin-left:auto;font-size:11px;color:#4a504a">{{ n.count }}</span>
+      </div>
+    </sc-for>
+    <div style="margin-top:18px;padding:0 14px 6px;font-size:10px;letter-spacing:.1em;color:#4a504a">FILTERS</div>
+    <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 14px;font-size:11.5px;color:#8b918b" style-hover="background:#ffffff08">
+        <span style="color:{{ g.color }}">▍</span>{{ g.name }}<span style="margin-left:auto;font-size:11px;color:#4a504a">{{ g.count }}</span>
+      </div>
+    </sc-for>
+    <div style="margin-top:auto;padding:10px 14px;border-top:1px solid #ffffff0f;font-size:10.5px;color:#4a504a;line-height:1.7">↵ ssh · ⇧↵ sftp<br>e edit · d dup · ⌫ del</div>
+  </div>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #ffffff0f;font-size:13px">
+      <span style="color:{{ accent }}">~/hosts ❯</span><span style="color:#8b918b">prod</span><span style="width:7px;height:15px;background:{{ accent }};display:inline-block"></span>
+      <span style="margin-left:auto;font-size:11px;color:#4a504a">12 / 70 matched</span>
+    </div>
+    <div style="display:grid;grid-template-columns:26px 1.4fr 1.1fr 90px 88px 68px 60px;gap:10px;padding:7px 16px;border-bottom:1px solid #ffffff0f;font-size:10px;letter-spacing:.08em;color:#4a504a">
+      <span>#</span><span>NAME</span><span>ADDRESS</span><span>USER</span><span>LAST</span><span>AUTH</span><span>ENV</span>
+    </div>
+    <sc-for list="{{ hosts }}" as="s" hint-placeholder-count="10">
+      <div style="display:grid;grid-template-columns:26px 1.4fr 1.1fr 90px 88px 68px 60px;gap:10px;align-items:center;padding:7px 16px;font-size:12px;color:#a8aea8;border-left:2px solid transparent" style-hover="background:#ffffff0a;color:#d8dbd6;border-left-color:#546b55">
+        <span style="color:#4a504a">{{ s.idx }}</span>
+        <span style="color:#d8dbd6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+        <span>{{ s.addr }}</span><span>{{ s.user }}</span><span style="color:#7d837d">{{ s.last }}</span>
+        <span style="color:#7d837d">{{ s.auth }}</span>
+        <span style="color:{{ s.color }}">{{ s.env }}</span>
+      </div>
+    </sc-for>
+    <div style="margin-top:auto;border-top:1px solid #ffffff0f;background:#0d0f0d;padding:12px 16px;display:flex;gap:26px;align-items:flex-start">
+      <div style="min-width:250px">
+        <div style="font-size:12.5px;color:#d8dbd6">db-primary.prod</div>
+        <div style="margin-top:5px;font-size:11.5px;color:#7d837d">ssh -J bastion.corp postgres@10.20.4.31</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:#7d837d">
+        <span>key   id_ed25519 (keychain)</span><span>agent forwarding on</span>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:6px;font-size:11.5px">
+        <span style="padding:5px 11px;border-radius:4px;color:#0a0b0a;font-weight:500;background:{{ accent }}">↵ ssh</span>
+        <span style="padding:5px 11px;border-radius:4px;border:1px solid #ffffff1f" style-hover="background:#ffffff0f">⇧↵ sftp</span>
+        <span style="padding:5px 11px;border-radius:4px;border:1px solid #ffffff1f;color:#8b918b" style-hover="background:#ffffff0f">e edit</span>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1d"><div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Index + host dossier — narrow list, rich detail</div>
+<div class="dv-card" style="width:1040px;height:620px;display:flex;color:#e8e8e6">
+  <div style="width:176px;flex:none;background:#0a0b0c;border-right:1px solid #ffffff0f;display:flex;flex-direction:column;padding-top:14px">
+    <div style="padding:0 14px 14px;display:flex;align-items:center;gap:8px"><div style="width:16px;height:16px;border-radius:4px;background:{{ accent }}"></div><span style="font:600 12.5px 'IBM Plex Sans'">Portway</span></div>
+    <sc-for list="{{ navMono }}" as="n" hint-placeholder-count="5">
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:12.5px;color:#a6aab1" style-hover="background:#ffffff08;color:#e8e8e6">{{ n.label }}<span style="margin-left:auto;font:400 11px 'IBM Plex Mono';color:#6b7078">{{ n.count }}</span></div>
+    </sc-for>
+    <div style="margin-top:auto;padding:12px 14px;border-top:1px solid #ffffff0f">
+      <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:7px">Open sessions</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font:400 11.5px 'IBM Plex Mono';color:#a6aab1">
+        <div style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:{{ accent }}"></span>web-01.prod</div>
+        <div style="display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:{{ accent }}"></span>nas.home</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:236px;flex:none;border-right:1px solid #ffffff0f;background:#0e0f11;display:flex;flex-direction:column">
+    <div style="padding:12px;border-bottom:1px solid #ffffff0f">
+      <div style="display:flex;align-items:center;gap:7px;background:#15171a;border:1px solid #ffffff12;border-radius:6px;padding:6px 9px"><span style="font:400 11.5px 'IBM Plex Mono';color:#6b7078">⌘K</span><span style="font-size:12px;color:#83878e">Filter 70 hosts</span></div>
+    </div>
+    <sc-for list="{{ hosts }}" as="s" hint-placeholder-count="10">
+      <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid #ffffff08" style-hover="background:#ffffff0a">
+        <span style="width:6px;height:6px;border-radius:50%;flex:none;background:{{ s.color }}"></span>
+        <span style="min-width:0;flex:1">
+          <span style="display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+          <span style="display:block;margin-top:2px;font:400 11px 'IBM Plex Mono';color:#6b7078;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.addr }}</span>
+        </span>
+        <span style="flex:none;font-size:10.5px;color:#6b7078">{{ s.last }}</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#0c0d0f">
+    <div style="padding:22px 24px 18px;border-bottom:1px solid #ffffff0f">
+      <div style="display:flex;align-items:center;gap:9px;font:400 11px 'IBM Plex Mono';color:#6b7078"><span style="width:7px;height:7px;border-radius:50%;background:#d9776a"></span>PRODUCTION · eu-west</div>
+      <div style="margin-top:9px;font:600 26px/1.1 'IBM Plex Sans';letter-spacing:-.01em">db-primary.prod</div>
+      <div style="margin-top:8px;font:400 13px 'IBM Plex Mono';color:#a6aab1">postgres@10.20.4.31:22</div>
+      <div style="display:flex;gap:8px;margin-top:18px;align-items:center">
+        <div style="padding:9px 20px;border-radius:6px;font-size:13px;font-weight:500;color:#0c0d0f;background:{{ accent }}">Open SSH</div>
+        <div style="padding:9px 18px;border-radius:6px;font-size:13px;border:1px solid #ffffff24;color:#e8e8e6" style-hover="background:#ffffff0f">Open SFTP</div>
+        <div style="margin-left:auto;display:flex;gap:6px;font-size:11.5px;color:#a6aab1">
+          <span style="padding:7px 11px;border-radius:5px;background:#ffffff0d" style-hover="background:#ffffff1a">Edit</span>
+          <span style="padding:7px 11px;border-radius:5px;background:#ffffff0d" style-hover="background:#ffffff1a">Duplicate</span>
+          <span style="padding:7px 11px;border-radius:5px;background:#ffffff0d" style-hover="background:#ffffff1a">Terminal…</span>
+          <span style="padding:7px 11px;border-radius:5px;background:#ffffff0d;color:#d9776a" style-hover="background:#d9776a26">Delete</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding:18px 24px;display:grid;grid-template-columns:1fr 1fr;gap:22px 30px">
+      <div>
+        <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Authentication</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px">
+          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Method</span><span style="font-family:'IBM Plex Mono'">private key</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Key</span><span style="font-family:'IBM Plex Mono'">~/.ssh/id_ed25519</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Passphrase</span><span style="font-family:'IBM Plex Mono'">stored</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Agent forward</span><span style="font-family:'IBM Plex Mono'">enabled</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#83878e">Jump host</span><span style="font-family:'IBM Plex Mono'">bastion.corp</span></div>
+        </div>
+      </div>
+      <div>
+        <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Recent sessions</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px">
+          <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">ssh · 14m</span><span style="color:#6b7078">2 min ago</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">sftp · 3 files</span><span style="color:#6b7078">yesterday</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-family:'IBM Plex Mono';color:#a6aab1">ssh · 2h</span><span style="color:#6b7078">Jul 22</span></div>
+        </div>
+      </div>
+      <div style="grid-column:1 / -1">
+        <div style="font:500 10px 'IBM Plex Sans';letter-spacing:.09em;text-transform:uppercase;color:#6b7078;margin-bottom:9px">Command</div>
+        <div style="background:#101114;border:1px solid #ffffff12;border-radius:6px;padding:11px 13px;font:400 12px 'IBM Plex Mono';color:#a6aab1;display:flex;justify-content:space-between;gap:12px">
+          <span>ssh -J bastion.corp -i ~/.ssh/id_ed25519 postgres@10.20.4.31</span><span style="color:#6b7078">copy</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+</div>
+<p class="dv-next">Try next: "build <a class="dv-oid" href="#1a">1a</a> full — thêm màn SSH/SFTP side-by-side và form tạo server" · "trộn list của <a class="dv-oid" href="#1a">1a</a> với detail của <a class="dv-oid" href="#1d">1d</a>" · "cho mình thêm hướng khác"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#5ec8b0&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#5ec8b0&quot;,&quot;#c9a15f&quot;,&quot;#9b8fd6&quot;,&quot;#e8e8e6&quot;],&quot;section&quot;:&quot;Theme&quot;},&quot;envColorMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;color&quot;,&quot;options&quot;:[&quot;color&quot;,&quot;mono&quot;],&quot;tsType&quot;:&quot;'color'|'mono'&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+class Component extends DCLogic {
+  state = { screen: 'servers', sel: 3, drawer: false, auth: 'key', tab: 0 };
+
+  componentDidMount() {
+    this._esc = e => { if (e.key === 'Escape') this.setState({ drawer: false }); };
+    window.addEventListener('keydown', this._esc);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this._esc); }
+
+  open(i, kind) {
+    const tabs = this.state.tabs || null;
+    this.setState({ sel: i, screen: 'session', tab: 0, kind });
+  }
+
+  renderVals() {
+    const accent = this.props.accent ?? '#5ec8b0';
+    const mono = (this.props.envColorMode ?? 'color') === 'mono';
+    const C = { prod: '#d9776a', staging: '#c9a15f', dev: '#5ec8b0', home: '#9b8fd6' };
+    const col = e => mono ? '#6b7078' : C[e];
+    const raw = [
+      ['web-01.prod', '10.20.4.11:22', 'deploy', 'prod', '2 min ago', 'key'],
+      ['web-02.prod', '10.20.4.12:22', 'deploy', 'prod', '2 min ago', 'key'],
+      ['api-gw.prod', '10.20.4.20:22', 'deploy', 'prod', '18 min ago', 'key'],
+      ['db-primary.prod', '10.20.4.31:22', 'postgres', 'prod', '2 min ago', 'key'],
+      ['redis-cache.stg', '10.30.1.8:22', 'ubuntu', 'staging', '1 h ago', 'key'],
+      ['worker-01.stg', '10.30.1.14:2222', 'ubuntu', 'staging', 'yesterday', 'pass'],
+      ['ci-runner.dev', '10.40.0.5:22', 'root', 'dev', 'yesterday', 'key'],
+      ['sandbox.dev', '10.40.0.9:22', 'dev', 'dev', 'Jul 24', 'pass'],
+      ['bastion.corp', '203.0.113.7:22', 'jump', 'prod', '2 min ago', 'key'],
+      ['nas.home', '192.168.1.20:22', 'admin', 'home', '3 h ago', 'pass'],
+      ['pi-hole.home', '192.168.1.31:22', 'pi', 'home', 'Jul 19', 'pass']
+    ];
+    const hosts = raw.map((r, i) => ({
+      idx: String(i + 1).padStart(2, '0'),
+      name: r[0], addr: r[1], user: r[2], env: r[3], last: r[4], auth: r[5], color: col(r[3])
+    }));
+    const groups = [
+      { name: 'Production', count: 26, color: col('prod') },
+      { name: 'Staging', count: 18, color: col('staging') },
+      { name: 'Development', count: 19, color: col('dev') },
+      { name: 'Homelab', count: 7, color: col('home') }
+    ];
+    const grouped = [
+      { name: 'Production', count: 26, color: col('prod'), items: hosts.filter(h => h.env === 'prod').slice(0, 3) },
+      { name: 'Staging', count: 18, color: col('staging'), items: hosts.filter(h => h.env === 'staging').slice(0, 3) },
+      { name: 'Development', count: 19, color: col('dev'), items: hosts.filter(h => h.env === 'dev').slice(0, 3) },
+      { name: 'Homelab', count: 7, color: col('home'), items: hosts.filter(h => h.env === 'home').slice(0, 3) }
+    ];
+    const navMono = [
+      { key: 's', label: 'Servers', count: 70 },
+      { key: 'k', label: 'SSH Keys', count: 4 },
+      { key: 't', label: 'Tunnels', count: 2 },
+      { key: 'h', label: 'Known hosts', count: 41 },
+      { key: ',', label: 'Settings', count: '' }
+    ];
+    const GN = { prod: 'Production', staging: 'Staging', dev: 'Development', home: 'Homelab' };
+    const st = this.state;
+    hosts.forEach((h, i) => {
+      h.group = GN[h.env];
+      h.bg = (st.screen === 'servers' && st.drawer && st.sel === i) ? '#ffffff12' : 'transparent';
+      h.authLong = h.auth === 'key' ? 'key · id_ed25519' : 'password · keychain';
+      h.passphrase = h.auth === 'key' ? 'keychain' : '—';
+      h.jump = h.env === 'prod' && h.name !== 'bastion.corp' ? 'bastion.corp' : '—';
+      h.agent = h.auth === 'key' ? 'on' : 'off';
+      h.cmd = (h.jump !== '—' ? 'ssh -J bastion.corp ' : 'ssh ')
+        + (h.auth === 'key' ? '-i ~/.ssh/id_ed25519 ' : '')
+        + h.user + '@' + h.addr.split(':')[0]
+        + (h.addr.endsWith(':22') ? '' : ' -p ' + h.addr.split(':')[1]);
+      h.onSelect = () => this.setState({ sel: i, drawer: true });
+      h.onSSH = e => { e.stopPropagation(); this.open(i, 'SSH'); };
+      h.onSFTP = e => { e.stopPropagation(); this.open(i, 'SFTP'); };
+    });
+    const cur = hosts[st.sel] || hosts[0];
+    const tabs = [
+      { name: cur.name, kind: st.kind || 'SSH' },
+      { name: 'web-01.prod', kind: 'SSH' },
+      { name: 'nas.home', kind: 'SFTP' }
+    ].map((t, i) => ({
+      ...t,
+      bg: i === st.tab ? '#131417' : 'transparent',
+      fg: i === st.tab ? '#e8e8e6' : '#83878e',
+      onOpen: () => this.setState({ screen: 'session', tab: i })
+    }));
+    const authTabs = [
+      { id: 'password', label: 'Password' },
+      { id: 'key', label: 'Private key' },
+      { id: 'agent', label: 'Agent' }
+    ].map(a => ({
+      label: a.label,
+      bg: st.auth === a.id ? '#ffffff14' : 'transparent',
+      fg: st.auth === a.id ? '#e8e8e6' : '#83878e',
+      onPick: () => this.setState({ auth: a.id })
+    }));
+    const files = [
+      ['..', '', '', '#83878e'], ['base/', '—', 'Jul 28 09:12', '#e8e8e6'],
+      ['pg_wal/', '—', 'Jul 30 11:40', '#e8e8e6'], ['global/', '—', 'Jul 12 22:03', '#e8e8e6'],
+      ['dump-2026-07-30.sql.gz', '412 MB', 'Jul 30 11:38', '#a6aab1'],
+      ['postgresql.conf', '28 KB', 'Jul 24 15:02', '#a6aab1'],
+      ['pg_hba.conf', '4.6 KB', 'Jul 24 15:02', '#a6aab1'],
+      ['postmaster.pid', '96 B', 'Jul 30 06:00', '#a6aab1'],
+      ['server.log', '81 MB', 'Jul 30 11:41', '#a6aab1']
+    ].map(f => ({ name: f[0], size: f[1], mod: f[2], color: f[3] }));
+    const termText = 'Last login: Thu Jul 30 11:22:04 2026 from 203.0.113.7\n'
+      + cur.user + '@' + cur.name + ':~$ systemctl is-active postgresql\nactive\n'
+      + cur.user + '@' + cur.name + ':~$ df -h /var/lib/postgresql\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p2   1.8T  1.1T  620G  64% /var/lib/postgresql\n'
+      + cur.user + '@' + cur.name + ':~$ ';
+    const authCmd = st.auth === 'key' ? '-i ~/.ssh/id_ed25519 ' : '';
+    const nav = [
+      { id: 'servers', label: 'Servers', count: 70 },
+      { id: 'keys', label: 'SSH Keys', count: 4 },
+      { id: 'tunnels', label: 'Tunnels', count: 2 },
+      { id: 'known', label: 'Known hosts', count: 41 },
+      { id: 'settings', label: 'Settings', count: '' }
+    ].map(n => {
+      const on = st.screen === n.id || (n.id === 'servers' && (st.screen === 'form' || st.screen === 'session'));
+      return {
+        label: n.label, count: n.count,
+        bg: on ? '#ffffff0f' : 'transparent',
+        fg: on ? '#e8e8e6' : '#a6aab1',
+        onGo: () => this.setState({ screen: n.id, drawer: false })
+      };
+    });
+    const keys = [
+      ['id_ed25519', 'ed25519', 'SHA256:9pQ7…hK4', '38 hosts', 'Mar 2026', accent],
+      ['id_ed25519_infra', 'ed25519', 'SHA256:4bV1…tZ8', '14 hosts', 'Jan 2026', accent],
+      ['id_rsa_legacy', 'rsa 4096', 'SHA256:2fT9…mQ1', '6 hosts', 'Aug 2024', '#c9a15f'],
+      ['deploy_ci', 'ed25519', 'SHA256:7xC3…nR6', '2 hosts', 'Jun 2026', '#6b7078']
+    ].map(k => ({ name: k[0], type: k[1], fp: k[2], used: k[3], added: k[4], dot: k[5] }));
+    const tunnels = [
+      ['pg replica', 'local', '127.0.0.1:5432 → 10.20.4.31:5432', 'db-primary.prod', 'on session', accent, 'active'],
+      ['grafana', 'local', '127.0.0.1:3000 → 10.20.4.20:3000', 'api-gw.prod', 'on launch', accent, 'active'],
+      ['socks proxy', 'dynamic', '127.0.0.1:1080', 'bastion.corp', 'manual', '#6b7078', 'idle'],
+      ['nas webui', 'local', '127.0.0.1:5000 → 192.168.1.20:5000', 'nas.home', 'manual', '#6b7078', 'idle']
+    ].map(t => ({ label: t[0], type: t[1], fwd: t[2], via: t[3], auto: t[4], color: t[5], state: t[6] }));
+    const known = [
+      ['10.20.4.11', 'ed25519', 'SHA256:Kd8s…pW2', 'Mar 2026', accent, 'Verified'],
+      ['10.20.4.12', 'ed25519', 'SHA256:Lm4t…qX9', 'Mar 2026', accent, 'Verified'],
+      ['10.20.4.20', 'ed25519', 'SHA256:Rt7y…vB3', 'Apr 2026', accent, 'Verified'],
+      ['10.20.4.31', 'ed25519', 'SHA256:Wq2n…zK7', 'Apr 2026', accent, 'Verified'],
+      ['10.30.1.14', 'rsa', 'SHA256:Bn5h…cM8', 'Jan 2026', '#c9a15f', 'Trust new'],
+      ['203.0.113.7', 'ed25519', 'SHA256:Yu9k…dF1', 'Aug 2025', accent, 'Verified'],
+      ['192.168.1.20', 'ed25519', 'SHA256:Hj3p…gT5', 'Nov 2025', accent, 'Verified'],
+      ['192.168.1.31', 'ed25519', 'SHA256:Vc6r…xN4', 'Nov 2025', accent, 'Verified']
+    ].map(h => ({ host: h[0], type: h[1], fp: h[2], seen: h[3], color: h[4], action: h[5] }));
+    return {
+      accent, hosts, groups, grouped, navMono, cur, tabs, authTabs, files, termText, nav, keys, tunnels, known,
+      isServers: st.screen === 'servers', isSession: st.screen === 'session', isForm: st.screen === 'form',
+      isKeys: st.screen === 'keys', isTunnels: st.screen === 'tunnels', isKnown: st.screen === 'known', isSettings: st.screen === 'settings',
+      goServers: () => this.setState({ screen: 'servers' }),
+      goForm: () => this.setState({ screen: 'form', drawer: false }),
+      closeDrawer: () => this.setState({ drawer: false }),
+      drawerTransform: st.drawer ? 'translateX(0)' : 'translateX(106%)',
+      scrimOpacity: st.drawer ? 1 : 0,
+      scrimEvents: st.drawer ? 'auto' : 'none',
+      authIsPassword: st.auth === 'password', authIsKey: st.auth === 'key', authIsAgent: st.auth === 'agent',
+      formCmd: 'ssh -J bastion.corp ' + authCmd + 'postgres@10.20.4.32'
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Design tokens — transcribed from design_handoff_ssh_client/README.md
+   (§Design tokens) and the inline styles of option `2a` in SSH Client.dc.html.
+
+   This is the ONLY file in the app where a hex value or a raw px measurement
+   appears. Components use the generated utilities. If a component needs
+   something that isn't here, the token is missing — add it, don't reach for an
+   arbitrary value.
+
+   The mock writes overlays as 8-digit hex; the README writes the same values as
+   rgba. They agree. Where they appear not to, the markup wins: README lists
+   ".26 (chip hover)" but the markup's #ffffff26 is 38/255 = .15. There is no
+   .26 fill.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* 4px base, fixed — this is a desktop tool at a fixed density, so spacing
+     must not track the root font size. Every odd value in the design is a
+     multiple: 9px = 2.25, 7px = 1.75, 11px = 2.75, 13px = 3.25, 18px = 4.5,
+     22px = 5.5, 26px = 6.5. */
+  --spacing: 4px;
+
+  /* Structural widths from the handoff, so they read by name in markup. */
+  --spacing-nav: 194px; /* left nav          */
+  --spacing-drawer: 330px; /* servers detail drawer */
+  --spacing-sftp: 470px; /* session SFTP pane    */
+  --spacing-summary: 300px; /* form summary column  */
+  --spacing-titlebar: 32px; /* custom window chrome */
+  --spacing-dialog: 360px; /* confirm dialog — not in the handoff, see ConfirmDialog */
+
+  /* -- surfaces ------------------------------------------------------------
+     bg-base, bg-nav, bg-term, bg-panel, bg-drawer, bg-field, bg-tab-active */
+  --color-base: #0c0d0f;
+  --color-nav: #0a0b0c;
+  --color-term: #08090a;
+  --color-panel: #0e0f11;
+  --color-drawer: #101114;
+  --color-field: #15171a;
+  --color-tab-active: #131417;
+
+  /* -- text ----------------------------------------------------------------
+     text-fg, text-fg-2, text-muted, text-faint, text-term-fg, text-term-dim */
+  --color-fg: #e8e8e6;
+  --color-fg-2: #a6aab1;
+  --color-muted: #83878e;
+  --color-faint: #6b7078;
+  --color-term-fg: #a8aea8;
+  --color-term-dim: #4f545a;
+
+  /* -- white overlays, named by the README's alpha -------------------------
+     bg-w05, border-w06, hover:bg-w15, … */
+  --color-w03: #ffffff08; /* row divider              */
+  --color-w04: #ffffff0a; /* row hover                */
+  --color-w05: #ffffff0d; /* soft button              */
+  --color-w06: #ffffff0f; /* hairline border, nav on  */
+  --color-w07: #ffffff12; /* field border, row select */
+  --color-w08: #ffffff14;
+  --color-w10: #ffffff1a;
+  --color-w12: #ffffff1f; /* toggle off               */
+  --color-w14: #ffffff24; /* outline button           */
+  --color-w15: #ffffff26; /* soft button hover        */
+
+  /* -- accent (live) -------------------------------------------------------
+     Settings rewrites --color-accent on :root; every utility compiles to
+     var(--color-accent), so one write repaints the whole app. */
+  --color-accent: #5ec8b0;
+  --color-accent-27: color-mix(in srgb, var(--color-accent) 27%, transparent);
+  /* "Accent text sits on #0c0d0f" (README). Same value as --color-base, but it
+     needs its own name: `text-base` is Tailwind's built-in 1rem font size, so
+     it would never resolve as a colour. */
+  --color-ink: #0c0d0f;
+
+  /* -- group / status ------------------------------------------------------ */
+  --color-prod: #d9776a;
+  --color-staging: #c9a15f;
+  --color-dev: #5ec8b0;
+  --color-home: #9b8fd6;
+  --color-warn: #c9a15f;
+  --color-danger: #d9776a;
+  --color-danger-fill: #d9776a26;
+  --color-scrim: #00000059;
+
+  /* -- type ramp -----------------------------------------------------------
+     text-title, text-host, text-body, text-cell, text-meta, text-mono,
+     text-label, text-badge, text-status */
+  --text-title: 14px; /* screen title            */
+  --text-host: 14.5px; /* drawer host name        */
+  --text-body: 12.5px; /* body, table cell        */
+  --text-cell: 12px; /* mono cell, small body   */
+  --text-meta: 11.5px; /* mono meta, field label  */
+  --text-mono: 11px; /* footnote mono           */
+  --text-label: 10px; /* section / table heading */
+  --text-badge: 9.5px; /* kind badge              */
+  --text-status: 10.5px; /* terminal status bar     */
+
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --leading-term: 1.75; /* terminal body     */
+  --leading-code: 1.6; /* drawer $ command  */
+  --leading-cmd: 1.7; /* form summary box  */
+
+  --tracking-brand: 0.02em; /* wordmark        */
+  --tracking-badge: 0.06em; /* SSH/SFTP badge  */
+  --tracking-head: 0.08em; /* table heading   */
+  --tracking-label: 0.09em; /* section label   */
+
+  --radius-bar: 2px; /* transfer progress track */
+  --radius-badge: 3px;
+  --radius-chip: 4px;
+  --radius-nav: 5px;
+  --radius-field: 6px;
+  --radius-toggle: 9px;
+
+  --shadow-drawer: -18px 0 40px #00000073;
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* The two type ramps the design repeats everywhere: ~15 section headings and
+   the header row of all five tables. Identical but for letter-spacing. */
+@utility section-label {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+@utility table-head {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-head);
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* Single-line cell that ellipsises — used by every table's name column. */
+@utility cell-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

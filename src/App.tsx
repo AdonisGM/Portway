@@ -1,0 +1,64 @@
+import { useEffect } from 'react'
+import { TitleBar } from './components/chrome/TitleBar'
+import { Sidebar } from './components/layout/Sidebar'
+import { ServersScreen } from './screens/servers/ServersScreen'
+import { SessionScreen } from './screens/session/SessionScreen'
+import { ServerFormScreen } from './screens/form/ServerFormScreen'
+import { KeysScreen } from './screens/KeysScreen'
+import { TunnelsScreen } from './screens/TunnelsScreen'
+import { KnownHostsScreen } from './screens/KnownHostsScreen'
+import { SettingsScreen } from './screens/SettingsScreen'
+import { revealApp } from './lib/splash'
+import { useApp } from './store/appStore'
+
+const SCREENS = {
+  servers: ServersScreen,
+  session: SessionScreen,
+  form: ServerFormScreen,
+  keys: KeysScreen,
+  tunnels: TunnelsScreen,
+  known: KnownHostsScreen,
+  settings: SettingsScreen,
+} as const
+
+export default function App() {
+  const screen = useApp((s) => s.screen)
+  const accent = useApp((s) => s.settings.accent)
+  const loadHosts = useApp((s) => s.loadHosts)
+
+  // Reveal the window as soon as the shell is painted. Deliberately not
+  // waiting on loadHosts: the table has its own "loading hosts…" state, and
+  // holding the window back for the database would make a fast start feel
+  // slower than it is.
+  useEffect(() => {
+    revealApp()
+  }, [])
+
+  // One read of the database on boot; every mutation afterwards patches the
+  // store from the row the command returns, so there is no refetch loop.
+  useEffect(() => {
+    void loadHosts()
+  }, [loadHosts])
+
+  // One variable write repaints every accent surface in the app, because each
+  // Tailwind utility compiles down to var(--color-accent).
+  useEffect(() => {
+    document.documentElement.style.setProperty('--color-accent', accent)
+  }, [accent])
+
+  const Screen = SCREENS[screen]
+
+  return (
+    <div className="flex h-full flex-col bg-base text-fg">
+      <TitleBar />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar />
+        {/* Screens are absolutely positioned in here, so switching between
+            them never reflows the shell (README line 32). */}
+        <main className="relative min-w-0 flex-1 overflow-hidden">
+          <Screen />
+        </main>
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,392 @@
+import { useMemo, useState } from 'react'
+import { GROUP_IDS, GROUP_SHORT } from '@/data/groups'
+import { AGENT_KEYS } from '@/data/mock'
+import type { AuthMethod, GroupId, HostInput } from '@/data/types'
+import { message } from '@/lib/api'
+import { buildSshCommand, DEFAULT_KEY_PATH } from '@/lib/command'
+import { nextCopyName } from '@/lib/naming'
+import { Button } from '@/components/ui/Button'
+import { Field, Labelled, fieldBox } from '@/components/ui/Field'
+import { Segmented } from '@/components/ui/Segmented'
+import { Select } from '@/components/ui/Select'
+import { ToggleField } from '@/components/ui/Toggle'
+import { CommandText, SectionLabel } from '@/components/ui/primitives'
+import { useApp } from '@/store/appStore'
+
+const AUTH_METHODS: { value: AuthMethod; label: string }[] = [
+  { value: 'password', label: 'Password' },
+  { value: 'key', label: 'Private key' },
+  { value: 'agent', label: 'Agent' },
+]
+
+const NO_JUMP = '—'
+
+/**
+ * New / Edit server.
+ *
+ * The form column carries Connection, Authentication and Advanced; the 300px
+ * summary column recomputes the resulting command from the live form state
+ * through the same builder the drawer footer uses, so the two can never
+ * disagree.
+ *
+ * Password and passphrase are intentionally *not* saved. The summary column
+ * promises credentials live in the OS keychain and the app stores only
+ * references, so they stay local to this component until the keychain layer
+ * exists.
+ */
+export function ServerFormScreen() {
+  const goScreen = useApp((s) => s.goScreen)
+  const formMode = useApp((s) => s.formMode)
+  const hosts = useApp((s) => s.hosts)
+  const createHost = useApp((s) => s.createHost)
+  const updateHost = useApp((s) => s.updateHost)
+
+  const editing = formMode.kind === 'edit' ? formMode.host : null
+  const source = editing ?? (formMode.kind === 'new' ? formMode.prefill : null)
+
+  // Seeded once per form open; `formMode` changes identity on every entry, so
+  // a keyed remount is not needed.
+  // Every other label in the database, so the form can reject a collision
+  // before the write and Duplicate can pick a free number.
+  const otherNames = useMemo(
+    () => new Set(hosts.filter((h) => h.id !== editing?.id).map((h) => h.name)),
+    [hosts, editing],
+  )
+
+  const [name, setName] = useState(() => {
+    if (editing) return editing.name
+    if (source) return nextCopyName(source.name, otherNames)
+    return ''
+  })
+  const [group, setGroup] = useState<GroupId>(source?.group ?? 'prod')
+  const [address, setAddress] = useState(source?.address ?? '')
+  const [port, setPort] = useState(String(source?.port ?? 22))
+  const [user, setUser] = useState(source?.user ?? '')
+  const [auth, setAuth] = useState<AuthMethod>(source?.auth ?? 'key')
+  const [keyPath, setKeyPath] = useState(source?.keyPath ?? DEFAULT_KEY_PATH)
+  const [jumpHost, setJumpHost] = useState(source?.jumpHost ?? NO_JUMP)
+  const [runOnConnect, setRunOnConnect] = useState(source?.runOnConnect ?? '')
+  const [agentForwarding, setAgentForwarding] = useState(source?.agentForwarding ?? true)
+  const [keepAlive, setKeepAlive] = useState(source?.keepAlive ?? false)
+  const [saveToKeychain, setSaveToKeychain] = useState(source?.saveToKeychain ?? true)
+  const [unlockViaKeychain, setUnlockViaKeychain] = useState(source?.unlockViaKeychain ?? true)
+
+  // Never persisted — see the note above.
+  const [password, setPassword] = useState('')
+  const [passphrase, setPassphrase] = useState('')
+
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const portNumber = Number(port) || 0
+  const command = buildSshCommand({
+    user: user || 'user',
+    address: address || 'host',
+    port: portNumber || 22,
+    jumpHost: jumpHost === NO_JUMP ? null : jumpHost,
+    identityFile: auth === 'key' ? keyPath : null,
+  })
+
+  // A host cannot proxy through itself.
+  const jumpOptions = useMemo(
+    () => [
+      { value: NO_JUMP, label: 'None' },
+      ...hosts
+        .filter((h) => h.id !== editing?.id)
+        .map((h) => ({ value: h.name, label: h.name })),
+    ],
+    [hosts, editing],
+  )
+
+  const nameTaken = name.trim() !== '' && otherNames.has(name.trim())
+  const filledIn =
+    name.trim() !== '' &&
+    address.trim() !== '' &&
+    user.trim() !== '' &&
+    portNumber >= 1 &&
+    portNumber <= 65535
+  const valid = filledIn && !nameTaken
+
+  const save = async () => {
+    if (!valid) return
+    setSaving(true)
+    setError(null)
+
+    const input: HostInput = {
+      name: name.trim(),
+      address: address.trim(),
+      port: portNumber,
+      user: user.trim(),
+      group,
+      auth,
+      keyPath: auth === 'key' ? keyPath.trim() || null : null,
+      jumpHost: jumpHost === NO_JUMP ? null : jumpHost,
+      runOnConnect: runOnConnect.trim() || null,
+      agentForwarding,
+      keepAlive,
+      saveToKeychain,
+      unlockViaKeychain,
+      favorite: source?.favorite ?? false,
+    }
+
+    try {
+      if (editing) await updateHost(editing.id, input)
+      else await createHost(input)
+      goScreen('servers')
+    } catch (e) {
+      setError(message(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="absolute inset-0 flex flex-col bg-base">
+      <div className="flex flex-none items-center gap-3 border-b border-w06 px-5 py-3.25">
+        <button
+          type="button"
+          onClick={() => goScreen('servers')}
+          className="font-mono text-cell text-muted transition-colors hover:text-fg"
+        >
+          ‹ hosts
+        </button>
+        <span className="text-title font-semibold">{editing ? 'Edit server' : 'New server'}</span>
+        <span className="ml-auto flex gap-2">
+          <Button size="md" onClick={() => goScreen('servers')} disabled={saving}>
+            Cancel
+          </Button>
+          <Button variant="outline" size="md" disabled={saving}>
+            Test connection
+          </Button>
+          <Button
+            variant="accent"
+            size="lg"
+            onClick={() => void save()}
+            disabled={!valid || saving}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        </span>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col gap-5.5 overflow-y-auto px-6 py-5">
+          <section>
+            <SectionLabel className="mb-2.75">Connection</SectionLabel>
+            <div className="grid grid-cols-[1.6fr_74px] gap-3">
+              <Field
+                label="Label"
+                value={name}
+                placeholder="db-replica.prod"
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Select
+                label="Group"
+                value={group}
+                onChange={setGroup}
+                options={GROUP_IDS.map((g) => ({ value: g, label: GROUP_SHORT[g] }))}
+              />
+            </div>
+            <div className="mt-3 grid grid-cols-[1.6fr_74px_1fr] gap-3">
+              <Field
+                label="Host"
+                value={address}
+                placeholder="10.20.4.32"
+                onChange={(e) => setAddress(e.target.value)}
+              />
+              <Field
+                label="Port"
+                value={port}
+                inputMode="numeric"
+                onChange={(e) => setPort(e.target.value.replace(/\D/g, '').slice(0, 5))}
+              />
+              <Field
+                label="Username"
+                value={user}
+                placeholder="postgres"
+                onChange={(e) => setUser(e.target.value)}
+              />
+            </div>
+          </section>
+
+          <section>
+            <SectionLabel className="mb-2.75">Authentication</SectionLabel>
+            <Segmented
+              aria-label="Authentication method"
+              size="md"
+              options={AUTH_METHODS}
+              value={auth}
+              onChange={setAuth}
+            />
+
+            {auth === 'password' ? (
+              <div className="mt-3.25 grid grid-cols-2 gap-3">
+                <Field
+                  label="Password"
+                  masked
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <div className="flex items-end">
+                  <div className="py-2">
+                    <ToggleField
+                      label="Save to system keychain"
+                      checked={saveToKeychain}
+                      onChange={setSaveToKeychain}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {auth === 'key' ? (
+              <div className="mt-3.25 flex flex-col gap-3">
+                <Labelled label="Private key">
+                  <div className="flex items-center gap-2">
+                    <div className={`${fieldBox} flex-1`}>
+                      <input
+                        value={keyPath}
+                        onChange={(e) => setKeyPath(e.target.value)}
+                        aria-label="Private key path"
+                        className="w-full font-mono text-body text-fg-2"
+                      />
+                    </div>
+                    <Button variant="outline" size="md" className="flex-none py-2">
+                      Choose file…
+                    </Button>
+                    <Button size="md" className="flex-none py-2">
+                      From SSH Keys
+                    </Button>
+                  </div>
+                </Labelled>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Field
+                    label={
+                      <>
+                        Passphrase <span className="text-faint">(if the key has one)</span>
+                      </>
+                    }
+                    masked
+                    value={passphrase}
+                    onChange={(e) => setPassphrase(e.target.value)}
+                  />
+                  <div className="flex items-end">
+                    <div className="py-2">
+                      <ToggleField
+                        label="Unlock via keychain"
+                        checked={unlockViaKeychain}
+                        onChange={setUnlockViaKeychain}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="font-mono text-meta text-faint">
+                  fingerprint SHA256:9pQ…hK4 · ed25519 · added Mar 2026
+                </div>
+              </div>
+            ) : null}
+
+            {auth === 'agent' ? (
+              <div className="mt-3.25 flex flex-col gap-2.5">
+                <p className="text-body text-fg-2">
+                  Use a key already loaded in ssh-agent — no credentials stored in the app.
+                </p>
+                <div className="flex flex-col gap-px overflow-hidden rounded-field border border-w08">
+                  {AGENT_KEYS.map((key) => (
+                    <div
+                      key={key.name}
+                      className="flex gap-2.5 bg-field px-2.75 py-2 font-mono text-cell text-fg-2"
+                    >
+                      <span className={key.usable ? 'text-accent' : 'text-faint'}>●</span>
+                      {key.name}
+                      <span className="ml-auto text-faint">{key.fingerprint}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section>
+            <SectionLabel className="mb-2.75">Advanced</SectionLabel>
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                label="Jump host / bastion"
+                value={jumpHost}
+                onChange={setJumpHost}
+                options={jumpOptions}
+              />
+              <Field
+                label="Run on connect"
+                value={runOnConnect}
+                placeholder="tmux attach -t main"
+                onChange={(e) => setRunOnConnect(e.target.value)}
+              />
+            </div>
+            <div className="mt-3.25 flex gap-6.5">
+              <ToggleField
+                label="Agent forwarding"
+                checked={agentForwarding}
+                onChange={setAgentForwarding}
+              />
+              <ToggleField
+                label="Keep alive (60s)"
+                checked={keepAlive}
+                onChange={setKeepAlive}
+              />
+            </div>
+          </section>
+        </div>
+
+        <aside className="flex w-summary flex-none flex-col gap-4 overflow-y-auto border-l border-w06 bg-panel p-4.5">
+          <div>
+            <SectionLabel className="mb-2.25">Resulting command</SectionLabel>
+            <CommandText className="rounded-field border border-w08 bg-drawer px-3 py-2.75 text-meta/cmd text-fg-2">
+              {command}
+            </CommandText>
+          </div>
+
+          <div>
+            <SectionLabel className="mb-2.25">Checks</SectionLabel>
+            <div className="flex flex-col gap-2 text-cell text-fg-2">
+              {/* Error reporting reuses the Checks vocabulary rather than
+                  introducing a toast the handoff never designed. */}
+              {error ? (
+                <div className="flex gap-2.25">
+                  <span className="text-danger">!</span>
+                  <span className="min-w-0 break-words text-danger">{error}</span>
+                </div>
+              ) : null}
+              <div className="flex gap-2.25">
+                <span className={filledIn ? 'text-accent' : 'text-faint'}>
+                  {filledIn ? '✓' : '·'}
+                </span>
+                Label, host and username filled in
+              </div>
+              <div className="flex gap-2.25">
+                <span className={nameTaken ? 'text-danger' : 'text-accent'}>
+                  {nameTaken ? '!' : '✓'}
+                </span>
+                <span className={nameTaken ? 'min-w-0 break-words text-danger' : undefined}>
+                  {nameTaken ? `A server called '${name.trim()}' already exists` : 'Label is unique'}
+                </span>
+              </div>
+              <div className="flex gap-2.25">
+                <span className="text-accent">✓</span>Port {portNumber || 22} open via bastion
+              </div>
+              <div className="flex gap-2.25">
+                <span className="text-warn">!</span>Host key not yet in known_hosts
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-auto font-mono text-mono/cmd text-faint">
+            Credentials always live in the OS keychain. The app stores only references.
+          </p>
+        </aside>
+      </div>
+    </div>
+  )
+}

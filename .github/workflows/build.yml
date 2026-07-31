@@ -1,0 +1,99 @@
+name: Build
+
+# Tauri cannot cross-compile between operating systems: the C in
+# libsqlite3-sys, the webview, and the bundlers are all host-native. Each
+# platform is therefore built on its own runner, and this file is the only
+# place a Windows or Linux binary comes from at all.
+on:
+  push:
+    branches: [main, macos-support]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      # One platform failing should not hide whether the others are fine —
+      # the usual reason for running this is to find out which one broke.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            # One binary for both Apple architectures rather than two
+            # downloads, since the difference is invisible to whoever is
+            # installing it.
+            args: --target universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            name: macos
+          - platform: ubuntu-22.04
+            args: ''
+            rust-targets: ''
+            name: linux
+          - platform: windows-latest
+            args: ''
+            rust-targets: ''
+            name: windows
+
+    runs-on: ${{ matrix.platform }}
+    name: ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri v2 needs webkit2gtk 4.1, which is why this pins 22.04 rather
+      # than tracking ubuntu-latest: the 4.0 package on older images and the
+      # renames on newer ones both break the build in ways that read as
+      # missing system libraries.
+      - name: Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf \
+            build-essential \
+            file
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      # The Rust build is minutes and the JS build is seconds, so only the
+      # former is worth a cache; keyed per platform because the artefacts are
+      # not interchangeable.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Typecheck before the long part: a TS error should not cost a Rust
+      # build to discover.
+      - run: npx tsc --noEmit
+
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - run: npm run tauri build -- ${{ matrix.args }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portway-${{ matrix.name }}
+          # Installers only. The unpacked .app and the raw executable are
+          # already inside them, and uploading both doubles the artefact for
+          # nothing.
+          path: |
+            src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/bundle/nsis/*.exe
+            src-tauri/target/**/release/bundle/msi/*.msi
+            src-tauri/target/**/release/bundle/deb/*.deb
+            src-tauri/target/**/release/bundle/appimage/*.AppImage
+          if-no-files-found: error

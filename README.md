@@ -257,6 +257,15 @@ plus search/filter/accent for the parts that are live.
   backend check is what stops a mis-click reading a gigabyte over the wire. The frontend passes
   `confirmedLarge` only after the user has answered, so the guard cannot be reached by accident
   and cannot be argued with by a caller that forgets to ask.
+- **`openSession` and `openSessionTab` mean different things.** The SSH button says "get me to
+  this server", so it reuses a live tab for that host — being taken to the one already open is
+  the helpful answer. The `+` picker says "another tab", so it always makes one, even for a host
+  that is already open: a button labelled `+` that sometimes adds nothing looks broken.
+- **The status bar only advertises keys that are bound.** It used to promise a Windows chord on
+  a Mac and a `⌘D` split that does not exist. A status bar naming shortcuts that do nothing
+  teaches the user their keyboard is broken, which is a worse outcome than saying less. The
+  new-tab shortcut is captured on `window` rather than bubbled, because the terminal holds focus
+  most of the time this screen is open and xterm would otherwise see the key first.
 - **The native context menu is off everywhere** (`App.tsx`), because a desktop app that opens
   the webview's "Reload / Inspect Element" menu reads as a web page in a frame. The terminal was
   the one candidate for an exception — some terminals paste on right-click — but xterm does not

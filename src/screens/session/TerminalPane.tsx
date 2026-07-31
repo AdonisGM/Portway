@@ -9,6 +9,7 @@ import { sshResize, sshWrite } from '@/lib/api'
 import { decodeBytes, encodeText } from '@/lib/bytes'
 import { StatusDot } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
+import { isMac } from '@/lib/platform'
 
 /**
  * The real terminal: xterm.js on the front, an SSH PTY on the back.
@@ -164,7 +165,11 @@ export function TerminalPane({ session }: { session: Session }) {
         <span>
           {size.cols}×{size.rows}
         </span>
-        <span className="ml-auto">Ctrl+Shift+T new tab · Ctrl+Shift+D split</span>
+        {/* Only what is actually bound, spelled the way this platform spells
+            it. It previously advertised a Windows chord on a Mac and a split
+            that does not exist — a status bar promising keys that do nothing
+            teaches the user their keyboard is broken. */}
+        <span className="ml-auto">{isMac ? '⌘T' : 'Ctrl+Shift+T'} new tab</span>
       </div>
     </div>
   )

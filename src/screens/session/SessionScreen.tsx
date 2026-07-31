@@ -1,14 +1,34 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Badge, StatusDot } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
 import { TerminalPane } from './TerminalPane'
 import { SftpPane } from './SftpPane'
 import { useSplit } from './useSplit'
+import { NewTabPicker } from './NewTabPicker'
+import { isMac } from '@/lib/platform'
 
 /** Terminal on the left, SFTP browser on the right, one tab per session. */
 export function SessionScreen() {
   const body = useRef<HTMLDivElement>(null)
   const split = useSplit(body)
+  const plusRef = useRef<HTMLButtonElement>(null)
+  const [picking, setPicking] = useState(false)
+
+  /**
+   * The shortcut the status bar has always advertised, finally bound. Captured
+   * rather than bubbled: the terminal has focus most of the time this screen is
+   * open, and xterm would otherwise be first to see the key.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const wanted = isMac ? e.metaKey && !e.shiftKey : e.ctrlKey && e.shiftKey
+      if (!wanted || e.key.toLowerCase() !== 't') return
+      e.preventDefault()
+      setPicking(true)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
   const sessions = useApp((s) => s.sessions)
   const hosts = useApp((s) => s.hosts)
   const tab = useApp((s) => s.tab)
@@ -66,15 +86,22 @@ export function SessionScreen() {
           </div>
         ))}
 
-        {/* The new-session picker isn't designed yet — the button is present
-            because the design has it, but it deliberately does nothing. */}
+        {/* The handoff draws this button and lists its picker among the things
+            it never designed, so the panel's shape is ours. */}
         <button
+          ref={plusRef}
           type="button"
           aria-label="New session"
-          className="flex items-center px-3 text-title text-faint transition-colors hover:text-fg"
+          aria-haspopup="listbox"
+          aria-expanded={picking}
+          onClick={() => setPicking((p) => !p)}
+          className={`flex items-center px-3 text-title transition-colors ${
+            picking ? 'text-fg' : 'text-faint hover:text-fg'
+          }`}
         >
           +
         </button>
+        <NewTabPicker open={picking} onClose={() => setPicking(false)} anchorRef={plusRef} />
       </div>
 
       <div ref={body} className="flex min-h-0 flex-1">

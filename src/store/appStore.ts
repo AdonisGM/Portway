@@ -81,6 +81,8 @@ interface AppState {
   requestDelete: (host: Host) => void
   cancelDelete: () => void
   openSession: (host: Host) => void
+  /** Always a new tab, even if this host already has one. */
+  openSessionTab: (host: Host) => void
   setSessionStatus: (id: string, status: SessionStatus) => void
   activateTab: (tab: number) => void
   closeTab: (tab: number) => void
@@ -223,7 +225,9 @@ export const useApp = create<AppState>((set, get) => ({
    * opened an identical session.
    */
   openSession: (host) => {
-    // Re-use a live tab for this host rather than stacking duplicates.
+    // Re-use a live tab for this host rather than stacking duplicates. This
+    // button means "get me to this server", and being taken to the one already
+    // open is the helpful answer. `openSessionTab` is the other intent.
     const existing = get().sessions.findIndex(
       (s) => s.hostId === host.id && s.status !== 'closed',
     )
@@ -231,7 +235,10 @@ export const useApp = create<AppState>((set, get) => ({
       set({ screen: 'session', selectedId: host.id, tab: existing, drawer: false })
       return
     }
+    get().openSessionTab(host)
+  },
 
+  openSessionTab: (host) => {
     const session: Session = {
       id: `s${sessionSeq++}`,
       hostId: host.id,

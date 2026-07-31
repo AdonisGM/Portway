@@ -488,29 +488,45 @@ pub async fn edit(
 
 /// Hands the scratch copy to a local application.
 ///
-/// `open` on macOS and `cmd /c start` on Windows are the shells' own "use
-/// whatever is registered for this" — the same thing double-clicking does, so
-/// the user's existing choice of editor is respected without asking.
+/// Three cases, and the macOS one is the reason this is not a one-liner: a Mac
+/// application is a *bundle directory*, not an executable, so a chosen app has
+/// to go through `open -a` — exec'ing `TextEdit.app` fails. Everywhere else a
+/// chosen application is an executable and is run directly, which avoids
+/// `cmd /C start` re-parsing the arguments and applying its own quoting rules
+/// to a path that may contain spaces.
+///
+/// With nothing chosen, each platform's own "use whatever is registered for
+/// this" is what double-clicking would do, so the user's existing preference is
+/// honoured without being asked for.
 fn launch(local: &std::path::Path, opener: Option<&str>) -> Result<()> {
-    let mut command = if cfg!(target_os = "macos") {
-        let mut c = std::process::Command::new("open");
-        if let Some(app_path) = opener {
-            c.arg("-a").arg(app_path);
+    let mut command = match opener {
+        Some(app) if cfg!(target_os = "macos") => {
+            let mut c = std::process::Command::new("open");
+            c.arg("-a").arg(app).arg(local);
+            c
         }
-        c.arg(local);
-        c
-    } else if cfg!(target_os = "windows") {
-        let mut c = std::process::Command::new("cmd");
-        c.arg("/C").arg("start").arg("");
-        if let Some(app_path) = opener {
-            c.arg(app_path);
+        Some(app) => {
+            let mut c = std::process::Command::new(app);
+            c.arg(local);
+            c
         }
-        c.arg(local);
-        c
-    } else {
-        let mut c = std::process::Command::new(opener.unwrap_or("xdg-open"));
-        c.arg(local);
-        c
+        None if cfg!(target_os = "macos") => {
+            let mut c = std::process::Command::new("open");
+            c.arg(local);
+            c
+        }
+        None if cfg!(target_os = "windows") => {
+            // The empty argument is `start`'s window title. Without it `start`
+            // reads the first quoted argument as the title and opens nothing.
+            let mut c = std::process::Command::new("cmd");
+            c.arg("/C").arg("start").arg("").arg(local);
+            c
+        }
+        None => {
+            let mut c = std::process::Command::new("xdg-open");
+            c.arg(local);
+            c
+        }
     };
     command
         .spawn()

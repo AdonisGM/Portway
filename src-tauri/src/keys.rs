@@ -99,21 +99,44 @@ fn read_pub(path: &Path) -> Option<PubFacts> {
     })
 }
 
-/// Fingerprints the running ssh-agent is holding.
+/// Whatever the platform's ssh-agent is holding.
 ///
-/// No agent is an ordinary state, not an error: `SSH_AUTH_SOCK` is unset on a
-/// fresh login shell and on Windows without the service running. Every key then
+/// The two systems do not agree on what an agent even is. Unix publishes a
+/// Unix-domain socket in `SSH_AUTH_SOCK`; Windows OpenSSH publishes a named
+/// pipe and sets no such variable. russh reflects that split in its types —
+/// `connect_env` exists only under `#[cfg(unix)]` — so calling it
+/// unconditionally does not degrade on Windows, it fails to compile.
+///
+/// No agent at all is an ordinary state, not an error: the variable is unset on
+/// a fresh login shell and the Windows service is off by default. Every key then
 /// reads as "not loaded", which is true.
-async fn agent_fingerprints() -> HashSet<String> {
+async fn agent_identities() -> Vec<russh::keys::PublicKey> {
     use russh::keys::agent::client::AgentClient;
 
-    let Ok(mut agent) = AgentClient::connect_env().await else {
-        return HashSet::new();
-    };
-    let Ok(identities) = agent.request_identities().await else {
-        return HashSet::new();
-    };
-    identities
+    #[cfg(unix)]
+    {
+        let Ok(mut agent) = AgentClient::connect_env().await else {
+            return Vec::new();
+        };
+        agent.request_identities().await.unwrap_or_default()
+    }
+
+    #[cfg(windows)]
+    {
+        // The path Windows OpenSSH always uses. Pageant speaks the same
+        // protocol over a different transport and would be a separate branch.
+        let Ok(mut agent) =
+            AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent").await
+        else {
+            return Vec::new();
+        };
+        agent.request_identities().await.unwrap_or_default()
+    }
+}
+
+async fn agent_fingerprints() -> HashSet<String> {
+    agent_identities()
+        .await
         .iter()
         .map(|k| k.fingerprint(HashAlg::Sha256).to_string())
         .collect()

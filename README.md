@@ -239,6 +239,12 @@ plus search/filter/accent for the parts that are live.
   extension, so a server too old to send one costs a second and then correctly falls back to
   SHA-1. Non-RSA keys are unaffected: `PrivateKeyWithHashAlg::new` drops the hash algorithm for
   anything that is not RSA.
+- **The ssh-agent is reached differently on each platform, and the difference is a compile
+  error rather than a runtime one.** Unix publishes a Unix-domain socket in `SSH_AUTH_SOCK`;
+  Windows OpenSSH publishes a named pipe and sets no such variable. russh reflects that in its
+  types — `AgentClient::connect_env` exists only under `#[cfg(unix)]` — so calling it
+  unconditionally does not degrade on Windows, it fails to build. `keys.rs::agent_identities`
+  is split accordingly.
 - **Editing hands the file to a local application rather than embedding an editor.** A bundled
   editor is several megabytes of somebody else's preferences, needs web workers the CSP would
   have to be widened for, and would still be the wrong editor. Instead the file is downloaded to

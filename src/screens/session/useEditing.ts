@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { open as pickFile } from '@tauri-apps/plugin-dialog'
 import { LARGE_FILE, message, sftpEdit, type RemoteFile } from '@/lib/api'
+import { isMac } from '@/lib/platform'
 
 /**
  * Files this session has open in a local application.
@@ -57,8 +58,12 @@ export function useEditing(sessionId: string, onSaved: () => void) {
   }, [sessionId])
 
   /**
-   * `choose` shows the OS file picker over /Applications so the user can send
-   * the file to something other than the registered default.
+   * `choose` shows the OS file picker so the user can send the file to
+   * something other than the registered default. Where applications live and
+   * what one *is* differ per platform: a macOS app is a `.app` bundle under
+   * /Applications, a Windows one is an `.exe` under Program Files. Pointing the
+   * panel at a directory that does not exist is worse than not pointing it
+   * anywhere, so this only sets a default where it knows one.
    */
   const edit = useCallback(
     async (file: RemoteFile, remote: string, choose: boolean) => {
@@ -68,7 +73,9 @@ export function useEditing(sessionId: string, onSaved: () => void) {
           const picked = await pickFile({
             multiple: false,
             directory: false,
-            defaultPath: '/Applications',
+            ...(isMac
+              ? { defaultPath: '/Applications', filters: [{ name: 'Applications', extensions: ['app'] }] }
+              : { filters: [{ name: 'Programs', extensions: ['exe', 'bat', 'cmd'] }] }),
             title: `Open ${file.name} with…`,
           })
           if (typeof picked !== 'string') return // dismissed

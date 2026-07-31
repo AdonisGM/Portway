@@ -611,3 +611,62 @@ async fn get_file(
     target.flush().await?;
     Ok(total)
 }
+
+/// Deletes a file, or a directory and everything under it.
+///
+/// SFTP's `remove_dir` only takes empty directories, so a tree has to be
+/// emptied from the leaves up. The walk collects directories on the way down
+/// and removes them in reverse afterwards, which is the same order `rm -r`
+/// uses and the only one the protocol permits.
+///
+/// There is no undo on the far end. The caller is expected to have asked.
+pub async fn remove(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -> Result<u64> {
+    let (sftp, host_id) = open(app, session_id).await?;
+    log(
+        app,
+        host_id,
+        session_id,
+        Origin::User,
+        &format!("sftp rm{} {path}", if is_dir { " -r" } else { "" }),
+    );
+
+    if !is_dir {
+        sftp.remove_file(path)
+            .await
+            .map_err(|e| Error::Ssh(format!("could not delete {path}: {}", tidy(e))))?;
+        return Ok(1);
+    }
+
+    // Descend first, recording directories in the order they are found.
+    let mut removed = 0u64;
+    let mut dirs = vec![path.to_string()];
+    let mut queue = vec![path.to_string()];
+    while let Some(dir) = queue.pop() {
+        let entries = sftp
+            .read_dir(&dir)
+            .await
+            .map_err(|e| Error::Ssh(format!("could not read {dir}: {}", tidy(e))))?;
+        for entry in entries {
+            let child = join_remote(&dir, &entry.file_name());
+            if entry.metadata().is_dir() {
+                dirs.push(child.clone());
+                queue.push(child);
+            } else {
+                sftp.remove_file(&child)
+                    .await
+                    .map_err(|e| Error::Ssh(format!("could not delete {child}: {}", tidy(e))))?;
+                removed += 1;
+            }
+        }
+    }
+
+    // Deepest last in, first out: a directory is only empty once everything
+    // discovered beneath it has gone.
+    for dir in dirs.into_iter().rev() {
+        sftp.remove_dir(&dir)
+            .await
+            .map_err(|e| Error::Ssh(format!("could not delete {dir}: {}", tidy(e))))?;
+        removed += 1;
+    }
+    Ok(removed)
+}

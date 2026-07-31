@@ -257,6 +257,12 @@ plus search/filter/accent for the parts that are live.
   backend check is what stops a mis-click reading a gigabyte over the wire. The frontend passes
   `confirmedLarge` only after the user has answered, so the guard cannot be reached by accident
   and cannot be argued with by a caller that forgets to ask.
+- **Deleting a folder over SFTP has to empty it first.** `remove_dir` only takes an empty
+  directory, so `sftp.rs::remove` descends collecting directories, deletes the files it finds,
+  then removes the directories in reverse discovery order — deepest first, which is the only
+  order the protocol permits and the same one `rm -r` uses. The dialog says so for the folder
+  case: agreeing to delete a folder is agreeing to everything inside it, and there is no undo
+  on the far end.
 - **`openSession` and `openSessionTab` mean different things.** The SSH button says "get me to
   this server", so it reuses a live tab for that host — being taken to the one already open is
   the helpful answer. The `+` picker says "another tab", so it always makes one, even for a host

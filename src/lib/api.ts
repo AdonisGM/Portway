@@ -172,6 +172,13 @@ export const sftpEdit = (
   confirmedLarge = false,
 ) => invoke<string>('sftp_edit', { sessionId, remote, opener, confirmedLarge })
 
+/**
+ * Deletes a file, or a directory and everything under it. Returns how many
+ * entries went. There is no undo on the far end.
+ */
+export const sftpRemove = (sessionId: string, path: string, isDir: boolean) =>
+  invoke<number>('sftp_remove', { sessionId, path, isDir })
+
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })
 

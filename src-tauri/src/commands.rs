@@ -134,6 +134,19 @@ pub async fn sftp_edit(
     sftp::edit(&app, &session_id, &remote, opener, confirmed_large).await
 }
 
+/// Deletes a file, or a directory and everything under it. Returns how many
+/// entries went, which is the only way the UI can report what a recursive
+/// delete actually did.
+#[tauri::command]
+pub async fn sftp_remove(
+    app: AppHandle,
+    session_id: String,
+    path: String,
+    is_dir: bool,
+) -> Result<u64> {
+    sftp::remove(&app, &session_id, &path, is_dir).await
+}
+
 /// The audit trail for one host, newest first.
 #[tauri::command]
 pub fn host_log(db: State<'_, Db>, host_id: i64, limit: Option<i64>) -> Result<Vec<LogEntry>> {

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RemoteFile } from '@/lib/api'
-import { LARGE_FILE, message, sftpChmod, sftpChown, sftpList, sftpRename } from '@/lib/api'
+import {
+  LARGE_FILE,
+  message,
+  sftpChmod,
+  sftpChown,
+  sftpList,
+  sftpRemove,
+  sftpRename,
+} from '@/lib/api'
 import { formatMtime, formatSize } from '@/lib/bytes'
 import type { Session } from '@/data/types'
 import { Chip } from '@/components/ui/Chip'
@@ -56,7 +64,7 @@ export function SftpPane({ session, width, resizing }: Props) {
   // the menu goes, and which dialog it opened. Keeping them together means a
   // dialog can never outlive the row it was opened on.
   const [menu, setMenu] = useState<{ file: RemoteFile; at: MenuPoint } | null>(null)
-  const [dialog, setDialog] = useState<'rename' | 'mode' | 'owner' | null>(null)
+  const [dialog, setDialog] = useState<'rename' | 'mode' | 'owner' | 'delete' | null>(null)
   const [acting, setActing] = useState<RemoteFile | null>(null)
   // Separate from `error`, which means "this folder could not be read" and so
   // replaces the table. A failed rename or chmod must leave the listing where
@@ -128,7 +136,7 @@ export function SftpPane({ session, width, resizing }: Props) {
     }
   }
 
-  const openDialog = (kind: 'rename' | 'mode' | 'owner') => {
+  const openDialog = (kind: 'rename' | 'mode' | 'owner' | 'delete') => {
     setActing(menu?.file ?? null)
     setDialog(kind)
     setMenu(null)
@@ -304,7 +312,7 @@ export function SftpPane({ session, width, resizing }: Props) {
           }}
         />
       )}
-      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 210 : 130}>
+      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 270 : 190}>
         {menu?.file.kind === 'file' ? (
           <>
             <MenuItem onClick={() => menu && openFile(menu.file, false)}>Open</MenuItem>
@@ -323,6 +331,10 @@ export function SftpPane({ session, width, resizing }: Props) {
           }}
         >
           Copy path
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem danger onClick={() => openDialog('delete')}>
+          Delete…
         </MenuItem>
       </ContextMenu>
 
@@ -392,6 +404,32 @@ export function SftpPane({ session, width, resizing }: Props) {
           onCancel={() => setDialog(null)}
           onApply={(mode) => void act(() => sftpChmod(session.id, pathOf(acting), mode))}
         />
+      ) : null}
+
+      {dialog === 'delete' && acting ? (
+        <ConfirmDialog
+          open
+          title={acting.kind === 'dir' ? 'Delete folder' : 'Delete file'}
+          confirmLabel="Delete"
+          onCancel={() => setDialog(null)}
+          onConfirm={() =>
+            void act(() => sftpRemove(session.id, pathOf(acting), acting.kind === 'dir'))
+          }
+        >
+          <div className="flex flex-col gap-2">
+            <span>
+              <span className="font-mono text-cell text-fg">{pathOf(acting)}</span>
+            </span>
+            {/* The folder case is the one worth spelling out: SFTP cannot remove
+                a directory that has anything in it, so this empties it first —
+                which means agreeing to this agrees to everything inside. */}
+            <span className="text-muted">
+              {acting.kind === 'dir'
+                ? 'This deletes the folder and everything inside it. There is no undo on the server.'
+                : 'There is no undo on the server.'}
+            </span>
+          </div>
+        </ConfirmDialog>
       ) : null}
 
       {dialog === 'owner' && acting ? (

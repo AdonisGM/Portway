@@ -69,6 +69,7 @@ pub fn run() {
             commands::sftp_rename,
             commands::sftp_chmod,
             commands::sftp_chown,
+            commands::sftp_remove,
             commands::sftp_edit,
             commands::host_log,
         ])

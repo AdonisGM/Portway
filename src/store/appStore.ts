@@ -192,9 +192,18 @@ export const useApp = create<AppState>((set, get) => ({
 
   deleteHost: async (id) => {
     await api.deleteHost(id)
+
+    // Any session pointing at the deleted host goes with it — but dropping the
+    // tab is not the same as ending the connection. Left alone these keep a
+    // shell running on a host the app no longer lists, and keep filling a
+    // replay buffer nothing will ever attach to.
+    for (const session of get().sessions.filter((s) => s.hostId === id)) {
+      void api.sshDisconnect(session.id).catch(() => {})
+      ssh.forget(session.id)
+    }
+
     set((state) => ({
       hosts: state.hosts.filter((h) => h.id !== id),
-      // Any session pointing at the deleted host goes with it.
       sessions: state.sessions.filter((s) => s.hostId !== id),
       selectedId: state.selectedId === id ? null : state.selectedId,
       drawer: state.selectedId === id ? false : state.drawer,

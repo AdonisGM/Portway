@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Button } from './Button'
+import { HoldButton } from './HoldButton'
 
 /**
  * NOT IN THE HANDOFF. The design deliberately leaves delete confirmation
@@ -80,14 +81,33 @@ export function ConfirmDialog({
           <Button ref={cancelRef} size="md" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
-          <Button
-            variant={confirmVariant}
-            size="md"
-            onClick={onConfirm}
-            disabled={busy || confirmDisabled}
-          >
-            {confirmLabel}
-          </Button>
+          {/* Destructive confirms are held, not clicked. A dialog is answered
+              in the same place the click that opened it landed, so the motion
+              that dismisses one is the motion that confirms it — holding is
+              the only part of the interaction that cannot happen by reflex.
+              Non-destructive confirms stay ordinary buttons: making Rename
+              hold would teach the user to hold everything, which is how the
+              gesture stops meaning anything. */}
+          {confirmVariant === 'dangerSolid' ? (
+            <HoldButton
+              onConfirm={onConfirm}
+              disabled={busy || confirmDisabled}
+              label={`Hold to ${confirmLabel.toLowerCase()}`}
+            >
+              {/* Callers swap the label to a progress word while the work runs
+                  — "Deleting…" — and "Hold to deleting…" is not a sentence. */}
+              {busy ? confirmLabel : `Hold to ${confirmLabel.toLowerCase()}`}
+            </HoldButton>
+          ) : (
+            <Button
+              variant={confirmVariant}
+              size="md"
+              onClick={onConfirm}
+              disabled={busy || confirmDisabled}
+            >
+              {confirmLabel}
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -121,6 +121,11 @@
   --color-warn: #c9a15f;
   --color-danger: #d9776a;
   --color-danger-fill: #d9776a26;
+  /* The colour a hold-to-confirm button sweeps in. The design's danger red is
+     deliberately muted for status dots and chips; a button filling up needs the
+     fill to read as *more*, so this is the same hue with the saturation the
+     resting state gives away. */
+  --color-danger-bright: #e5534b;
   --color-scrim: #00000059;
 
   /* -- type ramp -----------------------------------------------------------

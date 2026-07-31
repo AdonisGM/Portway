@@ -257,6 +257,15 @@ plus search/filter/accent for the parts that are live.
   backend check is what stops a mis-click reading a gigabyte over the wire. The frontend passes
   `confirmedLarge` only after the user has answered, so the guard cannot be reached by accident
   and cannot be argued with by a caller that forgets to ask.
+- **Destructive confirms are held, not clicked** (`HoldButton`, wired in `ConfirmDialog` for
+  the `dangerSolid` variant only). A dialog already asks once, but it is answered by a click in
+  roughly the place the click that opened it landed — the reflex that dismisses a dialog is the
+  same motion that confirms it. A held gesture cannot happen by reflex, and it gives back what a
+  modal takes away: the chance to change your mind *during* the action rather than only before
+  it. Letting go rewinds, faster than it filled, so hesitating is not punished.
+
+  Non-destructive confirms stay ordinary buttons on purpose. Making Rename hold would teach the
+  user to hold everything, which is exactly how the gesture stops meaning anything.
 - **Deleting a folder over SFTP has to empty it first.** `remove_dir` only takes an empty
   directory, so `sftp.rs::remove` descends collecting directories, deletes the files it finds,
   then removes the directories in reverse discovery order — deepest first, which is the only

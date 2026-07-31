@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { listen } from '@tauri-apps/api/event'
 import '@xterm/xterm/css/xterm.css'
 
 import type { Session } from '@/data/types'
 import { sshResize, sshWrite } from '@/lib/api'
-import { decodeBytes, encodeText } from '@/lib/bytes'
+import { encodeText } from '@/lib/bytes'
+import { subscribe } from '@/lib/sshBus'
 import { StatusDot } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
 import { isMac } from '@/lib/platform'
@@ -87,21 +87,16 @@ export function TerminalPane({ session }: { session: Session }) {
       void sshWrite(session.id, encodeText(data)).catch(() => {})
     })
 
-    // Output in. The listener is per-pane and filters by session id, so two
-    // open tabs never bleed into one another.
-    const unlistenData = listen<{ sessionId: string; data: string }>('ssh://data', (event) => {
-      if (event.payload.sessionId !== session.id) return
-      term.write(decodeBytes(event.payload.data))
-    })
-
-    const unlistenClosed = listen<{ sessionId: string; reason: string }>(
-      'ssh://closed',
-      (event) => {
-        if (event.payload.sessionId !== session.id) return
+    // Output in. Through the bus rather than a listener of its own, so the
+    // greeting and prompt that arrive while this pane is still mounting are
+    // waiting for it rather than lost — see lib/sshBus.ts.
+    const unsubscribe = subscribe(session.id, {
+      onData: (bytes) => term.write(bytes),
+      onClosed: (reason) => {
         setSessionStatus(session.id, 'closed')
-        term.write(`\r\n\x1b[38;5;245m— ${event.payload.reason} —\x1b[0m\r\n`)
+        term.write(`\r\n\x1b[38;5;245m— ${reason} —\x1b[0m\r\n`)
       },
-    )
+    })
 
     // Keep the PTY the same size as the pane, so full-screen programs line up.
     const applyFit = () => {
@@ -121,8 +116,7 @@ export function TerminalPane({ session }: { session: Session }) {
     return () => {
       typed.dispose()
       observer.disconnect()
-      void unlistenData.then((un) => un())
-      void unlistenClosed.then((un) => un())
+      unsubscribe()
       term.dispose()
       termRef.current = null
     }

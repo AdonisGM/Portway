@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import * as api from '@/lib/api'
+import * as ssh from '@/lib/sshBus'
 import type { KeyFile } from '@/lib/api'
 import type { AuthMethod, GroupId, Host, HostInput, Session, SessionStatus } from '@/data/types'
 
@@ -254,10 +255,13 @@ export const useApp = create<AppState>((set, get) => ({
       tab: state.sessions.length,
     }))
 
-    // The tab exists before the handshake starts, so the terminal can subscribe
-    // to output and show progress rather than appearing only once connected.
-    void api
-      .sshConnect(host.id, session.id)
+    // The tab exists before the handshake starts, so the terminal can show
+    // progress rather than appearing only once connected — and the handshake
+    // waits for this window to be receiving SSH events, so the shell cannot
+    // greet an audience that has not arrived yet.
+    void ssh
+      .ready()
+      .then(() => api.sshConnect(host.id, session.id))
       .then((info) => {
         set((state) => ({
           sessions: state.sessions.map((s) =>
@@ -300,7 +304,10 @@ export const useApp = create<AppState>((set, get) => ({
     // Tear the connection down before dropping the tab, or the shell would be
     // left running on the host with nothing reading it.
     const closing = get().sessions[tab]
-    if (closing) void api.sshDisconnect(closing.id).catch(() => {})
+    if (closing) {
+      void api.sshDisconnect(closing.id).catch(() => {})
+      ssh.forget(closing.id)
+    }
 
     set((state) => {
       const sessions = state.sessions.filter((_, i) => i !== tab)

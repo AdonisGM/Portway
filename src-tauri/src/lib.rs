@@ -71,8 +71,25 @@ pub fn run() {
             commands::sftp_chown,
             commands::sftp_remove,
             commands::sftp_edit,
+            commands::open_session_window,
             commands::host_log,
         ])
+        // Closing a session window has to end its connections. A tab close
+        // goes through `ssh_disconnect`; a window close does not, and an
+        // orphaned session in the map holds a live PTY the user can no longer
+        // see or reach.
+        .on_window_event(|window, event| {
+            if !matches!(event, tauri::WindowEvent::Destroyed) {
+                return;
+            }
+            let app = window.app_handle().clone();
+            let label = window.label().to_string();
+            tauri::async_runtime::spawn(async move {
+                for id in ssh::sessions_of_window(&app, &label) {
+                    let _ = ssh::disconnect(&app, &id).await;
+                }
+            });
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

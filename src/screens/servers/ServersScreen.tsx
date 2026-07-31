@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GROUP_IDS, GROUP_NAMES } from '@/data/groups'
 import type { Host } from '@/data/types'
+import { openSessionWindow } from '@/lib/api'
+import { ELSEWHERE_KEY, opensElsewhere, useOpensElsewhere } from '@/lib/platform'
 import { isRecent, relativeTime } from '@/lib/format'
 import { buildHostFilter, hostQualifiers } from '@/lib/hostQuery'
 import { Button } from '@/components/ui/Button'
@@ -85,6 +87,7 @@ export function ServersScreen() {
   const openSession = useApp((s) => s.openSession)
   const openNewForm = useApp((s) => s.openNewForm)
   const selected = useSelectedHost()
+  const elsewhere = useOpensElsewhere()
 
   const searchRef = useRef<HTMLInputElement>(null)
   const [sort, setSort] = useState<SortState | null>(null)
@@ -194,12 +197,19 @@ export function ServersScreen() {
       render: (host) => (
         <Chip
           tone="strong"
+          title={`Open a session — ${ELSEWHERE_KEY}-click for a new window`}
           onClick={(e) => {
             e.stopPropagation()
+            // ⌘-click opens it in its own window, the way a browser would.
+            // Plain click is unchanged.
+            if (opensElsewhere(e)) return void openSessionWindow(host.id, host.name)
             openSession(host)
           }}
         >
-          SSH
+          {/* The arrow keeps its space whether or not it shows, so holding the
+              modifier changes what the chip says without moving it out from
+              under the pointer that is hovering it. */}
+          SSH<span className={elsewhere ? '' : 'invisible'}> ↗</span>
         </Chip>
       ),
     },

@@ -93,6 +93,15 @@ interface AppState {
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
 }
 
+/**
+ * Session ids have to be unique across *windows*, not just within one.
+ *
+ * A session opened in its own window runs a second copy of this module with its
+ * own counter, so a bare `s0` would be handed out twice — and the Rust session
+ * map is keyed by this exact string, which would point one window's terminal at
+ * the other's bytes. The per-window tag is what keeps them apart.
+ */
+const WINDOW_TAG = crypto.randomUUID().slice(0, 4)
 let sessionSeq = 0
 
 /** Replaces one host in the list without disturbing the order. */
@@ -241,7 +250,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   openSessionTab: (host) => {
     const session: Session = {
-      id: `s${sessionSeq++}`,
+      id: `${WINDOW_TAG}${sessionSeq++}`,
       hostId: host.id,
       name: host.name,
       status: 'connecting',

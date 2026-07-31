@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Window chrome only. Tauri v2 denies every IPC command that isn't listed here. On Windows the frame is custom (decorations:false) so the UI drives minimize / maximize / close / drag itself; on macOS the system frame draws the traffic lights and only show and start-dragging are still reached, but the rest must stay listed for the Windows build.",
-  "windows": ["main"],
+  "description": "Window chrome and the event stream. Tauri v2 denies every IPC command that isn't listed here. On Windows the frame is custom (decorations:false) so the UI drives minimize / maximize / close / drag itself; on macOS the system frame draws the traffic lights and only show and start-dragging are still reached, but the rest must stay listed for the Windows build. `windows` has to name every window, and one it does not name gets nothing — not even core:event, which is how terminal output reaches the frontend. Custom commands (ssh_connect, sftp_list …) sit outside this list and are always allowed, so an unnamed window connects, lists files and sends keystrokes perfectly while never seeing a byte come back. `session-*` is the per-host windows from open_session_window.",
+  "windows": ["main", "session-*"],
   "permissions": [
     "core:default",
     "core:window:allow-show",

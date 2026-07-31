@@ -179,6 +179,10 @@ export const sftpEdit = (
 export const sftpRemove = (sessionId: string, path: string, isDir: boolean) =>
   invoke<number>('sftp_remove', { sessionId, path, isDir })
 
+/** Opens a session for this host in a window of its own. */
+export const openSessionWindow = (hostId: number, title: string) =>
+  invoke<void>('open_session_window', { hostId, title })
+
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })
 

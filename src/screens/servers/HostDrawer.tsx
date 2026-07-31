@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { GROUP_NAMES } from '@/data/groups'
 import type { Host } from '@/data/types'
-import { hostLog, type LogEntry } from '@/lib/api'
+import { hostLog, openSessionWindow, type LogEntry } from '@/lib/api'
+import { ELSEWHERE_KEY, opensElsewhere, useOpensElsewhere } from '@/lib/platform'
 import { hostCommand } from '@/lib/command'
 import { relativeTime } from '@/lib/format'
 import { Button } from '@/components/ui/Button'
@@ -22,6 +23,7 @@ export function HostDrawer({ host }: { host: Host }) {
   const openEditForm = useApp((s) => s.openEditForm)
   const openDuplicateForm = useApp((s) => s.openDuplicateForm)
   const requestDelete = useApp((s) => s.requestDelete)
+  const elsewhere = useOpensElsewhere()
 
   const isKey = host.auth === 'key'
   const authLabel =
@@ -53,10 +55,32 @@ export function HostDrawer({ host }: { host: Host }) {
 
         {/* The design puts SSH and SFTP side by side, but both panes ride one
             connection now, so a second button would open exactly the same
-            session. One full-width action instead. */}
-        <div className="mt-3.5">
-          <Button variant="accent" size="block" onClick={() => openSession(host)}>
-            SSH
+            session. The pair is kept for where the session lands instead: the
+            wide half opens it here, the narrow one in a window of its own. */}
+        <div className="mt-3.5 flex gap-1.5">
+          <Button
+            variant="accent"
+            size="block"
+            className="flex-1"
+            onClick={(e) => {
+              if (opensElsewhere(e)) return void openSessionWindow(host.id, host.name)
+              openSession(host)
+            }}
+          >
+            {/* Holding the modifier says so on the button rather than leaving
+                the user to remember what it does — and the label is the only
+                thing that changes, so the button does not resize under the
+                pointer that is about to click it. */}
+            {elsewhere ? 'New window' : 'SSH'}
+          </Button>
+          <Button
+            size="block"
+            className="w-auto flex-none px-3"
+            aria-label="Open this session in a new window"
+            title={`Open in a new window (${ELSEWHERE_KEY}-click SSH)`}
+            onClick={() => void openSessionWindow(host.id, host.name)}
+          >
+            ↗
           </Button>
         </div>
 

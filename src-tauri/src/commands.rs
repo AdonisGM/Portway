@@ -2,7 +2,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::audit::{self, LogEntry, Origin};
 use crate::db::Db;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::sftp::{self, Listing};
 use crate::ssh::{self, SessionInfo};
 use crate::hosts;
@@ -10,12 +10,21 @@ use crate::hosts;
 /// Opens a connection and an interactive shell. `sessionId` is chosen by the
 /// UI so the tab it just created can subscribe to events before this returns.
 #[tauri::command]
-pub async fn ssh_connect(app: AppHandle, host_id: i64, session_id: String) -> Result<SessionInfo> {
+/// `window` is the webview that invoked this, which is how a session knows
+/// where to send its output. Taking it as a parameter rather than looking it up
+/// is what makes a session opened in its own window work without a
+/// session-to-window map: whichever window connects, owns it.
+pub async fn ssh_connect(
+    app: AppHandle,
+    window: tauri::Window,
+    host_id: i64,
+    session_id: String,
+) -> Result<SessionInfo> {
     let host = {
         let db = app.state::<Db>();
         hosts::get(&db, host_id)?
     };
-    ssh::connect(app.clone(), host, session_id).await
+    ssh::connect(app.clone(), host, session_id, window.label().to_string()).await
 }
 
 /// Sends keystrokes. The bytes are base64 so control characters survive JSON.
@@ -152,4 +161,53 @@ pub async fn sftp_remove(
 pub fn host_log(db: State<'_, Db>, host_id: i64, limit: Option<i64>) -> Result<Vec<LogEntry>> {
     let conn = db.0.lock().unwrap();
     audit::recent(&conn, host_id, limit.unwrap_or(50))
+}
+
+/// Opens a session in a window of its own.
+///
+/// The window is created *empty* and connects for itself once it has booted:
+/// `ssh_connect` records whichever window invoked it, so letting the new window
+/// do the connecting is what makes its output arrive there rather than in the
+/// window that asked for it.
+///
+/// Every chrome option has to be repeated here. `tauri.macos.conf.json` applies
+/// to `app.windows[0]` and nothing else, so a runtime window inherits none of
+/// the traffic-light treatment and would otherwise open with a stock frame in
+/// the middle of an app that has none.
+#[tauri::command]
+pub async fn open_session_window(app: AppHandle, host_id: i64, title: String) -> Result<()> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    // One window per host: asking twice should raise the window that is already
+    // showing that server rather than opening a second one onto the same box.
+    let label = format!("session-{host_id}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.unminimize();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+
+    let url = WebviewUrl::App(format!("index.html?host={host_id}").into());
+    let builder = WebviewWindowBuilder::new(&app, &label, url)
+        .title(title)
+        .inner_size(1100.0, 760.0)
+        .min_inner_size(820.0, 520.0)
+        .background_color(tauri::window::Color(0x1b, 0x1e, 0x22, 0xff))
+        .theme(Some(tauri::Theme::Dark))
+        .center();
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .decorations(true)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::LogicalPosition::new(14.0, 18.0));
+
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.decorations(false);
+
+    builder
+        .build()
+        .map_err(|e| Error::Invalid(format!("could not open a window: {e}")))?;
+    Ok(())
 }

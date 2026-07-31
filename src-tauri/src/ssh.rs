@@ -24,6 +24,11 @@ use crate::models::Host;
 pub struct Session {
     pub id: String,
     pub host_id: i64,
+    /// The window that opened this session. Output is emitted only there:
+    /// `app.emit` broadcasts to every webview, so with a session in its own
+    /// window each byte would cross the IPC boundary once per window and be
+    /// discarded by all but one.
+    pub window: String,
     pub handle: Handle<ClientHandler>,
     /// Keystrokes go here; a task forwards them to the shell channel.
     pub input: mpsc::UnboundedSender<Vec<u8>>,
@@ -156,7 +161,12 @@ pub fn expand_home(path: &str) -> PathBuf {
 ///
 /// Every step that touches the host is written to the audit trail as it
 /// happens, so a failed connection leaves a record too.
-pub async fn connect(app: AppHandle, host: Host, session_id: String) -> Result<SessionInfo> {
+pub async fn connect(
+    app: AppHandle,
+    host: Host,
+    session_id: String,
+    window: String,
+) -> Result<SessionInfo> {
     let db = app.state::<Db>();
     let addr = format!("{}:{}", host.address, host.port);
 
@@ -262,6 +272,7 @@ pub async fn connect(app: AppHandle, host: Host, session_id: String) -> Result<S
     // possible, so everything funnels through here.
     let pump_app = app.clone();
     let pump_session = session_id.clone();
+    let pump_window = window.clone();
     let host_id = host.id;
     let run_on_connect = host.run_on_connect.clone();
 
@@ -309,13 +320,13 @@ pub async fn connect(app: AppHandle, host: Host, session_id: String) -> Result<S
                 message = channel.wait() => {
                     match message {
                         Some(ChannelMsg::Data { data }) => {
-                            let _ = pump_app.emit("ssh://data", DataEvent {
+                            let _ = pump_app.emit_to(&pump_window, "ssh://data", DataEvent {
                                 session_id: pump_session.clone(),
                                 data: base64(&data),
                             });
                         }
                         Some(ChannelMsg::ExtendedData { data, .. }) => {
-                            let _ = pump_app.emit("ssh://data", DataEvent {
+                            let _ = pump_app.emit_to(&pump_window, "ssh://data", DataEvent {
                                 session_id: pump_session.clone(),
                                 data: base64(&data),
                             });
@@ -335,7 +346,8 @@ pub async fn connect(app: AppHandle, host: Host, session_id: String) -> Result<S
                 Origin::System, Kind::Auth, "shell closed", None,
             );
         }
-        let _ = pump_app.emit(
+        let _ = pump_app.emit_to(
+            &pump_window,
             "ssh://closed",
             ClosedEvent { session_id: pump_session.clone(), reason: "the shell ended".into() },
         );
@@ -346,6 +358,7 @@ pub async fn connect(app: AppHandle, host: Host, session_id: String) -> Result<S
     let session = Arc::new(Session {
         id: session_id.clone(),
         host_id: host.id,
+        window: window.clone(),
         handle,
         input: input_tx,
         resize: resize_tx,
@@ -521,4 +534,14 @@ pub async fn disconnect(app: &AppHandle, id: &str) -> Result<()> {
             .await;
     }
     Ok(())
+}
+
+/// Every session a window owns — used when that window closes.
+pub fn sessions_of_window(app: &AppHandle, label: &str) -> Vec<String> {
+    let sessions = app.state::<Sessions>();
+    let map = sessions.0.lock().unwrap();
+    map.values()
+        .filter(|s| s.window == label)
+        .map(|s| s.id.clone())
+        .collect()
 }

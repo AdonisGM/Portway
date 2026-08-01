@@ -146,6 +146,14 @@ write; the dot still terminates the line, so it arrives at the box rather than i
 dynamic forward's far end is labelled `anywhere` — a line ending in mid-air is not "there is no
 port here", it is an unfinished drawing.
 
+A card is the height of what it **says**, and no more. It used to grow with its port count, so
+nine forwards produced a box five hundred pixels tall with a hundred of text at the top and
+four hundred of nothing under it. The ports need that vertical room; the card does not — so a
+**rail** beside the card carries them, joined to it by a stub, and the box stays the size of its
+own three lines. The rail also says something a tall empty box did not: these ports are one bus
+on one machine, not nine things that happen to be near each other. Fewer than two ports and
+there is no rail, because a bus for one thing is a decoration.
+
 Column positions come from the chips rather than the cards, and the vertical pitch from the
 chip height rather than the row count: what makes a busy map unreadable is labels touching, not
 boxes being large. Past a certain number of forwards no amount of spacing helps, so selecting

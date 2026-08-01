@@ -33,8 +33,22 @@ import type { TunnelRunState } from '@/data/types'
 
 const LOCAL_X = 38
 const LOCAL_W = 222
-/** Enough for the heading, the address and the summary line. */
-const LOCAL_MIN_H = 196
+
+/**
+ * Card heights are what the card *says*, and nothing else.
+ *
+ * They used to grow with the port count, so nine forwards produced a box five
+ * hundred pixels tall with a hundred pixels of text at the top and four hundred
+ * of nothing under it. The ports need that vertical room; the card does not.
+ * They are separated now: the card states what the machine is, and a rail
+ * beside it carries the ports.
+ */
+const LOCAL_H = 150
+const CARD_H = 96
+
+/** How far the rail stands off the card, and how far past the end ports it runs. */
+const RAIL_GAP = 26
+const RAIL_CAP = 12
 
 /**
  * Where the columns sit.
@@ -48,10 +62,10 @@ const LOCAL_MIN_H = 196
  * One position for the via column whether or not a third follows it, so adding
  * a forward to some other machine does not slide everything already on screen.
  */
-const VIA_X = 560
+const VIA_X = 620
 const HOST_W = 252
 
-const DEST_X = 1020
+const DEST_X = 1160
 const DEST_W = 236
 
 /** How far a chip floats off the edge it belongs to. */
@@ -81,7 +95,6 @@ const chipWidth = (label: string) => 30 + label.length * 6.6
  * content does not fit inside its own padding reads as a rendering fault, and
  * that is the one thing a diagram of your infrastructure must not look like.
  */
-const HOST_MIN_H = 96
 const HOST_GAP = 44
 
 /**
@@ -169,6 +182,30 @@ export interface Connector {
   refused: boolean
 }
 
+/**
+ * The vertical bar the ports hang off, and the stub that joins it to its card.
+ *
+ * What it buys is a card that can stay the size of its own text while nine
+ * forwards still get nine separate places to attach. It also says something
+ * true that a tall empty box did not: these ports are all on *this* machine,
+ * and they are one bus rather than nine independent things that happen to be
+ * near each other.
+ *
+ * Only drawn when there are at least two ports. One port needs no bus, and a
+ * rail through a single chip is a decoration.
+ */
+export interface Rail {
+  key: string
+  x: number
+  /** The span the ports occupy, plus a cap at each end. */
+  y1: number
+  y2: number
+  /** Where the stub meets the card, and which way it runs. */
+  stubY: number
+  stubFrom: number
+  active: boolean
+}
+
 /** One hop. A three-column tunnel has two of these; a two-column one, one. */
 export interface MapEdge {
   key: string
@@ -202,6 +239,7 @@ export interface MapLayout {
   dests: DestNode[]
   chips: PortChip[]
   dots: Connector[]
+  rails: Rail[]
   edges: MapEdge[]
 }
 
@@ -282,92 +320,178 @@ export function mapLayout(
   const relayedBy = (group: Tunnel[]) =>
     [...new Set(group.map((t) => t.via))].join(', ')
 
-  // The local card grows with its ports rather than the ports spilling past it:
-  // every chip is centred on a connection point, and a chip hanging off a card
-  // it is taller than reads as belonging to nothing.
-  const localH = Math.max(LOCAL_MIN_H, tunnels.length * PORT_PITCH + 72)
+  /**
+   * The vertical room one card needs — its own height, or the room its ports
+   * need, whichever is greater. The **card** is then drawn at its own fixed
+   * height in the middle of that: several forwards through one server all
+   * arriving at its midpoint would draw as one line, so the room has to exist,
+   * but the box does not have to be the thing that provides it.
+   */
+  const slotH = (n: number, card: number, pitch: number) =>
+    Math.max(card, (n - 1) * pitch + RAIL_CAP * 2 + 24)
 
-  // Each card is as tall as its own ports need. Several forwards through one
-  // server all arriving at its midpoint would draw as one line: the lines would
-  // converge, the chips would stack, and a map whose whole job is showing what
-  // goes where would hide exactly that.
-  const cardH = (n: number) => Math.max(HOST_MIN_H, n * HOST_PITCH + 44)
-  const columnH = (counts: number[]) =>
-    counts.reduce((sum, n) => sum + cardH(n), 0) + Math.max(0, counts.length - 1) * HOST_GAP
+  const localSlot = slotH(tunnels.length, LOCAL_H, PORT_PITCH)
+  const hostSlots = byHost.map((h) => slotH(h.tunnels.length, CARD_H, HOST_PITCH))
+  const destSlots = byDest.map((d) => slotH(d.tunnels.length, CARD_H, HOST_PITCH))
 
-  const hostHeights = byHost.map((h) => cardH(h.tunnels.length))
-  const destHeights = byDest.map((d) => cardH(d.tunnels.length))
-  const hostsH = columnH(byHost.map((h) => h.tunnels.length))
-  const destsH = columnH(byDest.map((d) => d.tunnels.length))
+  const columnH = (slots: number[]) =>
+    slots.reduce((sum, h) => sum + h, 0) + Math.max(0, slots.length - 1) * HOST_GAP
 
-  const stageH = Math.max(localH, hostsH, destsH) + MARGIN * 2
+  const hostsH = columnH(hostSlots)
+  const destsH = columnH(destSlots)
+
+  const stageH = Math.max(localSlot, hostsH, destsH) + MARGIN * 2
   const stageW = (anyRelay ? DEST_X + DEST_W : VIA_X + HOST_W) + MARGIN
 
   const middle = (height: number) => MARGIN + (stageH - MARGIN * 2 - height) / 2
 
-  const localY = middle(localH)
+  const localSlotTop = middle(localSlot)
   const hostsTop = middle(hostsH)
   const destsTop = middle(destsH)
+
+  const rails: Rail[] = []
+
+  /**
+   * Where a card's connections attach on one side.
+   *
+   * With a rail that is the rail; with one port it is the card edge itself,
+   * because a bus for a single thing is a decoration.
+   */
+  const attach = (edge: number, count: number, out: boolean) =>
+    count >= 2 ? edge + (out ? RAIL_GAP : -RAIL_GAP) : edge
+
+  /** The rows a group of ports occupies on a card, centred as a block. */
+  const rowsAround = (centre: number, count: number, pitch: number) =>
+    Array.from({ length: count }, (_, i) => centre + (i - (count - 1) / 2) * pitch)
+
+  /**
+   * A rail spanning the rows given, joined to its card at `stubY`.
+   *
+   * Takes the actual rows rather than a count, because the ports on one side of
+   * a card are not always all of them: the outgoing side of a relaying host
+   * carries only the forwards that carry on, and those sit at *their* rows
+   * among all the others.
+   */
+  const railFor = (
+    key: string,
+    edge: number,
+    rows: number[],
+    stubY: number,
+    out: boolean,
+    live: boolean,
+  ) => {
+    if (rows.length < 2) return
+    rails.push({
+      key,
+      x: attach(edge, rows.length, out),
+      y1: Math.min(...rows) - RAIL_CAP,
+      y2: Math.max(...rows) + RAIL_CAP,
+      stubY,
+      stubFrom: edge,
+      active: live,
+    })
+  }
+
+  const localY = localSlotTop + (localSlot - LOCAL_H) / 2
 
   const local = {
     key: 'local',
     x: LOCAL_X,
     y: localY,
     w: LOCAL_W,
-    h: localH,
+    h: LOCAL_H,
     active: tunnels.some(active),
     forwards: tunnels.length,
     up: tunnels.filter(active).length,
   }
 
+  const localCentre = localSlotTop + localSlot / 2
+  railFor(
+    'rail-local',
+    LOCAL_X + LOCAL_W,
+    rowsAround(localCentre, tunnels.length, PORT_PITCH),
+    localCentre,
+    true,
+    local.active,
+  )
+  const localAttach = attach(LOCAL_X + LOCAL_W, tunnels.length, true)
+
+  /** Each card's slot centre, which is also the card's centre. */
+  const hostCentres: number[] = []
   let stacked = hostsTop
   const hosts: HostNode[] = byHost.map((host, i) => {
+    const centre = stacked + hostSlots[i] / 2
+    hostCentres.push(centre)
     const node: HostNode = {
       key: `host-${host.name}`,
       name: host.name,
       hostId: host.hostId,
       tunnels: host.tunnels.length,
       x: VIA_X,
-      y: stacked,
+      y: centre - CARD_H / 2,
       w: HOST_W,
-      h: hostHeights[i],
+      h: CARD_H,
       active: host.tunnels.some(active),
       relaying: host.tunnels.some(relayed),
     }
-    stacked += hostHeights[i] + HOST_GAP
+    const rows = rowsAround(centre, host.tunnels.length, HOST_PITCH)
+    railFor(`rail-in-${host.name}`, VIA_X, rows, centre, false, node.active)
+    // The outgoing side carries only the forwards that carry on, at the rows
+    // they already occupy among all the rest.
+    railFor(
+      `rail-out-${host.name}`,
+      VIA_X + HOST_W,
+      rows.filter((_, idx) => relayed(host.tunnels[idx])),
+      centre,
+      true,
+      node.active,
+    )
+    stacked += hostSlots[i] + HOST_GAP
     return node
   })
 
+  const destCentres: number[] = []
   let dstacked = destsTop
   const dests: DestNode[] = byDest.map((dest, i) => {
+    const centre = dstacked + destSlots[i] / 2
+    destCentres.push(centre)
     const node: DestNode = {
       key: `dest-${dest.address}`,
       address: dest.address,
       via: relayedBy(dest.tunnels),
       tunnels: dest.tunnels.length,
       x: DEST_X,
-      y: dstacked,
+      y: centre - CARD_H / 2,
       w: DEST_W,
-      h: destHeights[i],
+      h: CARD_H,
       active: dest.tunnels.some((t) => active(t) && reach(t) === true),
       refused: dest.tunnels.some((t) => reach(t) === false),
       untried: dest.tunnels.some((t) => active(t) && reach(t) === null),
     }
-    dstacked += destHeights[i] + HOST_GAP
+    railFor(
+      `rail-dest-${dest.address}`,
+      DEST_X,
+      rowsAround(centre, dest.tunnels.length, HOST_PITCH),
+      centre,
+      false,
+      node.active,
+    )
+    dstacked += destSlots[i] + HOST_GAP
     return node
   })
 
-  /** Where a given tunnel meets a card, counted within that card's own group. */
-  const rowOn = (node: MapNode | undefined, group: Tunnel[] | undefined, tunnelId: number) => {
-    if (!node || !group) return 0
+  /** Where a given tunnel attaches, counted within that card's own group. */
+  const rowAt = (centre: number, group: Tunnel[] | undefined, tunnelId: number) => {
+    if (!group) return centre
     const index = group.findIndex((t) => t.id === tunnelId)
-    const centred = index - (group.length - 1) / 2
-    return node.y + node.h / 2 + centred * HOST_PITCH
+    const offset = index - (group.length - 1) / 2
+    return centre + offset * HOST_PITCH
   }
 
-  // Ports on the local card are stacked in list order and centred as a block,
-  // so a single forward sits on the card's midline rather than at its top.
-  const portsTop = localY + (localH - tunnels.length * PORT_PITCH) / 2 + PORT_PITCH / 2
+  // Ports are stacked in list order and centred as a block on the rail, so a
+  // single forward sits on the card's midline rather than at its top.
+  const portsTop =
+    localSlotTop + localSlot / 2 - ((tunnels.length - 1) * PORT_PITCH) / 2
 
   const chips: PortChip[] = []
   const dots: Connector[] = []
@@ -388,7 +512,10 @@ export function mapLayout(
     const hostIndex = byHost.findIndex((h) => h.name === tunnel.via)
     const host = hosts[hostIndex]
     if (!host) return
-    const viaY = rowOn(host, byHost[hostIndex]?.tunnels, tunnel.id)
+    const viaGroup = byHost[hostIndex]?.tunnels
+    const viaY = rowAt(hostCentres[hostIndex], viaGroup, tunnel.id)
+    const viaIn = attach(host.x, viaGroup?.length ?? 1, false)
+    const viaOut = attach(host.x + host.w, viaGroup?.filter(relayed).length ?? 0, true)
     const stagger = isActive ? (pulsing++ * 0.6) % 1.9 : 0
 
     const via = relayed(tunnel)
@@ -398,7 +525,7 @@ export function mapLayout(
     chips.push({
       key: `here-${tunnel.id}`,
       tunnelId: tunnel.id,
-      x: local.x + local.w,
+      x: localAttach,
       y: hereY,
       side: 'right',
       label: here,
@@ -407,11 +534,10 @@ export function mapLayout(
       refused: false,
     })
     /** Leg one leaves the label, not the card. */
-    const fromX = local.x + local.w + CHIP_GAP + chipWidth(here)
+    const fromX = localAttach + CHIP_GAP + chipWidth(here)
 
     // Where the far port is named: on the via card when the destination is
     // that server, on the destination card when it is a machine of its own.
-    const farX = via ? DEST_X : host.x
     const farW = chipWidth(there)
 
     if (!via) {
@@ -419,7 +545,7 @@ export function mapLayout(
       chips.push({
         key: `there-${tunnel.id}`,
         tunnelId: tunnel.id,
-        x: host.x,
+        x: viaIn,
         y: viaY,
         side: 'left',
         label: there,
@@ -431,7 +557,7 @@ export function mapLayout(
         active: isActive && !failed,
         refused: failed,
       })
-      const toX = host.x - CHIP_GAP - farW
+      const toX = viaIn - CHIP_GAP - farW
       edges.push({
         key: `a-${tunnel.id}`,
         tunnelId: tunnel.id,
@@ -454,13 +580,15 @@ export function mapLayout(
     const destIndex = byDest.findIndex((d) => d.address === (tunnel.targetHost ?? '').trim())
     const dest = dests[destIndex]
     if (!dest) return
-    const destY = rowOn(dest, byDest[destIndex]?.tunnels, tunnel.id)
+    const destGroup = byDest[destIndex]?.tunnels
+    const destY = rowAt(destCentres[destIndex], destGroup, tunnel.id)
+    const destIn = attach(dest.x, destGroup?.length ?? 1, false)
 
     dots.push(
       {
         key: `in-${tunnel.id}`,
         tunnelId: tunnel.id,
-        x: host.x,
+        x: viaIn,
         y: viaY,
         active: isActive,
         refused: false,
@@ -468,7 +596,7 @@ export function mapLayout(
       {
         key: `out-${tunnel.id}`,
         tunnelId: tunnel.id,
-        x: host.x + host.w,
+        x: viaOut,
         y: viaY,
         active: isActive && !failed && !untried,
         refused: failed,
@@ -478,30 +606,30 @@ export function mapLayout(
     edges.push({
       key: `a-${tunnel.id}`,
       tunnelId: tunnel.id,
-      path: curve(fromX, hereY, host.x, viaY),
+      path: curve(fromX, hereY, viaIn, viaY),
       active: isActive,
       refused: false,
       untried: false,
-      endX: host.x,
+      endX: viaIn,
       endY: viaY,
-      midX: (fromX + host.x) / 2,
+      midX: (fromX + viaIn) / 2,
       midY: (hereY + viaY) / 2,
       delay: stagger,
     })
 
     // Leg two: the hop the server makes on our behalf, and the one that can be
     // refused while everything else is fine.
-    const toX = farX - CHIP_GAP - farW
+    const toX = destIn - CHIP_GAP - farW
     edges.push({
       key: `b-${tunnel.id}`,
       tunnelId: tunnel.id,
-      path: curve(host.x + host.w, viaY, toX, destY),
+      path: curve(viaOut, viaY, toX, destY),
       active: isActive && !failed && !untried,
       refused: failed,
       untried,
       endX: toX,
       endY: destY,
-      midX: (host.x + host.w + toX) / 2,
+      midX: (viaOut + toX) / 2,
       midY: (viaY + destY) / 2,
       delay: stagger,
     })
@@ -509,7 +637,7 @@ export function mapLayout(
     chips.push({
       key: `there-${tunnel.id}`,
       tunnelId: tunnel.id,
-      x: dest.x,
+      x: destIn,
       y: destY,
       side: 'left',
       label: there,
@@ -519,5 +647,5 @@ export function mapLayout(
     })
   })
 
-  return { stage: { w: stageW, h: stageH }, local, hosts, dests, chips, dots, edges }
+  return { stage: { w: stageW, h: stageH }, local, hosts, dests, chips, dots, rails, edges }
 }

@@ -2,7 +2,14 @@ import { useRef } from 'react'
 import type { Tunnel, TunnelState } from '@/lib/api'
 import { GroupDot } from '@/components/ui/primitives'
 import type { Host } from '@/data/types'
-import { mapLayout, type Connector, type DestNode, type HostNode, type PortChip } from './layout'
+import {
+  mapLayout,
+  type Connector,
+  type DestNode,
+  type HostNode,
+  type PortChip,
+  type Rail,
+} from './layout'
 import { useMapView } from './useMapView'
 
 /**
@@ -175,6 +182,11 @@ export function TunnelMap({
 
         {layout.dests.map((dest) => (
           <DestCard key={dest.key} dest={dest} />
+        ))}
+
+        {/* Under the chips and the dots, which sit on it. */}
+        {layout.rails.map((rail) => (
+          <RailBar key={rail.key} rail={rail} />
         ))}
 
         {layout.dots.map((dot) => (
@@ -396,6 +408,35 @@ function Chip({
       />
       {chip.label}
     </button>
+  )
+}
+
+/**
+ * The bar the ports hang off, and the stub joining it to its card.
+ *
+ * Two rectangles rather than an SVG path: it is a vertical line and a
+ * horizontal one, and putting them in the same layer as the cards keeps them
+ * behind the chips without a z-index argument.
+ */
+function RailBar({ rail }: { rail: Rail }) {
+  const left = Math.min(rail.stubFrom, rail.x)
+  return (
+    <>
+      <span
+        aria-hidden
+        style={{ left: rail.x, top: rail.y1, height: rail.y2 - rail.y1 }}
+        className={`pointer-events-none absolute w-px -translate-x-1/2 rounded-bar ${
+          rail.active ? 'bg-accent-27' : 'bg-w24'
+        }`}
+      />
+      <span
+        aria-hidden
+        style={{ left, top: rail.stubY, width: Math.abs(rail.x - rail.stubFrom) }}
+        className={`pointer-events-none absolute h-px -translate-y-1/2 ${
+          rail.active ? 'bg-accent-27' : 'bg-w24'
+        }`}
+      />
+    </>
   )
 }
 

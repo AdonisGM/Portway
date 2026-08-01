@@ -5,6 +5,7 @@ mod error;
 mod hosts;
 mod keychain;
 mod keys;
+mod known;
 mod logging;
 mod models;
 mod sftp;
@@ -93,6 +94,8 @@ pub fn run() {
             hosts::set_host_favorite,
             keys::list_ssh_keys,
             keys::read_public_key,
+            known::list_known_hosts,
+            known::remove_known_host,
             commands::ssh_connect,
             commands::ssh_write,
             commands::ssh_resize,

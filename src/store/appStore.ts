@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import * as api from '@/lib/api'
 import * as ssh from '@/lib/sshBus'
-import type { KeyFile, Tunnel, TunnelInput, TunnelState } from '@/lib/api'
+import type { KeyFile, KnownHost, Tunnel, TunnelInput, TunnelState } from '@/lib/api'
 import type { AuthMethod, GroupId, Host, HostInput, Session, SessionStatus } from '@/data/types'
 
 export type Screen = 'servers' | 'session' | 'form' | 'keys' | 'tunnels' | 'known' | 'settings'
@@ -46,6 +46,8 @@ interface AppState {
   tunnels: Tunnel[]
   /** Live state by tunnel id. Anything absent has never run, so it is idle. */
   tunnelStates: Record<number, TunnelState>
+  /** `~/.ssh/known_hosts`, a line per entry. The rail counts these. */
+  knownHosts: KnownHost[]
   loading: boolean
   /** Set when the database itself is unreachable, not for form validation. */
   loadError: string | null
@@ -70,6 +72,9 @@ interface AppState {
 
   loadHosts: () => Promise<void>
   loadKeys: () => Promise<void>
+  loadKnownHosts: () => Promise<void>
+  /** Rewrites `~/.ssh/known_hosts` without this line. There is no undo. */
+  removeKnownHost: (entry: KnownHost) => Promise<void>
   loadTunnels: () => Promise<void>
   createTunnel: (input: TunnelInput) => Promise<void>
   updateTunnel: (id: number, input: TunnelInput) => Promise<void>
@@ -126,6 +131,7 @@ export const useApp = create<AppState>((set, get) => ({
   keys: [],
   tunnels: [],
   tunnelStates: {},
+  knownHosts: [],
   loading: true,
   loadError: null,
 
@@ -173,6 +179,31 @@ export const useApp = create<AppState>((set, get) => ({
     } catch {
       set({ keys: [] })
     }
+  },
+
+  /**
+   * The known-hosts file. Read at boot for the rail's count, and again
+   * whenever the screen is opened — `ssh` on the command line writes to the
+   * same file, so this snapshot goes stale without Portway doing anything.
+   *
+   * A missing file is an empty list, not an error: it is what a machine that
+   * has not connected to anything yet looks like.
+   */
+  loadKnownHosts: async () => {
+    try {
+      set({ knownHosts: await api.listKnownHosts() })
+    } catch {
+      set({ knownHosts: [] })
+    }
+  },
+
+  /**
+   * The backend returns the file as it now stands rather than this list minus
+   * a row: every line below the removed one has just shifted, and the line
+   * numbers are what the *next* removal is aimed with.
+   */
+  removeKnownHost: async (entry) => {
+    set({ knownHosts: await api.removeKnownHost(entry.line, entry.fingerprint) })
   },
 
   /**
@@ -369,6 +400,9 @@ export const useApp = create<AppState>((set, get) => ({
         // The backend stamps `last_used_at` on a successful connect; mirror it
         // here so the table updates without a refetch.
         void api.listHosts().then((hosts) => set({ hosts })).catch(() => {})
+        // A first connection to a server writes its key into known_hosts, so
+        // this is the one moment the app knows that file just changed.
+        void get().loadKnownHosts()
       })
       .catch((error) => {
         set((state) => ({

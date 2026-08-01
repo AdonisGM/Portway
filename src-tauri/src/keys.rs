@@ -61,15 +61,24 @@ fn is_private_key(path: &Path) -> bool {
 /// key names no algorithm in its own header and a fingerprint cannot be derived
 /// without the key material, so a key with no `.pub` beside it is listed with
 /// both columns empty rather than guessed at.
-struct PubFacts {
-    kind: String,
-    fingerprint: String,
-    weak: bool,
+pub struct PubFacts {
+    pub kind: String,
+    pub fingerprint: String,
+    pub weak: bool,
 }
 
 fn read_pub(path: &Path) -> Option<PubFacts> {
     let text = fs::read_to_string(path.with_extension("pub")).ok()?;
-    let key = PublicKey::from_openssh(&text).ok()?;
+    Some(facts(&PublicKey::from_openssh(&text).ok()?))
+}
+
+/// Everything worth saying about a public key, from the key alone.
+///
+/// Shared with `known.rs`: a host key in `known_hosts` and a key in `~/.ssh`
+/// are the same kind of object, and the two screens naming the same algorithm
+/// differently — or disagreeing about which ones are past their use-by date —
+/// would be a difference with no meaning behind it.
+pub fn facts(key: &PublicKey) -> PubFacts {
     let data = key.key_data();
 
     // The design's Type column reads `ed25519` / `rsa 4096`, so size is only
@@ -92,11 +101,11 @@ fn read_pub(path: &Path) -> Option<PubFacts> {
         (key.algorithm().as_str().to_string(), true)
     };
 
-    Some(PubFacts {
+    PubFacts {
         kind,
         fingerprint: key.fingerprint(HashAlg::Sha256).to_string(),
         weak,
-    })
+    }
 }
 
 /// Whatever the platform's ssh-agent is holding.

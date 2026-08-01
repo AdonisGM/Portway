@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { groupCounts } from '@/data/groups'
-import { KNOWN_HOSTS_TOTAL } from '@/data/mock'
 import { GroupDot, SectionLabel, StatusDot } from '@/components/ui/primitives'
 import { useApp, type Screen } from '@/store/appStore'
 import { NAV_ICONS } from './NavIcons'
@@ -8,7 +7,7 @@ import { Colophon } from './Colophon'
 
 /**
  * Fixed 214px rail. Four blocks: nav list, Groups, the Sessions list pinned to
- * the bottom, and the agent footer. The brand row the mock draws at the top
+ * the bottom, and the colophon. The brand row the mock draws at the top
  * (SSH Client.dc.html:35-38) now lives in the titlebar, so the nav list starts
  * here with a little air where the brand used to be.
  */
@@ -18,6 +17,7 @@ export function Sidebar() {
   const groupFilter = useApp((s) => s.groupFilter)
   const sessions = useApp((s) => s.sessions)
   const keys = useApp((s) => s.keys)
+  const knownHosts = useApp((s) => s.knownHosts)
   const tunnelStates = useApp((s) => s.tunnelStates)
   const activeTunnels = Object.values(tunnelStates).filter((t) => t.state === 'active').length
   const goScreen = useApp((s) => s.goScreen)
@@ -26,7 +26,6 @@ export function Sidebar() {
 
   // Counts follow the database, so creating or deleting a host moves them.
   const groups = useMemo(() => groupCounts(hosts), [hosts])
-  const loadedInAgent = keys.filter((k) => k.inAgent).length
 
   const nav: { id: Screen; label: string; count: number | null }[] = [
     { id: 'servers', label: 'Servers', count: hosts.length },
@@ -34,7 +33,7 @@ export function Sidebar() {
     // Running, not saved: the rail counts what is *doing* something, which is
     // what the design's badge means everywhere else it appears.
     { id: 'tunnels', label: 'Tunnels', count: activeTunnels },
-    { id: 'known', label: 'Known hosts', count: KNOWN_HOSTS_TOTAL },
+    { id: 'known', label: 'Known hosts', count: knownHosts.length },
     { id: 'settings', label: 'Settings', count: null },
   ]
 
@@ -110,14 +109,9 @@ export function Sidebar() {
         ))}
       </div>
 
-      <div className="flex flex-none flex-col gap-1.5 border-t border-w06 px-4 py-2.75 font-mono text-mono text-faint">
-        {/* The rail's one live reading of the agent. `0 keys loaded` is a real
-            answer — no agent running, or nothing added to it — so it is shown
-            rather than hidden. The mock's string was always plural because it
-            was always 3; a real count reaches 1. */}
-        <span>
-          agent · {loadedInAgent} {loadedInAgent === 1 ? 'key' : 'keys'} loaded
-        </span>
+      {/* The agent reading that used to sit here is gone: it belongs to the
+          Keys screen, which says the same thing beside the keys it is about. */}
+      <div className="flex-none border-t border-w06 px-4 py-2.75 font-mono text-mono text-faint">
         <Colophon />
       </div>
     </nav>

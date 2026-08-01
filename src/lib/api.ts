@@ -71,6 +71,44 @@ export const listSshKeys = () => invoke<KeyFile[]>('list_ssh_keys')
 export const readPublicKey = (name: string) => invoke<string>('read_public_key', { name })
 
 /* ---------------------------------------------------------------------------
+   Known hosts — ~/.ssh/known_hosts, the file `ssh` and Portway both consult
+--------------------------------------------------------------------------- */
+
+/**
+ * One **line** of the file, not one host: `web-01,10.20.4.11 ssh-ed25519 …` is
+ * a single key that two names answer to, and there is no way to drop one of
+ * those names without rewriting the line.
+ */
+export interface KnownHost {
+  /** Which line, from zero. Named on removal together with the fingerprint. */
+  line: number
+  /** Every name on the line. Empty when the entry is hashed. */
+  patterns: string[]
+  /** `HashKnownHosts yes` — the name is an HMAC and cannot be read back. */
+  hashed: boolean
+  /** `@cert-authority` or `@revoked`. */
+  marker: string | null
+  kind: string | null
+  fingerprint: string | null
+  weak: boolean
+  comment: string | null
+  /** Saved servers whose address this line answers for. */
+  usedBy: number
+  /**
+   * A saved server matching this line was last refused: what it offers now is
+   * not what is written here. The only fact on the screen the file itself
+   * cannot supply — it comes from the audit trail.
+   */
+  changed: boolean
+}
+
+export const listKnownHosts = () => invoke<KnownHost[]>('list_known_hosts')
+
+/** Removes one line and returns what is left. Rejects a stale line number. */
+export const removeKnownHost = (line: number, fingerprint: string | null) =>
+  invoke<KnownHost[]>('remove_known_host', { line, fingerprint })
+
+/* ---------------------------------------------------------------------------
    SSH / SFTP
    Bytes cross as base64 so control characters and binary output survive JSON.
 --------------------------------------------------------------------------- */

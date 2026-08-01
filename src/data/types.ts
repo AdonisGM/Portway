@@ -62,16 +62,6 @@ export type TunnelRunState = 'idle' | 'starting' | 'active' | 'error'
 
 export type TunnelAutostart = 'manual' | 'session' | 'launch'
 
-export type KnownHostStatus = 'verified' | 'changed'
-
-export interface KnownHost {
-  host: string
-  type: string
-  fingerprint: string
-  firstSeen: string
-  status: KnownHostStatus
-}
-
 export interface SftpFile {
   name: string
   size: string

@@ -29,6 +29,7 @@ export default function App() {
   const accent = useApp((s) => s.settings.accent)
   const loadHosts = useApp((s) => s.loadHosts)
   const loadKeys = useApp((s) => s.loadKeys)
+  const loadKnownHosts = useApp((s) => s.loadKnownHosts)
   const loadTunnels = useApp((s) => s.loadTunnels)
   const setTunnelState = useApp((s) => s.setTunnelState)
 
@@ -68,6 +69,14 @@ export default function App() {
   useEffect(() => {
     void loadKeys()
   }, [loadKeys])
+
+  // Known hosts, for the same reason the tunnels are: the rail carries the
+  // count, and a count that only becomes true once you visit the screen it
+  // describes is worse than no count. `ssh` writes to this file too, so the
+  // screen re-reads it on open and offers a Refresh.
+  useEffect(() => {
+    void loadKnownHosts()
+  }, [loadKnownHosts])
 
   /**
    * Tunnels are read at boot rather than when the screen opens, because the

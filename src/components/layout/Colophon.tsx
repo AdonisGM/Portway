@@ -3,7 +3,7 @@ import { openUrl } from '@/lib/api'
 import { inTauri } from '@/lib/tauri'
 
 /**
- * Who made this and which build it is, under the rail's agent reading.
+ * Who made this and which build it is, at the foot of the rail.
  *
  * The link goes to the profile rather than the repository: the repository is
  * private, so a link to it is a 404 for everyone who is not signed in as its

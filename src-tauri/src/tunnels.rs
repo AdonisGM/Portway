@@ -23,6 +23,9 @@ use crate::ssh;
 /// tab it never had anything to do with. It also makes "start at launch"
 /// meaningful, which it would not be if a tunnel needed a session first.
 
+/// How long Test waits before calling silence an answer.
+const CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
 const COLUMNS: &str = "t.id, t.label, t.host_id, h.name, t.kind, t.bind_address, t.bind_port, \
                        t.target_host, t.target_port, t.autostart, t.created_at, t.updated_at";
 
@@ -81,6 +84,17 @@ pub struct TunnelState {
     /// `idle` | `starting` | `active` | `error`
     pub state: String,
     pub error: Option<String>,
+    /// What happened on the **far leg** — the hop from the server to the
+    /// destination for a local forward, or from this machine to it for a remote
+    /// one. `None` means nothing has tried it yet since this tunnel came up.
+    ///
+    /// Deliberately not measured on a timer or probed at startup. A forward set
+    /// to `autostart: launch` would then dial somebody's production database at
+    /// boot to decide the colour of a line, and a probe that succeeded half an
+    /// hour ago would still be drawn as true now. This is only ever what the
+    /// last real connection through the forward did — plus whatever the Test
+    /// button did, which is the user asking.
+    pub reachable: Option<bool>,
 }
 
 pub struct Running {
@@ -89,6 +103,13 @@ pub struct Running {
     /// listener means the next start fails with "address already in use" and no
     /// way to see why.
     cancel: CancellationToken,
+    /// The connection this forward rides, kept so Test can open a channel over
+    /// it rather than dialling the host a second time. `None` for a remote
+    /// forward, whose far leg starts on this machine and needs no channel.
+    handle: Option<Arc<russh::client::Handle<ssh::ClientHandler>>>,
+    /// Where that far leg goes. `None` for a dynamic forward, which is told by
+    /// each client and so has no one destination to test.
+    target: Option<(String, u16)>,
 }
 
 #[derive(Default)]
@@ -107,45 +128,72 @@ fn publish(app: &AppHandle, state: TunnelState) {
     let _ = app.emit("tunnel://state", state);
 }
 
-/// Drops a reported failure once something works again.
+/// The far leg worked.
 ///
-/// Only emits when there was one, so the ordinary case — connection after
-/// connection succeeding — is silent. Without this the first refusal is the
-/// last word: the row and the footer would keep explaining a problem that
-/// stopped being true, which is how a diagnostic becomes a lie.
-fn clear_error(app: &AppHandle, id: i64) {
+/// Emitted only on a *change*, so the ordinary case — connection after
+/// connection succeeding — is silent. It also drops a failure that has stopped
+/// being true: without that, the first refusal would be the last word, and the
+/// row would keep explaining a problem that is over. That is how a diagnostic
+/// becomes a lie.
+fn report_reachable(app: &AppHandle, id: i64) {
     let stale = {
         let states = app.state::<TunnelStates>();
         let map = states.0.lock().unwrap();
-        map.get(&id).is_some_and(|s| s.error.is_some())
+        map.get(&id)
+            .is_some_and(|s| s.error.is_some() || s.reachable != Some(true))
     };
-    if stale {
-        set_state(app, id, "active", None);
-        logging::info("tunnel", "carrying traffic again", Some(&format!("tunnel={id}")));
+    if !stale {
+        return;
     }
+    publish(
+        app,
+        TunnelState {
+            id,
+            state: "active".into(),
+            error: None,
+            reachable: Some(true),
+        },
+    );
+    logging::info("tunnel", "the far leg is carrying traffic", Some(&format!("tunnel={id}")));
 }
 
-/// A connection through a live forward that did not work.
+/// The far leg did not.
 ///
 /// Logged only when the reason *changes*. A browser pointed at a proxy the
 /// far end refuses will fail once per request, and a hundred identical lines
 /// a second would bury the connection that finally succeeded.
-fn report_connection_error(app: &AppHandle, id: i64, reason: String) {
+fn report_unreachable(app: &AppHandle, id: i64, reason: String) {
     let repeat = {
         let states = app.state::<TunnelStates>();
         let map = states.0.lock().unwrap();
         map.get(&id).and_then(|s| s.error.clone()) == Some(reason.clone())
     };
-    set_state(app, id, "active", Some(reason.clone()));
+    publish(
+        app,
+        TunnelState {
+            id,
+            // Still `active`: the listener is up and the SSH connection is
+            // fine. It is the hop beyond the server that is broken, which is a
+            // different fact and drawn as a different line.
+            state: "active".into(),
+            error: Some(reason.clone()),
+            reachable: Some(false),
+        },
+    );
     if !repeat {
         logging::warn(
             "tunnel",
-            "a connection through this forward failed",
+            "the far leg refused a connection",
             Some(&format!("tunnel={id} · {reason}")),
         );
     }
 }
 
+/// A lifecycle change: starting, up, stopped, failed to start.
+///
+/// Always resets what is known about the far leg, because none of those
+/// transitions leave the previous answer true — a tunnel that has just come up
+/// has not tried its far leg yet, whatever the one before it managed.
 fn set_state(app: &AppHandle, id: i64, state: &str, error: Option<String>) {
     publish(
         app,
@@ -153,6 +201,7 @@ fn set_state(app: &AppHandle, id: i64, state: &str, error: Option<String>) {
             id,
             state: state.into(),
             error,
+            reachable: None,
         },
     );
 }
@@ -308,6 +357,82 @@ pub fn stop_tunnel(app: AppHandle, id: i64) {
     stop(&app, id);
 }
 
+/// Tests the far leg, because the user asked.
+///
+/// A button rather than something the app does on its own. The check opens a
+/// real connection to the destination, and a forward set to `autostart: launch`
+/// would otherwise dial somebody's production database at boot to decide the
+/// colour of a line on a diagram. Asked for, it is a useful answer; unasked, it
+/// is the app connecting to things nobody told it to.
+///
+/// Runs over the connection the tunnel is already holding rather than dialling
+/// the host again, so what it tests is the leg that is actually in use.
+#[tauri::command]
+pub async fn check_tunnel(app: AppHandle, id: i64) -> Result<bool> {
+    let (handle, target) = {
+        let running = app.state::<Tunnels>();
+        let map = running.0.lock().unwrap();
+        let Some(running) = map.get(&id) else {
+            return Err(Error::Invalid("Start the tunnel before testing it".into()));
+        };
+        (running.handle.clone(), running.target.clone())
+    };
+
+    let Some((host, port)) = target else {
+        return Err(Error::Invalid(
+            "A dynamic forward is told where to go by each client that connects — there is no one destination to test".into(),
+        ));
+    };
+
+    let span = Span::start("tunnel", format!("test the far leg to {host}:{port}"));
+    let probe = async {
+        match handle {
+        // Local: the hop is made by the server, so the test has to be too.
+        Some(handle) => handle
+            .channel_open_direct_tcpip(host.clone(), port as u32, "127.0.0.1", 0)
+            .await
+            .map(|channel| {
+                // Opened and immediately dropped. Nothing is sent — the
+                // question was whether the far end would accept a connection,
+                // and it has already been answered.
+                drop(channel);
+            })
+            .map_err(|e| format!("the server could not reach {host}:{port} — {e}")),
+        // Remote: the far leg starts here, so this is an ordinary connect.
+        None => TcpStream::connect((host.as_str(), port))
+            .await
+            .map(drop)
+            .map_err(|e| format!("could not reach {host}:{port} from this machine — {e}")),
+        }
+    };
+
+    // An address that is routed nowhere does not refuse — it says nothing, and
+    // the connect sits there for over a minute waiting for a SYN-ACK that is
+    // not coming. Left unbounded the button reads "Testing…" for that whole
+    // time, which is indistinguishable from the app having hung. Not answering
+    // is itself the answer, and eight seconds is long enough to be sure of it.
+    let outcome = match tokio::time::timeout(CHECK_TIMEOUT, probe).await {
+        Ok(outcome) => outcome,
+        Err(_) => Err(format!(
+            "{host}:{port} did not answer within {}s — nothing refused the connection, it simply never arrived",
+            CHECK_TIMEOUT.as_secs()
+        )),
+    };
+
+    match outcome {
+        Ok(()) => {
+            span.done(Level::Info, Some(&format!("tunnel={id} · reachable")));
+            report_reachable(&app, id);
+            Ok(true)
+        }
+        Err(reason) => {
+            span.failed(&reason);
+            report_unreachable(&app, id, reason);
+            Ok(false)
+        }
+    }
+}
+
 pub fn stop(app: &AppHandle, id: i64) {
     let running = app.state::<Tunnels>().0.lock().unwrap().remove(&id);
     if let Some(running) = running {
@@ -340,12 +465,8 @@ pub async fn start(app: &AppHandle, id: i64) -> Result<()> {
     // that started this gets the error; so does a start nobody clicked, which
     // is the whole point of the `error` state.
     match open(app, &tunnel, &host).await {
-        Ok(cancel) => {
-            app.state::<Tunnels>()
-                .0
-                .lock()
-                .unwrap()
-                .insert(id, Running { cancel });
+        Ok(running) => {
+            app.state::<Tunnels>().0.lock().unwrap().insert(id, running);
             set_state(app, id, "active", None);
             span.done(
                 Level::Info,
@@ -364,18 +485,26 @@ pub async fn start(app: &AppHandle, id: i64) -> Result<()> {
     }
 }
 
-/// Brings one tunnel up, and returns the token that takes it down again.
+/// Brings one tunnel up, and returns what it takes to run and stop it.
 ///
 /// Everything that can fail happens before this returns — connecting,
 /// authenticating, binding the port, asking the server to listen — so a tunnel
-/// reported `active` is one that is genuinely carrying traffic, not one that
-/// has been asked to try.
+/// reported `active` is one whose *near* leg is genuinely up. Whether the hop
+/// beyond the server works is a separate question, answered by the first thing
+/// that uses it or by the Test button, never by dialling on its own.
 async fn open(
     app: &AppHandle,
     tunnel: &Tunnel,
     host: &crate::models::Host,
-) -> Result<CancellationToken> {
+) -> Result<Running> {
     let cancel = CancellationToken::new();
+    let destination = match tunnel.kind.as_str() {
+        "dynamic" => None,
+        _ => Some((
+            tunnel.target_host.clone().unwrap_or_default(),
+            tunnel.target_port.unwrap_or(0),
+        )),
+    };
 
     // A remote forward has to know its destination before the connection is
     // made: the server opens those channels against the handler.
@@ -417,6 +546,10 @@ async fn open(
                     .disconnect(russh::Disconnect::ByApplication, "tunnel closed", "")
                     .await;
             });
+
+            // No handle kept: a remote forward's far leg starts here, so
+            // testing it is an ordinary local connect and needs no channel.
+            return Ok(Running { cancel, handle: None, target: destination });
         }
 
         // We listen; every connection becomes a channel to the far end.
@@ -424,6 +557,7 @@ async fn open(
             // Shared from here on: each accepted connection opens its own
             // channel on the one connection, and russh's handle is not `Clone`.
             let handle = Arc::new(handle);
+            let kept = Arc::clone(&handle);
             let dynamic = kind == "dynamic";
             let listener = TcpListener::bind((tunnel.bind_address.as_str(), tunnel.bind_port))
                 .await
@@ -465,8 +599,8 @@ async fn open(
                         // reason by far is `AllowTcpForwarding no` on the far
                         // end, which no amount of retrying will fix.
                         match outcome {
-                            Err(e) => report_connection_error(&reporter, id, e.to_string()),
-                            Ok(()) => clear_error(&reporter, id),
+                            Err(e) => report_unreachable(&reporter, id, e.to_string()),
+                            Ok(()) => report_reachable(&reporter, id),
                         }
                     });
                 }
@@ -474,10 +608,14 @@ async fn open(
                 // connections already open are left to finish.
                 drop(listener);
             });
+
+            return Ok(Running {
+                cancel,
+                handle: Some(kept),
+                target: destination,
+            });
         }
     }
-
-    Ok(cancel)
 }
 
 /// Joins one accepted connection to a channel through the server.
@@ -587,9 +725,15 @@ async fn socks5(
         .await
     {
         Ok(channel) => channel,
-        Err(_) => {
+        // The client still gets a well-formed refusal — but the reason is
+        // reported upward too. Swallowing it is how a dynamic forward that the
+        // server refuses to forward *anything* through looked identical to one
+        // that was working.
+        Err(e) => {
             reply(&mut stream, REPLY_FAILED).await?;
-            return Ok(());
+            return Err(Error::Ssh(format!(
+                "the server refused a channel to {host}:{port} — {e}"
+            )));
         }
     };
 

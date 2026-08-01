@@ -37,6 +37,7 @@ export function TunnelsScreen() {
   const remove = useApp((s) => s.deleteTunnel)
   const start = useApp((s) => s.startTunnel)
   const stop = useApp((s) => s.stopTunnel)
+  const check = useApp((s) => s.checkTunnel)
 
   const [editing, setEditing] = useState<{ tunnel: Tunnel | null } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Tunnel | null>(null)
@@ -44,6 +45,8 @@ export function TunnelsScreen() {
   const [view, setView] = useTunnelView()
   /** One selection for both halves: a line and its row are the same tunnel. */
   const [selected, setSelected] = useState<number | null>(null)
+  /** Which tunnel's far leg is being tested right now, so the chip can say so. */
+  const [testing, setTesting] = useState<number | null>(null)
 
   useEffect(() => {
     void loadTunnels()
@@ -92,10 +95,14 @@ export function TunnelsScreen() {
       render: (t) => {
         const state = stateOf(t)
         const failure = states[t.id]?.error ?? null
+        // Red means one thing here and it is the thing you care about: it
+        // cannot connect. Amber used to carry both that and "up but the far
+        // leg refused", which are the same problem wearing two colours.
+        const broken = state === 'error' || Boolean(failure)
         return (
           <>
             <StatusDot
-              tone={state === 'active' ? 'accent' : state === 'error' ? 'warn' : 'faint'}
+              tone={broken ? 'danger' : state === 'active' ? 'accent' : 'faint'}
               size="sm"
             />
             {/* The reason lives in the title: a table cell cannot hold a
@@ -104,22 +111,17 @@ export function TunnelsScreen() {
             <span
               title={failure ?? undefined}
               className={
-                state === 'active'
-                  ? 'flex-none text-accent'
-                  : state === 'error'
-                    ? 'cell-ellipsis text-warn'
+                broken
+                  ? 'cell-ellipsis text-danger-bright'
+                  : state === 'active'
+                    ? 'flex-none text-accent'
                     : 'flex-none text-faint'
               }
             >
-              {state === 'error' ? (failure ?? 'error') : state}
+              {/* Listening and refusing every connection looks exactly like
+                  working until something says why. */}
+              {broken ? (failure ?? 'error') : state}
             </span>
-            {/* Listening and refusing every connection looks exactly like
-                working until something says why. */}
-            {state === 'active' && failure ? (
-              <span className="cell-ellipsis text-warn" title={failure}>
-                {failure}
-              </span>
-            ) : null}
           </>
         )
       },
@@ -144,6 +146,22 @@ export function TunnelsScreen() {
             >
               {running ? 'Stop' : 'Start'}
             </Chip>
+            {/* Only while it is up, and only when there is one destination to
+                test — a dynamic forward is told where to go per connection. */}
+            {running && t.kind !== 'dynamic' ? (
+              <Chip
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setError(null)
+                  setTesting(t.id)
+                  void check(t.id)
+                    .catch((err) => setError(message(err)))
+                    .finally(() => setTesting(null))
+                }}
+              >
+                {testing === t.id ? 'Testing…' : 'Test'}
+              </Chip>
+            ) : null}
             <Chip
               onClick={(e) => {
                 e.stopPropagation()

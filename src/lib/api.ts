@@ -234,6 +234,16 @@ export interface TunnelState {
   state: TunnelRunState
   /** Why it stopped, when it stopped badly. */
   error: string | null
+  /**
+   * What happened on the **far leg** — the hop from the server to the
+   * destination for a local forward, from this machine for a remote one.
+   * `null` means nothing has tried it since the tunnel came up.
+   *
+   * Never probed on a timer or at startup: a forward set to `on launch` would
+   * then dial somebody's production database at boot to decide the colour of a
+   * line. It is what the last real connection did, or what Test found.
+   */
+  reachable: boolean | null
 }
 
 export const listTunnels = () => invoke<Tunnel[]>('list_tunnels')
@@ -251,6 +261,9 @@ export const deleteTunnel = (id: number) => invoke<void>('delete_tunnel', { id }
 export const startTunnel = (id: number) => invoke<void>('start_tunnel', { id })
 
 export const stopTunnel = (id: number) => invoke<void>('stop_tunnel', { id })
+
+/** Opens one connection to the destination and closes it. `true` if it worked. */
+export const checkTunnel = (id: number) => invoke<boolean>('check_tunnel', { id })
 
 /** Hands a link to the browser. The backend accepts `https` and nothing else. */
 export const openUrl = (url: string) => invoke<void>('open_url', { url })

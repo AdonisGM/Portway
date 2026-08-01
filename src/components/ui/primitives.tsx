@@ -25,6 +25,10 @@ const dot = tv({
     },
     tone: {
       accent: 'bg-accent',
+      // Cannot connect. Distinct from `warn`, which is "worked, but not the way
+      // it should have" — a forward that is refusing every connection is not a
+      // caution, it is a thing that does not work.
+      danger: 'bg-danger-bright',
       warn: 'bg-warn',
       faint: 'bg-faint',
       prod: 'bg-prod',
@@ -36,7 +40,7 @@ const dot = tv({
   defaultVariants: { size: 'md', tone: 'faint' },
 })
 
-type DotTone = 'accent' | 'warn' | 'faint' | GroupId
+type DotTone = 'accent' | 'danger' | 'warn' | 'faint' | GroupId
 
 export function StatusDot({
   tone,

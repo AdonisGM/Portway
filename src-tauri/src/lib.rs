@@ -121,6 +121,7 @@ pub fn run() {
             tunnels::update_tunnel,
             tunnels::delete_tunnel,
             tunnels::start_tunnel,
+            tunnels::check_tunnel,
             tunnels::stop_tunnel,
         ])
         // Closing a session window has to end its connections. A tab close

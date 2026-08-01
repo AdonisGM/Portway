@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import type { Tunnel, TunnelState } from '@/lib/api'
 import { GroupDot } from '@/components/ui/primitives'
 import type { Host } from '@/data/types'
-import { mapLayout, type HostNode, type PortChip } from './layout'
+import { mapLayout, type DestNode, type HostNode, type PortChip } from './layout'
 import { useMapView } from './useMapView'
 
 /**
@@ -81,7 +81,7 @@ export function TunnelMap({
           {layout.edges.map((edge) => {
             const isSelected = edge.tunnelId === selected
             return (
-              <g key={edge.tunnelId}>
+              <g key={edge.key}>
                 {/* Three paths on one geometry: a track so an idle line still
                     reads as a route, the line itself, and a fat transparent
                     one to click — a 2px stroke is not a target. */}
@@ -89,15 +89,22 @@ export function TunnelMap({
                 <path
                   d={edge.path}
                   stroke={
-                    edge.active
-                      ? 'var(--color-accent)'
-                      : isSelected
-                        ? 'var(--color-fg-2)'
-                        : 'var(--color-w24)'
+                    // Red first, and on its own leg only. A forward whose SSH
+                    // connection is perfect and whose destination refuses is
+                    // one good hop and one bad one, and drawing the whole
+                    // route as broken would send you looking in the wrong
+                    // place.
+                    edge.refused
+                      ? 'var(--color-danger-bright)'
+                      : edge.active
+                        ? 'var(--color-accent)'
+                        : isSelected
+                          ? 'var(--color-fg-2)'
+                          : 'var(--color-w24)'
                   }
-                  strokeWidth={isSelected ? 3.4 : edge.active ? 2.4 : 2}
+                  strokeWidth={isSelected ? 3.4 : edge.refused || edge.active ? 2.4 : 2}
                   strokeLinecap="round"
-                  strokeDasharray={edge.active ? '9 11' : '6 7'}
+                  strokeDasharray={edge.active ? '9 11' : edge.refused ? '3 5' : '6 7'}
                   className={edge.active ? 'tun-flow' : undefined}
                   style={
                     edge.active
@@ -123,7 +130,7 @@ export function TunnelMap({
             .filter((e) => e.active)
             .map((edge) => (
               <circle
-                key={`halo-${edge.tunnelId}`}
+                key={`halo-${edge.key}`}
                 cx={edge.endX}
                 cy={edge.endY}
                 r={6}
@@ -135,12 +142,35 @@ export function TunnelMap({
                 }}
               />
             ))}
+
+          {/* A refused hop is cut, in the middle of the leg that failed.
+              Colour alone does not survive being glanced at, and neither end
+              is free — both already carry a port chip. */}
+          {layout.edges
+            .filter((e) => e.refused)
+            .map((edge) => (
+              <g key={`x-${edge.key}`}>
+                <circle cx={edge.midX} cy={edge.midY} r={9} fill="var(--color-map)" />
+                <g
+                  stroke="var(--color-danger-bright)"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                >
+                  <path d={`M${edge.midX - 4.5} ${edge.midY - 4.5} l 9 9`} />
+                  <path d={`M${edge.midX + 4.5} ${edge.midY - 4.5} l -9 9`} />
+                </g>
+              </g>
+            ))}
         </svg>
 
         <LocalNode layout={layout} />
 
         {layout.hosts.map((host) => (
           <HostCard key={host.key} host={host} hosts={hosts} />
+        ))}
+
+        {layout.dests.map((dest) => (
+          <DestCard key={dest.key} dest={dest} />
         ))}
 
         {layout.chips.map((chip) => (
@@ -243,6 +273,62 @@ function HostCard({ host, hosts }: { host: HostNode; hosts: Host[] }) {
 
       <div className="mt-2.25 font-mono text-mono text-faint">
         {host.tunnels === 1 ? '1 tunnel' : `${host.tunnels} tunnels`}
+        {/* Says out loud what the middle column means: this box is not where
+            the traffic stops, it is what carries it the rest of the way. */}
+        {host.relaying ? ' · relaying' : ''}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A machine on the far side of a via host.
+ *
+ * Not a saved host and deliberately not drawn like one — there is no group, no
+ * user, and nothing here has ever connected to it directly. All that is known
+ * is the address, and whose eyes it was resolved through.
+ */
+function DestCard({ dest }: { dest: DestNode }) {
+  return (
+    <div
+      style={{ left: dest.x, top: dest.y, width: dest.w, height: dest.h }}
+      className={`pointer-events-auto absolute box-border rounded-node px-4 py-3.25 ${
+        dest.refused
+          ? 'border border-danger bg-panel'
+          : dest.active
+            ? 'border border-accent-27 bg-drawer'
+            : 'border border-w24 border-dashed bg-panel'
+      }`}
+    >
+      <div className="flex items-center gap-2.25">
+        <span
+          className={`size-1.75 flex-none rounded-chip ${
+            dest.refused ? 'bg-danger-bright' : dest.active ? 'bg-accent' : 'bg-faint'
+          }`}
+        />
+        <span
+          className={`cell-ellipsis font-mono text-cell ${
+            dest.active ? 'text-fg font-medium' : 'text-fg-2'
+          }`}
+        >
+          {dest.address}
+        </span>
+        <span
+          className={`ml-auto flex-none font-mono text-mono ${
+            dest.refused ? 'text-danger-bright' : dest.active ? 'text-accent' : 'text-faint'
+          }`}
+        >
+          {/* Four states, not three. "not tried" on a forward that is not even
+              running would be a claim about a hop nothing has been in a
+              position to attempt. */}
+          {dest.refused ? 'refused' : dest.active ? 'reached' : dest.untried ? 'not tried' : 'idle'}
+        </span>
+      </div>
+
+      <div className="mt-1.75 cell-ellipsis font-mono text-cell text-muted">via {dest.via}</div>
+
+      <div className="mt-2.25 font-mono text-mono text-faint">
+        {dest.tunnels === 1 ? '1 tunnel' : `${dest.tunnels} tunnels`}
       </div>
     </div>
   )
@@ -265,16 +351,22 @@ function Chip({ chip, onSelect }: { chip: PortChip; onSelect: (id: number) => vo
         transform: chip.side === 'right' ? 'translate(0,-50%)' : 'translate(-100%,-50%)',
       }}
       className={`pointer-events-auto absolute z-10 flex items-center gap-1.25 rounded-chip border px-2 py-0.75 font-mono text-mono whitespace-nowrap ${
-        chip.active
-          ? 'border-accent-50 bg-drawer text-accent'
-          : 'border-w14 bg-drawer text-muted'
+        chip.refused
+          ? 'border-danger bg-drawer text-danger-bright'
+          : chip.active
+            ? 'border-accent-50 bg-drawer text-accent'
+            : 'border-w14 bg-drawer text-muted'
       }`}
     >
       <span
         className={`size-1.25 flex-none rounded-chip ${
-          chip.active ? 'tun-pulse bg-accent' : 'bg-faint'
+          chip.refused ? 'bg-danger-bright' : chip.active ? 'tun-pulse bg-accent' : 'bg-faint'
         }`}
-        style={chip.active ? { animation: 'tun-pulse 1.6s ease-in-out infinite' } : undefined}
+        style={
+          chip.active && !chip.refused
+            ? { animation: 'tun-pulse 1.6s ease-in-out infinite' }
+            : undefined
+        }
       />
       {chip.label}
     </button>
@@ -360,7 +452,17 @@ function Legend() {
               'repeating-linear-gradient(to right, var(--color-w24) 0 4px, transparent 4px 7px)',
           }}
         />
-        idle
+        idle / not tried
+      </span>
+      <span className="flex items-center gap-1.75">
+        <span
+          className="h-0.5 w-4 flex-none"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(to right, var(--color-danger-bright) 0 3px, transparent 3px 6px)',
+          }}
+        />
+        refused
       </span>
       <span>drag to move · scroll to zoom · click a line for its tunnel</span>
     </div>

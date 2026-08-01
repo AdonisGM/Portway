@@ -76,6 +76,8 @@ interface AppState {
   deleteTunnel: (id: number) => Promise<void>
   startTunnel: (id: number) => Promise<void>
   stopTunnel: (id: number) => Promise<void>
+  /** Opens one connection to the destination and closes it. `true` if it worked. */
+  checkTunnel: (id: number) => Promise<boolean>
   setTunnelState: (state: TunnelState) => void
   copyPublicKey: (key: KeyFile) => Promise<boolean>
   createHost: (input: HostInput) => Promise<Host>
@@ -215,6 +217,13 @@ export const useApp = create<AppState>((set, get) => ({
   startTunnel: async (id) => {
     await api.startTunnel(id)
   },
+
+  /**
+   * The far leg, tested because somebody pressed the button. Nothing is stored
+   * here — the backend reports the result on `tunnel://state` like every other
+   * change, so the map and the table hear about it the same way.
+   */
+  checkTunnel: async (id) => api.checkTunnel(id),
 
   stopTunnel: async (id) => {
     await api.stopTunnel(id)

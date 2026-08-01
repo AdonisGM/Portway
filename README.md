@@ -5,8 +5,9 @@ SSH/SFTP desktop client — Tauri (Rust) + React + TypeScript.
 **SSH and SFTP are live.** Hosts are stored in SQLite, sessions open a real PTY over SSH
 (`russh`), the SFTP pane browses the remote filesystem, and every command that reaches a host
 is written to an audit trail. Key passphrases go to the OS keychain, so an encrypted key
-opens. The SSH Keys screen reads `~/.ssh` and a running ssh-agent. Still mock: the Tunnels
-and Known hosts screens. Password auth is still refused with a message rather than guessed at.
+opens. The SSH Keys screen reads `~/.ssh` and a running ssh-agent. Tunnels are real forwards —
+`-L`, `-R` and `-D`, each on its own connection. Still mock: the Known hosts screen. Password
+auth is still refused with a message rather than guessed at.
 
 The UI is built from `design_handoff_ssh_client/`, which is high-fidelity: colours, type, and
 spacing in that handoff are final and were transcribed rather than reinterpreted.
@@ -110,6 +111,45 @@ docker run -d --name portway-test -p 2222:2222 \
 
 Then add a host: `127.0.0.1`, port `2222`, user `deploy`, private key
 `~/.portway/test_ed25519`.
+
+## Tunnels: what the map is claiming
+
+Three fields decide a forward, and two of them are addresses, which is the thing this screen
+kept getting asked about: *I picked the server — why does it want another IP?* Because `Via
+host` is the **route** and the destination is where the route **ends**, and the two are only
+the same machine some of the time.
+
+The destination is resolved **on the far end**, not here. That is the entire point: the server
+is a doorway to a network position you do not have. So `127.0.0.1` in that box means *the via
+host itself* — a port bound to its own loopback, closed to the world, which is the commonest
+forward there is and the one the form now offers as a choice rather than a box wanting an
+address you have already given.
+
+The map draws two nodes or three, per tunnel, and the difference is a real one:
+
+| | drawn as | because |
+| --- | --- | --- |
+| destination is the via host | local → via | there is no third machine |
+| destination is somewhere else | local → via → destination | the via host is *relaying*, in `channel_open_direct_tcpip`, which runs on the server |
+| `remote` | local → via | the far end is this machine; the local card already carries its port |
+| `dynamic` | local → via | each client names its own destination, so there is none to draw |
+
+Not to be confused with the handoff's bastion column, which is still absent and still should
+be: `hosts.jump_host` is stored and `ssh.rs` never implements ProxyJump, so a relay drawn
+*before* the via host would be a hop that does not happen.
+
+**The two hops are coloured separately**, which is the reason for splitting the line at all. A
+forward whose SSH connection is perfect and whose destination refuses is one good hop and one
+bad one; drawing the whole route as broken sends you looking in the wrong place. Red — and a
+cross through the middle of the leg that failed, because colour alone does not survive a
+glance.
+
+The far leg is never probed on its own initiative. A forward set to `on launch` would then dial
+somebody's production database at boot to decide the colour of a line, and a probe that
+succeeded half an hour ago would still be drawn as true now. So it is `not tried` until
+something real goes through it — or until you press **Test**, which opens one connection over
+the tunnel's existing SSH handle and closes it, bounded at 8 seconds because an address routed
+nowhere never refuses, it just says nothing.
 
 ## The application log and the debug console
 

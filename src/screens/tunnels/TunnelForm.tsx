@@ -5,6 +5,7 @@ import { tunnelForward } from '@/lib/command'
 import type { Host, TunnelAutostart, TunnelKind } from '@/data/types'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
+import { Segmented } from '@/components/ui/Segmented'
 import { Select } from '@/components/ui/Select'
 import { CommandText } from '@/components/ui/primitives'
 
@@ -19,7 +20,21 @@ import { CommandText } from '@/components/ui/primitives'
  * The three types need different fields, and the difference is not cosmetic: a
  * dynamic forward has no destination to type, because each client that connects
  * supplies its own. Hiding those two boxes is what says so.
+ *
+ * The destination picker exists because of one question this form kept
+ * provoking: *I already chose the server — why is it asking for another
+ * address?* Because the two are different things. `Via host` is the route; the
+ * destination is where the route ends, **read from the server's position**, and
+ * far more often than not it is that same server — a port bound to its own
+ * loopback, which is exactly what a forward is for. So the common case is now a
+ * choice that says the server's name back to you, and the address box only
+ * appears when the answer really is somewhere else.
  */
+
+/** What a server calls itself. */
+const LOOPBACK = ['127.0.0.1', 'localhost', '::1', '0.0.0.0']
+
+type Destination = 'self' | 'other'
 const KINDS: { value: TunnelKind; label: string; hint: string }[] = [
   { value: 'local', label: 'Local  (ssh -L)', hint: 'Listen here, connect from the server.' },
   { value: 'remote', label: 'Remote  (ssh -R)', hint: 'Listen on the server, connect from here.' },
@@ -49,7 +64,19 @@ export function TunnelForm({
   const [kind, setKind] = useState<TunnelKind>(tunnel?.kind ?? 'local')
   const [bindAddress, setBindAddress] = useState(tunnel?.bindAddress ?? '127.0.0.1')
   const [bindPort, setBindPort] = useState(String(tunnel?.bindPort ?? ''))
-  const [targetHost, setTargetHost] = useState(tunnel?.targetHost ?? '')
+  const [targetHost, setTargetHost] = useState(tunnel?.targetHost ?? '127.0.0.1')
+  /**
+   * Which of the two the destination is. Derived from the address rather than
+   * stored, so an existing tunnel opens on the option that describes it and
+   * there is no second source of truth to keep in step.
+   */
+  const [destination, setDestination] = useState<Destination>(
+    tunnel && !LOOPBACK.includes((tunnel.targetHost ?? '').trim()) ? 'other' : 'self',
+  )
+  /** Remembered, so flipping to `self` and back does not lose what was typed. */
+  const [lastElsewhere, setLastElsewhere] = useState(
+    tunnel && !LOOPBACK.includes((tunnel.targetHost ?? '').trim()) ? (tunnel.targetHost ?? '') : '',
+  )
   const [targetPort, setTargetPort] = useState(
     tunnel?.targetPort === null || tunnel?.targetPort === undefined ? '' : String(tunnel.targetPort),
   )
@@ -65,6 +92,21 @@ export function TunnelForm({
   }, [onCancel])
 
   const dynamic = kind === 'dynamic'
+  const viaName = hosts.find((h) => h.id === hostId)?.name ?? 'the server'
+  /** Which end resolves the destination address — the whole point of the picker. */
+  const resolvedBy = kind === 'remote' ? 'this machine' : viaName
+
+  const chooseDestination = (next: Destination) => {
+    setDestination(next)
+    if (next === 'self') {
+      // Remembered first, so coming back is not retyping.
+      if (!LOOPBACK.includes(targetHost.trim())) setLastElsewhere(targetHost)
+      setTargetHost('127.0.0.1')
+    } else {
+      setTargetHost(lastElsewhere)
+    }
+  }
+
   const preview = tunnelForward({
     kind,
     bindAddress: bindAddress || '?',
@@ -154,21 +196,57 @@ export function TunnelForm({
         ) : null}
 
         {dynamic ? null : (
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label={kind === 'remote' ? 'Connect from here to' : 'Connect from the server to'}
-              value={targetHost}
-              placeholder="10.20.4.31"
-              onChange={(e) => setTargetHost(e.target.value)}
-            />
-            <Field
-              label="Port"
-              value={targetPort}
-              inputMode="numeric"
-              placeholder="5432"
-              onChange={(e) => setTargetPort(e.target.value)}
-            />
-          </div>
+          <>
+            {/* The question the old form kept provoking, answered before it is
+                asked: the second address is not a second name for the server
+                you already picked, it is where the route ends — and usually
+                that *is* the server. Naming it here is what makes the other
+                option legible as the exception it is. */}
+            <div className="flex flex-col gap-2">
+              <span className="text-label tracking-label text-faint uppercase">Destination</span>
+              <Segmented
+                aria-label="Destination"
+                size="xs"
+                options={[
+                  {
+                    value: 'self',
+                    label: kind === 'remote' ? 'This machine' : `${viaName} itself`,
+                  },
+                  { value: 'other', label: 'Another machine' },
+                ]}
+                value={destination}
+                onChange={chooseDestination}
+              />
+            </div>
+
+            {/* On `self` there is no address box at all — which is the real
+                fix. The commonest forward there is asks for one number, and a
+                second address field sitting there wanting `127.0.0.1` is the
+                thing that made it look like the server had to be named twice. */}
+            <div className="grid grid-cols-2 gap-3">
+              {destination === 'other' ? (
+                <Field
+                  label={kind === 'remote' ? 'Connect from here to' : 'Connect from the server to'}
+                  value={targetHost}
+                  placeholder="10.20.4.31"
+                  onChange={(e) => setTargetHost(e.target.value)}
+                />
+              ) : null}
+              <Field
+                label={destination === 'other' ? 'Port' : 'Port on ' + resolvedBy}
+                value={targetPort}
+                inputMode="numeric"
+                placeholder="5432"
+                onChange={(e) => setTargetPort(e.target.value)}
+              />
+            </div>
+
+            <span className="text-meta text-muted">
+              {destination === 'self'
+                ? `127.0.0.1 is how ${resolvedBy} names itself. The port does not have to be open to anyone else — the connection to it is made from inside.`
+                : `Read from ${resolvedBy}, not from here. It has to be an address that end can reach.`}
+            </span>
+          </>
         )}
 
         <Select

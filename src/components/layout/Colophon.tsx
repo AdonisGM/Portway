@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
 import { openUrl } from '@/lib/api'
-import { inTauri } from '@/lib/tauri'
+import { useVersion } from '@/lib/version'
 
 /**
  * Who made this and which build it is, at the foot of the rail.
@@ -34,27 +33,4 @@ export function Colophon() {
       {version ? <span className="ml-auto flex-none">v{version}</span> : null}
     </span>
   )
-}
-
-/**
- * The version the bundle was actually built with, asked of the app rather than
- * baked in at compile time — `tauri.conf.json` is the one place it is written,
- * and anything that copied it could disagree with the binary it labels.
- */
-function useVersion(): string | null {
-  const [version, setVersion] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!inTauri()) return
-    let alive = true
-    void import('@tauri-apps/api/app')
-      .then(({ getVersion }) => getVersion())
-      .then((v) => alive && setVersion(v))
-      .catch(() => {})
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  return version
 }

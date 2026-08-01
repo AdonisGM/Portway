@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { tv } from '@/lib/tv'
 import { Caret } from '@/components/ui/Caret'
+import { useApp } from '@/store/appStore'
 
 /**
  * Servers, SSH Keys, Tunnels, Known hosts and the SFTP file list are the same
@@ -44,8 +45,26 @@ const rowStyles = tv({
     },
     interactive: { true: 'cursor-pointer hover:bg-w04', false: '' },
     selected: { true: 'bg-w07', false: '' },
+    /**
+     * Settings › Row density, on top of whatever the screen asked for.
+     *
+     * A second axis rather than more `density` values: the three above say
+     * what *kind* of table this is — a file list is tighter than a host list
+     * for a reason, and that relationship has to survive the preference. So
+     * this axis holds no padding of its own; each pairing is spelled out
+     * below, and each one is a step up from where that table already was.
+     */
+    roomy: { true: '', false: '' },
   },
-  defaultVariants: { density: 'default', interactive: true, selected: false },
+  compoundVariants: [
+    // One step of air per table, not one height for all of them. A flat
+    // `py-4` would have made the SFTP list, the host list and the tunnel
+    // list identical — which is the distinction this is meant to keep.
+    { density: 'compact', roomy: true, class: 'py-2.5' },
+    { density: 'default', roomy: true, class: 'py-4' },
+    { density: 'relaxed', roomy: true, class: 'py-4.25' },
+  ],
+  defaultVariants: { density: 'default', interactive: true, selected: false, roomy: false },
 })
 
 const headStyles = tv({
@@ -109,6 +128,11 @@ export function DataTable<T>({
   // container exists, and a ref assignment alone doesn't trigger a render.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null)
 
+  // Read here rather than passed in by each of the five screens: a preference
+  // that four tables honour and the fifth forgets is a bug waiting to be
+  // filed, and there is nothing a caller could usefully decide about it.
+  const roomy = useApp((s) => s.settings.density) === 'cozy'
+
   const cells = (row: T, index: number) =>
     columns.map((column) => (
       <span key={column.key} className={column.className}>
@@ -120,6 +144,7 @@ export function DataTable<T>({
     style: { gridTemplateColumns: gridTemplate },
     className: rowStyles({
       density,
+      roomy,
       interactive: !!onRowClick,
       selected: isSelected?.(row, index) ?? false,
       className: rowClassName?.(row, index),

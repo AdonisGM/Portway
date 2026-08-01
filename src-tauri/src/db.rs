@@ -38,7 +38,7 @@ pub fn open(path: &PathBuf) -> Result<Connection> {
 }
 
 /// The version `migrate` brings a database up to. Bump it with each new step.
-const LATEST: i64 = 4;
+const LATEST: i64 = 5;
 
 /// Migrations are keyed off `PRAGMA user_version`, so each step runs exactly
 /// once. Add new steps by appending — never by editing one that has shipped.
@@ -159,6 +159,27 @@ fn migrate(conn: &Connection) -> Result<()> {
              CREATE UNIQUE INDEX idx_tunnels_label ON tunnels(label);
              CREATE INDEX idx_tunnels_host ON tunnels(host_id);
              PRAGMA user_version = 4;
+             COMMIT;",
+        )?;
+    }
+
+    if version < 5 {
+        // Preferences. Values are stored as the plain text a person would
+        // write — `true`, `13`, `accept-new` — and not as JSON: the frontend
+        // knows each key's type from its own defaults, Rust reads two of them
+        // as strings, and a settings table you can read with `sqlite3` and
+        // understand is worth more than a uniform encoding nobody needs.
+        //
+        // A key absent from this table means "the default", so a setting that
+        // was never touched is not a row, and defaults can be changed later
+        // without rewriting anybody's database.
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE settings (
+               key   TEXT PRIMARY KEY,
+               value TEXT NOT NULL
+             );
+             PRAGMA user_version = 5;
              COMMIT;",
         )?;
     }

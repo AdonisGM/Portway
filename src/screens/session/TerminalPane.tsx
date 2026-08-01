@@ -33,8 +33,29 @@ function token(name: string, fallback: string): string {
 export function TerminalPane({ session, hint }: { session: Session; hint?: string }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
   const [size, setSize] = useState({ cols: 80, rows: 24 })
   const setSessionStatus = useApp((s) => s.setSessionStatus)
+
+  // Selected one at a time rather than as one `settings` object: the store
+  // hands back a new object on every change, so a single selector would
+  // re-render this pane when an unrelated preference moved.
+  const fontSize = useApp((s) => s.settings.fontSize)
+  const cursorStyle = useApp((s) => s.settings.cursorStyle)
+  const cursorBlink = useApp((s) => s.settings.cursorBlink)
+  const scrollback = useApp((s) => s.settings.scrollback)
+  const bell = useApp((s) => s.settings.bell)
+
+  // The terminal is built once and then adjusted, so these are read through a
+  // ref: putting them in the effect's dependencies would tear down the
+  // terminal — and with it the scrollback and the shell's screen — every time
+  // somebody nudged the font size.
+  const initial = useRef({ fontSize, cursorStyle, cursorBlink, scrollback })
+
+  // The bell is different: it is read at the moment one rings, not at build
+  // time, so it stays current rather than fixed.
+  const bellRef = useRef(bell)
+  bellRef.current = bell
 
   useEffect(() => {
     const mount = mountRef.current
@@ -42,17 +63,18 @@ export function TerminalPane({ session, hint }: { session: Session; hint?: strin
 
     const term = new Terminal({
       fontFamily: token('--font-mono', 'ui-monospace, monospace'),
-      fontSize: 13,
+      fontSize: initial.current.fontSize,
       // The handoff asks for two things a real terminal cannot both honour:
       // body text at 12px/1.75 *and* a 7×14px block cursor. A block cursor
       // fills its cell, so at 1.75 the cell is 21px and the cursor towers over
       // the text. 1.3 puts the cell at ~16px — near the 14px the design draws,
       // and still comfortably spaced.
       lineHeight: 1.3,
-      cursorBlink: true,
-      // `bar` would be the obvious choice, but the design draws a solid block.
-      cursorStyle: 'block',
-      scrollback: 10_000,
+      cursorBlink: initial.current.cursorBlink,
+      // `bar` would be the obvious choice, but the design draws a solid block —
+      // which is the default, not the only option Settings offers.
+      cursorStyle: initial.current.cursorStyle,
+      scrollback: initial.current.scrollback,
       theme: {
         background: token('--color-term', '#121417'),
         foreground: token('--color-term-fg', '#ced4ce'),
@@ -85,6 +107,7 @@ export function TerminalPane({ session, hint }: { session: Session; hint?: strin
     term.loadAddon(fit)
     term.open(mount)
     termRef.current = term
+    fitRef.current = fit
 
     // Keystrokes out.
     const typed = term.onData((data) => {
@@ -117,14 +140,52 @@ export function TerminalPane({ session, hint }: { session: Session; hint?: strin
     applyFit()
     term.focus()
 
+    // A bell is `\a` in the output stream. xterm has no sound of its own — the
+    // audible bell went with v5 — so this is the visual one: the pane flashes
+    // once. Reading the setting through the ref means turning it off takes
+    // effect on the next bell rather than the next session.
+    const rang = term.onBell(() => {
+      if (!bellRef.current) return
+      mount.classList.remove('term-bell')
+      // Reading a layout property between the two is what makes a second bell
+      // during the first one restart the animation instead of being swallowed.
+      void mount.offsetWidth
+      mount.classList.add('term-bell')
+    })
+
     return () => {
       typed.dispose()
+      rang.dispose()
       observer.disconnect()
       unsubscribe()
       term.dispose()
       termRef.current = null
+      fitRef.current = null
     }
   }, [session.id, setSessionStatus])
+
+  /**
+   * Preferences, applied to the terminal that is already running.
+   *
+   * A font size changes the cell size, which changes how many columns fit —
+   * so the PTY has to be told, or a full-screen program keeps drawing to the
+   * old width.
+   */
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.fontSize = fontSize
+    term.options.cursorStyle = cursorStyle
+    term.options.cursorBlink = cursorBlink
+    term.options.scrollback = scrollback
+    try {
+      fitRef.current?.fit()
+    } catch {
+      return
+    }
+    setSize({ cols: term.cols, rows: term.rows })
+    void sshResize(session.id, term.cols, term.rows).catch(() => {})
+  }, [fontSize, cursorStyle, cursorBlink, scrollback, session.id])
 
   // Connection failures are written into the terminal rather than a banner:
   // it is where the user is already looking, and the design has no error
@@ -156,7 +217,8 @@ export function TerminalPane({ session, hint }: { session: Session; hint?: strin
         </span>
       </div>
 
-      <div ref={mountRef} className="min-h-0 flex-1 overflow-hidden px-3.5 py-3" />
+      {/* `relative` so the visual bell's overlay has something to fill. */}
+      <div ref={mountRef} className="relative min-h-0 flex-1 overflow-hidden px-3.5 py-3" />
 
       <div className="flex flex-none gap-4.5 border-t border-w06 px-3.5 py-1.75 font-mono text-status text-term-dim">
         <span>utf-8</span>

@@ -87,15 +87,20 @@ pub struct ClientHandler {
     pub forward_to: Option<(String, u16)>,
 }
 
-/// Trust-on-first-use, refuse on change.
+/// What to do about a server key, and which server it is about.
 ///
-/// The design has a Known hosts screen and a "host key changed" confirmation
-/// that was never drawn, so there is no UI to ask the user. Refusing a changed
-/// key is the safe half of that missing dialog: a first sight is recorded, a
-/// mismatch stops the connection rather than asking a question we cannot draw.
+/// A changed key is always refused. What Settings decides is the *other*
+/// half: whether a host nobody has met before is recorded and trusted, or
+/// stopped. Those are OpenSSH's `accept-new` and `yes`, and they are named
+/// after it here for the same reason the Known hosts screen shows real
+/// fingerprints — this is a file and a protocol somebody may already know.
 pub struct KnownHostsPolicy {
     pub host: String,
     pub port: u16,
+    /// `false` is `accept-new`: a first sight is trusted and written down, the
+    /// way `ssh` does. `true` is `yes`: nothing gets in that is not already in
+    /// the file, and a new server has to be added deliberately.
+    pub strict: bool,
 }
 
 impl client::Handler for ClientHandler {
@@ -123,6 +128,13 @@ impl client::Handler for ClientHandler {
             Ok(true) => {
                 *verdict = "known host key".into();
                 Ok(true)
+            }
+            // First sight, and Settings says only what is already in the file
+            // may in. Nothing is written: recording the key here would defeat
+            // the setting by making every host known the moment it is met.
+            Ok(false) if self.known_hosts.strict => {
+                *verdict = "REFUSED — host key not in known_hosts (strict host keys)".into();
+                Ok(false)
             }
             // First sight: trust it and write it down, the way `ssh` does on a
             // first connection.
@@ -234,6 +246,15 @@ pub async fn dial(
         ..Default::default()
     });
 
+    // Read here rather than inside the handler: `check_server_key` runs in the
+    // middle of a handshake with no access to the database, and reaching for a
+    // mutex from there would tie a network callback to whatever else is
+    // holding it.
+    let strict = {
+        let conn = db.0.lock().unwrap();
+        crate::settings::text(&conn, "hostKeys").as_deref() == Some("strict")
+    };
+
     let server_key = Arc::new(Mutex::new(String::new()));
     let verdict = Arc::new(Mutex::new(String::new()));
     let handler = ClientHandler {
@@ -242,6 +263,7 @@ pub async fn dial(
         known_hosts: KnownHostsPolicy {
             host: host.address.clone(),
             port: host.port,
+            strict,
         },
         forward_to,
     };
@@ -276,9 +298,17 @@ pub async fn dial(
         }
         Err(e) => {
             let decision = verdict.lock().unwrap().clone();
-            let error = if decision.starts_with("REFUSED") {
+            // Two refusals with two different fixes. Telling somebody to
+            // remove an entry that is not there is worse than saying nothing.
+            let error = if decision.contains("strict host keys") {
                 Error::Ssh(format!(
-                    "{decision}. Remove the old entry from ~/.ssh/known_hosts if this is expected."
+                    "{decision}. Either add this server's key to ~/.ssh/known_hosts, \
+                     or set Settings › Security › Host keys back to accept-new."
+                ))
+            } else if decision.starts_with("REFUSED") {
+                Error::Ssh(format!(
+                    "{decision}. Check it in Known hosts, and remove the old entry there \
+                     if this is expected."
                 ))
             } else {
                 Error::Ssh(format!("could not reach {addr}: {e}"))

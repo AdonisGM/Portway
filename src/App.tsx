@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { TitleBar } from './components/chrome/TitleBar'
 import { DebugShortcut } from './components/debug/DebugShortcut'
 import { Sidebar } from './components/layout/Sidebar'
+import { ConfirmConnectDialog } from './screens/servers/ConfirmConnectDialog'
 import { ServersScreen } from './screens/servers/ServersScreen'
 import { SessionScreen } from './screens/session/SessionScreen'
 import { ServerFormScreen } from './screens/form/ServerFormScreen'
@@ -13,6 +14,7 @@ import { SettingsScreen } from './screens/SettingsScreen'
 import { revealApp } from './lib/splash'
 import type { TunnelState } from './lib/api'
 import { useApp } from './store/appStore'
+import { useSettingsSync } from './store/useSettingsSync'
 
 const SCREENS = {
   servers: ServersScreen,
@@ -25,8 +27,17 @@ const SCREENS = {
 } as const
 
 export default function App() {
+  // Reveal the window once the preferences are in. Deliberately not waiting on
+  // loadHosts: the table has its own "loading hosts…" state, and holding the
+  // window back for the database would make a fast start feel slower than it
+  // is. Settings are the exception, because they decide what the shell *looks*
+  // like — revealed first, the window would appear in the default accent and
+  // change colour a frame later. The read swallows its own failures, so this
+  // cannot leave the window hidden; the 5s backstop in lib.rs is the second
+  // guarantee it does not.
+  useSettingsSync(revealApp)
+
   const screen = useApp((s) => s.screen)
-  const accent = useApp((s) => s.settings.accent)
   const loadHosts = useApp((s) => s.loadHosts)
   const loadKeys = useApp((s) => s.loadKeys)
   const loadKnownHosts = useApp((s) => s.loadKnownHosts)
@@ -47,14 +58,6 @@ export default function App() {
     const block = (e: MouseEvent) => e.preventDefault()
     document.addEventListener('contextmenu', block)
     return () => document.removeEventListener('contextmenu', block)
-  }, [])
-
-  // Reveal the window as soon as the shell is painted. Deliberately not
-  // waiting on loadHosts: the table has its own "loading hosts…" state, and
-  // holding the window back for the database would make a fast start feel
-  // slower than it is.
-  useEffect(() => {
-    revealApp()
   }, [])
 
   // One read of the database on boot; every mutation afterwards patches the
@@ -94,12 +97,6 @@ export default function App() {
     }
   }, [loadTunnels, setTunnelState])
 
-  // One variable write repaints every accent surface in the app, because each
-  // Tailwind utility compiles down to var(--color-accent).
-  useEffect(() => {
-    document.documentElement.style.setProperty('--color-accent', accent)
-  }, [accent])
-
   const Screen = SCREENS[screen]
 
   return (
@@ -113,6 +110,10 @@ export default function App() {
           <Screen />
         </main>
       </div>
+      {/* Here rather than on Servers, because a session can be opened from the
+          session screen's `+` too — a confirmation that only exists on one
+          screen would silently swallow the connection asked for on the other. */}
+      <ConfirmConnectDialog />
       {/* ⌘⇧L, from anywhere, opens the log console in a window of its own —
           mounted here rather than added to the rail because it is a tool for
           when something is wrong, not a seventh screen. */}

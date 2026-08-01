@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { GROUP_NAMES } from '@/data/groups'
 import type { Host } from '@/data/types'
-import { hostLog, openSessionWindow, type LogEntry } from '@/lib/api'
+import { hostLog, type LogEntry } from '@/lib/api'
 import { ELSEWHERE_KEY, opensElsewhere, useOpensElsewhere } from '@/lib/platform'
 import { hostCommand } from '@/lib/command'
 import { relativeTime } from '@/lib/format'
@@ -20,6 +20,7 @@ export function HostDrawer({ host }: { host: Host }) {
   const open = useApp((s) => s.drawer)
   const closeDrawer = useApp((s) => s.closeDrawer)
   const openSession = useApp((s) => s.openSession)
+  const openInWindow = useApp((s) => s.openInWindow)
   const openEditForm = useApp((s) => s.openEditForm)
   const openDuplicateForm = useApp((s) => s.openDuplicateForm)
   const requestDelete = useApp((s) => s.requestDelete)
@@ -63,7 +64,7 @@ export function HostDrawer({ host }: { host: Host }) {
             size="block"
             className="flex-1"
             onClick={(e) => {
-              if (opensElsewhere(e)) return void openSessionWindow(host)
+              if (opensElsewhere(e)) return openInWindow(host)
               openSession(host)
             }}
           >
@@ -78,7 +79,7 @@ export function HostDrawer({ host }: { host: Host }) {
             className="w-auto flex-none px-3"
             aria-label="Open this session in a new window"
             title={`Open in a new window (${ELSEWHERE_KEY}-click SSH)`}
-            onClick={() => void openSessionWindow(host)}
+            onClick={() => openInWindow(host)}
           >
             ↗
           </Button>

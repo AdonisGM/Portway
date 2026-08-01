@@ -8,6 +8,7 @@ import { listHosts, message } from './lib/api'
 import { isMac } from './lib/platform'
 import type { Host } from './data/types'
 import { useApp } from './store/appStore'
+import { useSettingsSync } from './store/useSettingsSync'
 
 /**
  * One session, in a window of its own.
@@ -29,19 +30,17 @@ import { useApp } from './store/appStore'
  * this is — moves up into the titlebar, where a window's identity belongs.
  */
 export default function SessionWindow({ hostId }: { hostId: number }) {
-  const openSession = useApp((s) => s.openSession)
+  // Held until the preferences are in for the same reason the main window is,
+  // and listening afterwards for the same reason: the terminal in here follows
+  // the font and cursor chosen in a window that is not this one.
+  useSettingsSync(revealApp)
+
+  // `beginSession`, not `openSession`: the prod confirmation was already
+  // answered in the window that asked for this one. See the store.
+  const beginSession = useApp((s) => s.beginSession)
   const sessions = useApp((s) => s.sessions)
-  const accent = useApp((s) => s.settings.accent)
   const [host, setHost] = useState<Host | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    revealApp()
-  }, [])
-
-  useEffect(() => {
-    document.documentElement.style.setProperty('--color-accent', accent)
-  }, [accent])
 
   // Deliberately not `loadHosts` into the store: this window draws no host
   // list, and the one row it needs is fetched for the connection alone.
@@ -53,13 +52,13 @@ export default function SessionWindow({ hostId }: { hostId: number }) {
         const match = hosts.find((h) => h.id === hostId)
         if (!match) return setError(`host ${hostId} no longer exists`)
         setHost(match)
-        openSession(match)
+        beginSession(match)
       })
       .catch((e) => alive && setError(message(e)))
     return () => {
       alive = false
     }
-  }, [hostId, openSession])
+  }, [hostId, beginSession])
 
   const session = sessions[0] ?? null
 

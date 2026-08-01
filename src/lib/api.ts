@@ -352,6 +352,27 @@ export const logWrite = (
 /** Raises or lowers what the backend records. Returns the level it settled on. */
 export const setLogLevel = (level: AppLogLevel) => invoke<AppLogLevel>('set_log_level', { level })
 
+/* ---------------------------------------------------------------------------
+   Settings
+
+   Values cross as the plain text they are written as — `true`, `13`,
+   `accept-new` — and the frontend reads each one's type off its own default.
+   See `settings.rs` for why they are not JSON.
+--------------------------------------------------------------------------- */
+
+/** Only the keys that have been set. Anything absent is at its default. */
+export const getSettings = () => invoke<Record<string, string>>('get_settings')
+
+/** Saves one setting and tells every window on `settings://changed`. */
+export const putSetting = (key: string, value: string) =>
+  invoke<void>('set_setting', { key, value })
+
+/** The `settings://changed` payload. */
+export interface SettingChanged {
+  key: string
+  value: string
+}
+
 export interface DebugInfo {
   version: string
   os: string

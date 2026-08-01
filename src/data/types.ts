@@ -62,13 +62,6 @@ export type TunnelRunState = 'idle' | 'starting' | 'active' | 'error'
 
 export type TunnelAutostart = 'manual' | 'session' | 'launch'
 
-export interface SftpFile {
-  name: string
-  size: string
-  modified: string
-  kind: 'parent' | 'dir' | 'file'
-}
-
 /** Where a session is in its life. */
 export type SessionStatus = 'connecting' | 'open' | 'closed' | 'error'
 

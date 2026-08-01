@@ -24,16 +24,82 @@ export type FormMode =
  */
 export const ACCENTS = ['#5ec8b0', '#c9a15f', '#9b8fd6', '#e8e8e6'] as const
 
-interface Settings {
+export type Density = 'compact' | 'cozy'
+export type CursorStyle = 'block' | 'bar' | 'underline'
+/** OpenSSH's own names, because this is OpenSSH's own file. */
+export type HostKeyPolicy = 'accept-new' | 'strict'
+
+/**
+ * Everything the Settings screen decides.
+ *
+ * Every field here changes something. The screen used to carry twice as many
+ * controls over values nothing read — a theme with one theme, an idle lock
+ * with no lock — and a switch that does nothing is worse than an absent one,
+ * because it is a promise the app does not keep.
+ */
+export interface Settings {
   accent: string
   /** Off renders every group dot in `faint` — the prototype's `envColorMode:
    *  'mono'` (SSH Client.dc.html:763-765), surfaced as this toggle. */
   colourHostsByGroup: boolean
+  /** How much air a table row gets. Every table in the app, one setting. */
+  density: Density
+  fontSize: number
+  cursorStyle: CursorStyle
+  cursorBlink: boolean
+  /** Lines the terminal keeps above the top of the screen. */
+  scrollback: number
+  /**
+   * What happens when a program rings the bell. Visual, because there is no
+   * sound to play — xterm dropped its own audible bell, and shipping an audio
+   * file to make one is a bigger decision than this toggle.
+   */
   bell: boolean
-  storeSecretsInKeychain: boolean
+  /** `accept-new` records a server nobody has met; `strict` refuses it. */
+  hostKeys: HostKeyPolicy
   confirmProd: boolean
-  agentForwarding: boolean
-  keepAlive: boolean
+}
+
+/**
+ * What a setting is when nobody has decided. A key with no row in the
+ * database means exactly this, so changing a default here changes it for
+ * everyone who never touched that control — which is the point of storing
+ * absence rather than storing the default.
+ */
+export const DEFAULT_SETTINGS: Settings = {
+  accent: ACCENTS[0],
+  colourHostsByGroup: true,
+  density: 'compact',
+  fontSize: 13,
+  cursorStyle: 'block',
+  cursorBlink: true,
+  scrollback: 10_000,
+  bell: false,
+  hostKeys: 'accept-new',
+  confirmProd: true,
+}
+
+/**
+ * Values cross as the plain text they are written as (`true`, `13`,
+ * `accept-new`), and each one's type is read off the default beside it. An
+ * unknown key is skipped rather than added: it is a setting from a build newer
+ * than this one, and nothing here knows what to do with it.
+ */
+function decodeSettings(raw: Record<string, string>): Settings {
+  const settings = { ...DEFAULT_SETTINGS }
+  for (const [key, text] of Object.entries(raw)) {
+    const value = decodeSetting(key, text)
+    if (value !== undefined) Object.assign(settings, { [key]: value })
+  }
+  return settings
+}
+
+function decodeSetting(key: string, text: string): Settings[keyof Settings] | undefined {
+  if (!(key in DEFAULT_SETTINGS)) return undefined
+  const fallback = DEFAULT_SETTINGS[key as keyof Settings]
+  if (typeof fallback === 'boolean') return text === 'true'
+  if (typeof fallback === 'number') return Number.isFinite(Number(text)) ? Number(text) : fallback
+  return text
 }
 
 interface AppState {
@@ -58,6 +124,12 @@ interface AppState {
 
   /** The host awaiting delete confirmation, or null when no dialog is open. */
   pendingDelete: Host | null
+
+  /**
+   * The connection waiting on Settings › "Confirm before connecting to prod",
+   * and where it was going to open. Null when nothing is being asked.
+   */
+  pendingConnect: { host: Host; where: 'tab' | 'window' } | null
 
   formMode: FormMode
 
@@ -101,13 +173,23 @@ interface AppState {
   openSession: (host: Host) => void
   /** Always a new tab, even if this host already has one. */
   openSessionTab: (host: Host) => void
+  /** A session in a window of its own. */
+  openInWindow: (host: Host) => void
+  /** Opens a tab and connects, with no prod check. Both of the above end here. */
+  beginSession: (host: Host) => void
+  confirmConnect: () => void
+  cancelConnect: () => void
   setSessionStatus: (id: string, status: SessionStatus) => void
   activateTab: (tab: number) => void
   closeTab: (tab: number) => void
   setQuery: (query: string) => void
   setFilter: (filter: HostFilter) => void
   toggleGroup: (group: GroupId) => void
+  /** Reads the saved preferences. Called before the window is revealed. */
+  loadSettings: () => Promise<void>
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
+  /** A change made in another window, arriving on `settings://changed`. */
+  applySetting: (key: string, value: string) => void
 }
 
 /**
@@ -124,6 +206,16 @@ let sessionSeq = 0
 /** Replaces one host in the list without disturbing the order. */
 const replace = (hosts: Host[], host: Host) => hosts.map((h) => (h.id === host.id ? host : h))
 
+/**
+ * Whether this connection should be asked about first.
+ *
+ * Only production, and only when the setting is on. The group is the app's
+ * own idea of what a server is for, and it is already what colours the row —
+ * this makes it mean something.
+ */
+const needsConfirming = (settings: Settings, host: Host) =>
+  settings.confirmProd && host.group === 'prod'
+
 export const useApp = create<AppState>((set, get) => ({
   screen: 'servers',
 
@@ -138,6 +230,7 @@ export const useApp = create<AppState>((set, get) => ({
   selectedId: null,
   drawer: false,
   pendingDelete: null,
+  pendingConnect: null,
 
   formMode: { kind: 'new', prefill: null },
 
@@ -148,15 +241,7 @@ export const useApp = create<AppState>((set, get) => ({
   filter: 'all',
   groupFilter: null,
 
-  settings: {
-    accent: ACCENTS[0],
-    colourHostsByGroup: true,
-    bell: false,
-    storeSecretsInKeychain: true,
-    confirmProd: true,
-    agentForwarding: true,
-    keepAlive: false,
-  },
+  settings: DEFAULT_SETTINGS,
 
   loadHosts: async () => {
     try {
@@ -359,10 +444,52 @@ export const useApp = create<AppState>((set, get) => ({
       set({ screen: 'session', selectedId: host.id, tab: existing, drawer: false })
       return
     }
-    get().openSessionTab(host)
+    // Being taken to a session that is already open is not connecting, so it
+    // is checked *after* the reuse above — the question is only ever asked
+    // when a new connection is about to be made.
+    if (needsConfirming(get().settings, host)) {
+      set({ pendingConnect: { host, where: 'tab' } })
+      return
+    }
+    get().beginSession(host)
   },
 
   openSessionTab: (host) => {
+    if (needsConfirming(get().settings, host)) {
+      set({ pendingConnect: { host, where: 'tab' } })
+      return
+    }
+    get().beginSession(host)
+  },
+
+  /**
+   * Asked here rather than in the window that opens. A session window connects
+   * the moment it appears, so a confirmation drawn inside it would be a
+   * question behind a window that already exists — and answering "no" would
+   * leave an empty one on screen with nothing to do.
+   */
+  openInWindow: (host) => {
+    if (needsConfirming(get().settings, host)) {
+      set({ pendingConnect: { host, where: 'window' } })
+      return
+    }
+    void api.openSessionWindow(host).catch(() => {})
+  },
+
+  confirmConnect: () => {
+    const pending = get().pendingConnect
+    set({ pendingConnect: null })
+    if (!pending) return
+    if (pending.where === 'window') {
+      void api.openSessionWindow(pending.host).catch(() => {})
+    } else {
+      get().beginSession(pending.host)
+    }
+  },
+
+  cancelConnect: () => set({ pendingConnect: null }),
+
+  beginSession: (host) => {
     const session: Session = {
       id: `${WINDOW_TAG}${sessionSeq++}`,
       hostId: host.id,
@@ -450,8 +577,33 @@ export const useApp = create<AppState>((set, get) => ({
   toggleGroup: (group) =>
     set((state) => ({ groupFilter: state.groupFilter === group ? null : group })),
 
-  setSetting: (key, value) =>
-    set((state) => ({ settings: { ...state.settings, [key]: value } })),
+  loadSettings: async () => {
+    try {
+      set({ settings: decodeSettings(await api.getSettings()) })
+    } catch {
+      // A database that will not answer is already being reported by
+      // `loadHosts`; a second message about preferences adds nothing.
+      set({ settings: DEFAULT_SETTINGS })
+    }
+  },
+
+  /**
+   * Applied here and written straight away — there is no Save button, and a
+   * preference that only takes effect on the next launch is not a preference,
+   * it is a config file with a form in front of it.
+   *
+   * The write also broadcasts, which is how the other windows hear about it.
+   */
+  setSetting: (key, value) => {
+    set((state) => ({ settings: { ...state.settings, [key]: value } }))
+    void api.putSetting(key, String(value)).catch(() => {})
+  },
+
+  applySetting: (key, value) => {
+    const decoded = decodeSetting(key, value)
+    if (decoded === undefined) return
+    set((state) => ({ settings: { ...state.settings, [key]: decoded } }))
+  },
 }))
 
 /** Convenience selector — the currently selected host, or null. */

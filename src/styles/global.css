@@ -122,6 +122,38 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   The visual bell.
+
+   `\a` in the output stream, which a shell sends on a failed completion and a
+   program sends when it wants attention. xterm has no sound of its own — the
+   audible bell went with v5 — and shipping an audio file to make one is a
+   larger decision than a toggle in Settings, so the pane flashes instead.
+
+   Short and dim on purpose: it has to be noticed at the edge of vision by
+   somebody reading the text underneath it, not interrupt them.
+--------------------------------------------------------------------------- */
+
+@keyframes term-bell {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* An overlay, not a background: xterm paints an opaque canvas over the whole
+   pane, so anything set behind it is never seen. */
+.term-bell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--color-w14);
+  animation: term-bell 220ms ease-out forwards;
+}
+
 /* Motion here carries meaning — which way traffic runs — so what replaces it
    has to carry the same meaning standing still. The dash pattern stays: an
    active line is still dashed and still accent, it simply stops marching. */

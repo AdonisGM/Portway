@@ -6,6 +6,7 @@ import { StatusDot } from './components/ui/primitives'
 import { revealApp } from './lib/splash'
 import { debugInfo, type DebugInfo } from './lib/api'
 import { appWindow } from './lib/tauri'
+import { useSettingsSync } from './store/useSettingsSync'
 
 /**
  * The debug console, in a window of its own.
@@ -23,6 +24,11 @@ import { appWindow } from './lib/tauri'
  * explain.
  */
 export default function DebugWindow() {
+  // For the accent alone — this window has no terminal and no tables — but it
+  // is the same one line, and a console in a different green from the app it
+  // is describing would be a puzzle with no answer.
+  useSettingsSync()
+
   const [info, setInfo] = useState<DebugInfo | null>(null)
 
   // No splash hold: this window is opened with a keystroke while the app is

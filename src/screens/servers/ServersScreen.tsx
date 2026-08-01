@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GROUP_IDS, GROUP_NAMES } from '@/data/groups'
 import type { Host } from '@/data/types'
-import { openSessionWindow } from '@/lib/api'
 import { ELSEWHERE_KEY, opensElsewhere, useOpensElsewhere } from '@/lib/platform'
 import { isRecent, relativeTime } from '@/lib/format'
 import { buildHostFilter, hostQualifiers } from '@/lib/hostQuery'
@@ -85,6 +84,7 @@ export function ServersScreen() {
   const setFilter = useApp((s) => s.setFilter)
   const selectHost = useApp((s) => s.selectHost)
   const openSession = useApp((s) => s.openSession)
+  const openInWindow = useApp((s) => s.openInWindow)
   const openNewForm = useApp((s) => s.openNewForm)
   const selected = useSelectedHost()
   const elsewhere = useOpensElsewhere()
@@ -202,7 +202,7 @@ export function ServersScreen() {
             e.stopPropagation()
             // ⌘-click opens it in its own window, the way a browser would.
             // Plain click is unchanged.
-            if (opensElsewhere(e)) return void openSessionWindow(host)
+            if (opensElsewhere(e)) return openInWindow(host)
             openSession(host)
           }}
         >

@@ -8,6 +8,7 @@ mod keys;
 mod known;
 mod logging;
 mod models;
+mod settings;
 mod sftp;
 mod ssh;
 mod tunnels;
@@ -118,6 +119,8 @@ pub fn run() {
             logging::set_log_level,
             logging::debug_info,
             logging::reveal_logs,
+            settings::get_settings,
+            settings::set_setting,
             tunnels::list_tunnels,
             tunnels::tunnel_states,
             tunnels::create_tunnel,

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { isMac } from '@/lib/platform'
 import { WindowControls } from './WindowControls'
 
@@ -18,8 +19,13 @@ import { WindowControls } from './WindowControls'
  * the sidebar hairline — so the lights are cleared with a left inset inside it
  * rather than by widening it, and the accent dot steps aside for them: three
  * coloured circles are already the brand mark's job in that corner.
+ *
+ * `subject` names what this particular window is showing. The main window has
+ * no answer — it shows everything — but a session window is one connection and
+ * nothing else, and after the tab strip went away this bar is the only place
+ * left that says which server you are typing at.
  */
-export function TitleBar() {
+export function TitleBar({ subject }: { subject?: ReactNode }) {
   return (
     // The drag attribute deliberately sits on the two inert areas below, never
     // on this bar: Tauri claims mousedown for anything inside a drag region, so
@@ -33,11 +39,26 @@ export function TitleBar() {
         }`}
       >
         {!isMac && <div className="size-4.5 flex-none rounded-chip bg-accent" />}
-        <span className="text-body font-semibold tracking-brand">Portway</span>
+        {/* Same reason as the subject below: the word is not a control, and
+            grabbing the app's own name is the most natural place to drag. */}
+        <span className="pointer-events-none text-body font-semibold tracking-brand select-none">
+          Portway
+        </span>
       </div>
 
-      {/* Drag surface. Double-click to maximise comes free with the attribute. */}
-      <div data-tauri-drag-region className="flex-1" />
+      {/* Drag surface. Double-click to maximise comes free with the attribute,
+          and the subject rides inside it so the whole bar stays draggable —
+          text is not a control, and a strip of it that refuses to move the
+          window would be a dead patch in the middle of one that does. */}
+      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center px-4">
+        {/* Tauri reads the attribute off the exact element under the pointer,
+            so anything drawn on top of a drag region has to let the pointer
+            through or it becomes a dead patch in the middle of a bar that
+            otherwise moves the window. */}
+        <div className="pointer-events-none flex min-w-0 items-center gap-2.25 select-none">
+          {subject}
+        </div>
+      </div>
 
       {!isMac && <WindowControls />}
     </div>

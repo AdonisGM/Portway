@@ -9,7 +9,6 @@ import { encodeText } from '@/lib/bytes'
 import { subscribe } from '@/lib/sshBus'
 import { StatusDot } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
-import { isMac } from '@/lib/platform'
 
 /**
  * The real terminal: xterm.js on the front, an SSH PTY on the back.
@@ -26,7 +25,12 @@ function token(name: string, fallback: string): string {
   return value || fallback
 }
 
-export function TerminalPane({ session }: { session: Session }) {
+/**
+ * `hint` is the keystroke the status bar advertises. It is passed in rather
+ * than written here because it depends on what kind of window this is: a tab in
+ * the main window can be joined by another, a session window cannot.
+ */
+export function TerminalPane({ session, hint }: { session: Session; hint?: string }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const [size, setSize] = useState({ cols: 80, rows: 24 })
@@ -163,7 +167,7 @@ export function TerminalPane({ session }: { session: Session }) {
             it. It previously advertised a Windows chord on a Mac and a split
             that does not exist — a status bar promising keys that do nothing
             teaches the user their keyboard is broken. */}
-        <span className="ml-auto">{isMac ? '⌘T' : 'Ctrl+Shift+T'} new tab</span>
+        {hint ? <span className="ml-auto">{hint}</span> : null}
       </div>
     </div>
   )

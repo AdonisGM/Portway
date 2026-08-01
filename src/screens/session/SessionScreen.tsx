@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Badge, StatusDot } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
-import { TerminalPane } from './TerminalPane'
-import { SftpPane } from './SftpPane'
-import { useSplit } from './useSplit'
+import { SessionPanes } from './SessionPanes'
 import { NewTabPicker } from './NewTabPicker'
 import { isMac } from '@/lib/platform'
 
-/** Terminal on the left, SFTP browser on the right, one tab per session. */
+/** The tabbed session view: one strip of tabs over the active session's panes. */
 export function SessionScreen() {
-  const body = useRef<HTMLDivElement>(null)
-  const split = useSplit(body)
   const plusRef = useRef<HTMLButtonElement>(null)
   const [picking, setPicking] = useState(false)
 
@@ -40,7 +36,7 @@ export function SessionScreen() {
   const host = hosts.find((h) => h.id === active?.hostId) ?? null
 
   // The host behind this tab was deleted while it was open.
-  if (!host) {
+  if (!host || !active) {
     return (
       <div className="absolute inset-0 flex items-center justify-center font-mono text-mono text-faint">
         no session
@@ -104,41 +100,7 @@ export function SessionScreen() {
         <NewTabPicker open={picking} onClose={() => setPicking(false)} anchorRef={plusRef} />
       </div>
 
-      <div ref={body} className="flex min-h-0 flex-1">
-        {/* Keyed on the session so switching tabs gives each its own terminal
-            instance rather than replaying one pane's scrollback into another. */}
-        <TerminalPane key={active.id} session={active} />
-
-        {/* The divider. Four pixels wide with a negative right margin, so it
-            overlaps the SFTP pane's border and stays a hairline to look at
-            while being a real target to hit. */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the SFTP pane"
-          tabIndex={0}
-          onPointerDown={split.onPointerDown}
-          onPointerMove={split.onPointerMove}
-          onPointerUp={split.onPointerUp}
-          onKeyDown={split.onKeyDown}
-          // Three states, loudest last: accent while dragging, a quieter accent
-          // once focused — WebKit treats the explicit focus() as focus-visible,
-          // so a full-strength bar would linger after every click — and a plain
-          // overlay on hover. `outline-none` because global.css only clears the
-          // native ring for input/select/button, and a focusable div otherwise
-          // gets WebKit's blue one straight through the app's own palette.
-          className={`z-10 -mr-1 w-1 flex-none cursor-col-resize outline-none transition-colors focus-visible:bg-accent-27 ${
-            split.dragging ? 'bg-accent' : 'hover:bg-w15'
-          }`}
-        />
-
-        <SftpPane
-          key={`${active.id}-sftp`}
-          session={active}
-          width={split.width}
-          resizing={split.dragging}
-        />
-      </div>
+      <SessionPanes session={active} hint={`${isMac ? '⌘T' : 'Ctrl+Shift+T'} new tab`} />
     </div>
   )
 }

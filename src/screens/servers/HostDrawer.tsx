@@ -63,7 +63,7 @@ export function HostDrawer({ host }: { host: Host }) {
             size="block"
             className="flex-1"
             onClick={(e) => {
-              if (opensElsewhere(e)) return void openSessionWindow(host.id, host.name)
+              if (opensElsewhere(e)) return void openSessionWindow(host)
               openSession(host)
             }}
           >
@@ -78,7 +78,7 @@ export function HostDrawer({ host }: { host: Host }) {
             className="w-auto flex-none px-3"
             aria-label="Open this session in a new window"
             title={`Open in a new window (${ELSEWHERE_KEY}-click SSH)`}
-            onClick={() => void openSessionWindow(host.id, host.name)}
+            onClick={() => void openSessionWindow(host)}
           >
             ↗
           </Button>

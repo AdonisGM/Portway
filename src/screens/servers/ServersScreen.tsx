@@ -202,7 +202,7 @@ export function ServersScreen() {
             e.stopPropagation()
             // ⌘-click opens it in its own window, the way a browser would.
             // Plain click is unchanged.
-            if (opensElsewhere(e)) return void openSessionWindow(host.id, host.name)
+            if (opensElsewhere(e)) return void openSessionWindow(host)
             openSession(host)
           }}
         >

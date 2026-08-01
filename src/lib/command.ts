@@ -34,6 +34,15 @@ export function buildSshCommand({
   return parts.join(' ')
 }
 
+/**
+ * How a host names itself outside the app's own UI: the window title, which is
+ * what Mission Control, the Window menu and the taskbar show. The label alone
+ * is what you called it; the address is what tells two windows named `db` apart
+ * when the app is not on screen to draw the rest.
+ */
+export const hostTitle = (host: Host): string =>
+  `${host.name} — ${host.user}@${host.address}:${host.port}`
+
 export const DEFAULT_KEY_PATH = '~/.ssh/id_ed25519'
 
 /**

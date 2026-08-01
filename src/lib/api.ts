@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Host, HostInput } from '@/data/types'
+import { hostTitle } from '@/lib/command'
 
 /**
  * Thin typed wrappers over the Rust commands in `src-tauri/src/hosts.rs`.
@@ -180,8 +181,8 @@ export const sftpRemove = (sessionId: string, path: string, isDir: boolean) =>
   invoke<number>('sftp_remove', { sessionId, path, isDir })
 
 /** Opens a session for this host in a window of its own. */
-export const openSessionWindow = (hostId: number, title: string) =>
-  invoke<void>('open_session_window', { hostId, title })
+export const openSessionWindow = (host: Host) =>
+  invoke<void>('open_session_window', { hostId: host.id, title: hostTitle(host) })
 
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })

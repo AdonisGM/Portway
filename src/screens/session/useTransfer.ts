@@ -21,9 +21,10 @@ export interface Transfer {
 }
 
 /**
- * `active` is the pane telling us a transfer is in flight. The last event of
- * one upload would otherwise stay on screen until the next, and a finished
- * transfer that keeps showing `98%` is worse than no footer at all.
+ * `active` is the pane telling us a transfer is worth showing — in flight, or
+ * just finished and being held up for a second. The last event of one upload
+ * would otherwise stay on screen until the next, and a transfer that finished
+ * ten minutes ago still reading `98%` is worse than no footer at all.
  */
 export function useTransfer(sessionId: string, active: boolean): Transfer | null {
   const [transfer, setTransfer] = useState<Transfer | null>(null)

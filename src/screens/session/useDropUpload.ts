@@ -16,7 +16,20 @@ import { message, sftpUploadPath } from '@/lib/api'
  * the `devicePixelRatio` division — on this display they differ by two, so
  * skipping it would make the pane appear to start halfway across the window.
  */
-export type DropState = 'idle' | 'over' | 'uploading'
+/**
+ * `done` is a finished upload still on screen. The last thing the footer draws
+ * is a full bar, and clearing it the instant the transfer returns means the one
+ * frame that says "this worked" is the one frame nobody sees — for a small file
+ * the whole footer appears and vanishes inside a blink. It holds for a moment,
+ * then goes.
+ *
+ * A failure does not get the hold. The error line is the answer there, and a
+ * bar left sitting at 47% underneath it only muddles what happened.
+ */
+export type DropState = 'idle' | 'over' | 'uploading' | 'done'
+
+/** How long a finished transfer stays up. */
+const DONE_VISIBLE_MS = 1000
 
 interface Options {
   sessionId: string
@@ -70,9 +83,9 @@ export function useDropUpload({ sessionId, remoteDir, paneRef, onUploaded }: Opt
             await sftpUploadPath(id, path, dir)
           }
           refresh()
+          setState('done')
         } catch (e) {
           setError(message(e))
-        } finally {
           setState('idle')
         }
       })
@@ -86,6 +99,17 @@ export function useDropUpload({ sessionId, remoteDir, paneRef, onUploaded }: Opt
       unlisten?.()
     }
   }, [paneRef])
+
+  // Dropping something else during the hold cancels it rather than being cut
+  // short by it: the timer only clears a state that is still `done`.
+  useEffect(() => {
+    if (state !== 'done') return
+    const timer = window.setTimeout(
+      () => setState((current) => (current === 'done' ? 'idle' : current)),
+      DONE_VISIBLE_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [state])
 
   return { state, error, clearError: () => setError(null) }
 }

@@ -135,7 +135,8 @@ export function SftpPane({ session, width, resizing }: Props) {
     onUploaded: () => void load(path),
   })
 
-  const transfer = useTransfer(session.id, drop.state === 'uploading')
+  // `done` keeps the finished bar on screen for a moment — see `DropState`.
+  const transfer = useTransfer(session.id, drop.state === 'uploading' || drop.state === 'done')
 
   /** Absolute path of a listed entry, in the folder currently shown. */
   const pathOf = (file: RemoteFile) =>

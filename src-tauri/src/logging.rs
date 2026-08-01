@@ -300,12 +300,16 @@ fn install_panic_hook() {
             .map(|l| format!("{}:{}", l.file(), l.line()))
             .unwrap_or_else(|| "unknown".into());
 
+        // Flattened by hand rather than through `clip`: a panic's payload is
+        // multi-line — `panicked at src/lib.rs:37:\n<message>` — and a stray
+        // newline here would forge a second line in a file whose whole format
+        // is one event per line.
         let line = format!(
             "{} ERROR app      panicked | at={} thread={} · {}\n",
             Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
             where_at,
             std::thread::current().name().unwrap_or("unnamed"),
-            info,
+            info.to_string().replace(['\r', '\n'], " "),
         );
 
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {

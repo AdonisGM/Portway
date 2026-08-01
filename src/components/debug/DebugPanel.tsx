@@ -135,10 +135,16 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
     setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 24)
   }, [])
 
+  // Keyed on the newest sequence, not the count. The bus keeps the last 5000
+  // lines and then shifts, so past that the length never changes again — a
+  // count would stop firing exactly when the log is busiest, leaving the view
+  // frozen under a footer still claiming to follow.
+  const newest = shown.length > 0 ? shown[shown.length - 1].seq : 0
   useEffect(() => {
     if (!follow || shown.length === 0) return
     virtualizer.scrollToIndex(shown.length - 1, { align: 'end' })
-  }, [follow, shown.length, virtualizer])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow, newest, virtualizer])
 
   const toggleVerbose = () => {
     const next: AppLogLevel = verbose ? 'info' : 'debug'
@@ -164,8 +170,15 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
     )
   }
 
-  const errors = lines.filter((l) => l.level === 'error').length
-  const warnings = lines.filter((l) => l.level === 'warn').length
+  // Two passes over five thousand lines, and a render happens per arriving
+  // line — cheap enough at `info`, not for free at `debug` under load.
+  const { errors, warnings } = useMemo(
+    () => ({
+      errors: lines.filter((l) => l.level === 'error').length,
+      warnings: lines.filter((l) => l.level === 'warn').length,
+    }),
+    [lines],
+  )
 
   return (
     // Fixed rather than absolute, and starting below the titlebar: it has to

@@ -106,6 +106,23 @@ fn publish(app: &AppHandle, state: TunnelState) {
     let _ = app.emit("tunnel://state", state);
 }
 
+/// Drops a reported failure once something works again.
+///
+/// Only emits when there was one, so the ordinary case — connection after
+/// connection succeeding — is silent. Without this the first refusal is the
+/// last word: the row and the footer would keep explaining a problem that
+/// stopped being true, which is how a diagnostic becomes a lie.
+fn clear_error(app: &AppHandle, id: i64) {
+    let stale = {
+        let states = app.state::<TunnelStates>();
+        let map = states.0.lock().unwrap();
+        map.get(&id).is_some_and(|s| s.error.is_some())
+    };
+    if stale {
+        set_state(app, id, "active", None);
+    }
+}
+
 fn set_state(app: &AppHandle, id: i64, state: &str, error: Option<String>) {
     publish(
         app,
@@ -390,8 +407,9 @@ async fn open(
                         // is working until somebody says why, and the commonest
                         // reason by far is `AllowTcpForwarding no` on the far
                         // end, which no amount of retrying will fix.
-                        if let Err(e) = outcome {
-                            set_state(&reporter, id, "active", Some(e.to_string()));
+                        match outcome {
+                            Err(e) => set_state(&reporter, id, "active", Some(e.to_string())),
+                            Ok(()) => clear_error(&reporter, id),
                         }
                     });
                 }

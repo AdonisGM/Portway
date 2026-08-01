@@ -78,6 +78,12 @@ pub struct ClientHandler {
     /// the connection is established.
     pub verdict: Arc<Mutex<String>>,
     pub known_hosts: KnownHostsPolicy,
+    /// Where to send channels the *server* opens, which is how a remote forward
+    /// delivers its traffic: `tcpip_forward` only asks the server to listen, and
+    /// every connection it then accepts arrives here rather than on the handle.
+    /// `None` for every other kind of connection, which opens its own channels
+    /// and is never called back.
+    pub forward_to: Option<(String, u16)>,
 }
 
 /// Trust-on-first-use, refuse on change.
@@ -141,6 +147,35 @@ impl client::Handler for ClientHandler {
             }
         }
     }
+
+    /// A connection the *server* made on our behalf, on a port a remote forward
+    /// asked it to listen on. Ours to join to something local.
+    ///
+    /// Dropping the channel is the right answer when there is nowhere to send
+    /// it: that is a connection to a port this client never asked to forward.
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        _connected_address: &str,
+        _connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        _session: &mut russh::client::Session,
+    ) -> std::result::Result<(), Self::Error> {
+        let Some((host, port)) = self.forward_to.clone() else { return Ok(()) };
+
+        tokio::spawn(async move {
+            let Ok(mut local) = tokio::net::TcpStream::connect((host.as_str(), port)).await else {
+                // The far end is already connected and waiting; closing our half
+                // is what tells it there is nothing here.
+                return;
+            };
+            let mut remote = channel.into_stream();
+            let _ = tokio::io::copy_bidirectional(&mut local, &mut remote).await;
+        });
+
+        Ok(())
+    }
 }
 
 fn known_hosts_path() -> PathBuf {
@@ -157,16 +192,26 @@ pub fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Opens the connection, authenticates, and starts an interactive shell.
+/// Reaches a host and authenticates, and stops there.
 ///
-/// Every step that touches the host is written to the audit trail as it
-/// happens, so a failed connection leaves a record too.
-pub async fn connect(
-    app: AppHandle,
-    host: Host,
-    session_id: String,
-    window: String,
-) -> Result<SessionInfo> {
+/// Split out of `connect` because a shell is not the only reason to hold a
+/// connection: a tunnel wants one with no channel on it at all. Everything up
+/// to and including authentication is identical either way — the same host-key
+/// policy, the same auth methods, the same audit entries — and the two would
+/// drift apart the moment they were written twice.
+///
+/// Returns the handle and the key algorithm the handshake settled on.
+///
+/// `forward_to` is where inbound forwarded channels should be connected, and is
+/// `None` for everything but a remote forward: the server opens those channels
+/// against the *handler*, so the destination has to be decided here, before the
+/// connection exists.
+pub async fn dial(
+    app: &AppHandle,
+    host: &Host,
+    session_id: Option<&str>,
+    forward_to: Option<(String, u16)>,
+) -> Result<(Handle<ClientHandler>, String)> {
     let db = app.state::<Db>();
     let addr = format!("{}:{}", host.address, host.port);
 
@@ -175,7 +220,7 @@ pub async fn connect(
         audit::record(
             &conn,
             host.id,
-            Some(&session_id),
+            session_id,
             Origin::System,
             Kind::Auth,
             &format!("connect {}@{}", host.user, addr),
@@ -197,6 +242,7 @@ pub async fn connect(
             host: host.address.clone(),
             port: host.port,
         },
+        forward_to,
     };
 
     let connected = client::connect(config, (host.address.as_str(), host.port), handler).await;
@@ -210,7 +256,7 @@ pub async fn connect(
             audit::record(
                 &conn,
                 host.id,
-                Some(&session_id),
+                session_id,
                 Origin::System,
                 Kind::Auth,
                 "verify host key",
@@ -230,7 +276,25 @@ pub async fn connect(
         }
     })?;
 
-    authenticate(&mut handle, &host).await?;
+    authenticate(&mut handle, host).await?;
+
+    let negotiated = server_key.lock().unwrap().clone();
+    Ok((handle, negotiated))
+}
+
+/// Opens the connection, authenticates, and starts an interactive shell.
+///
+/// Every step that touches the host is written to the audit trail as it
+/// happens, so a failed connection leaves a record too.
+pub async fn connect(
+    app: AppHandle,
+    host: Host,
+    session_id: String,
+    window: String,
+) -> Result<SessionInfo> {
+    let db = app.state::<Db>();
+
+    let (handle, negotiated) = dial(&app, &host, Some(&session_id), None).await?;
 
     let mut channel = handle
         .channel_open_session()
@@ -251,7 +315,6 @@ pub async fn connect(
     let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (resize_tx, mut resize_rx) = mpsc::unbounded_channel::<(u32, u32)>();
 
-    let negotiated = server_key.lock().unwrap().clone();
     let started_at = crate::db::now_ms();
 
     {

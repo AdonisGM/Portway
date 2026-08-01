@@ -9,8 +9,11 @@ import { listen } from '@tauri-apps/api/event'
  * to ask. The backend throttles them; this only has to hold the latest.
  */
 export interface Transfer {
+  /** Which operation this is. Deletes have no bytes to measure, only a count. */
+  verb: 'upload' | 'delete'
   /** The file on the wire right now. */
   name: string
+  /** Both zero when there is nothing to weigh — a delete moves no bytes. */
   bytes: number
   total: number
   /** Bytes per second, already smoothed. */

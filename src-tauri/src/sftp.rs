@@ -308,6 +308,9 @@ pub async fn download(
 #[serde(rename_all = "camelCase")]
 struct ProgressEvent {
     session_id: String,
+    /// `upload` or `delete`. The footer draws the same two lines either way;
+    /// only the words and whether there are bytes to measure differ.
+    verb: String,
     /// The file currently on the wire, by its own name.
     name: String,
     /// Bytes sent of that file, and its size.
@@ -336,6 +339,7 @@ const PROGRESS_EVERY: std::time::Duration = std::time::Duration::from_millis(120
 struct Progress {
     app: AppHandle,
     session_id: String,
+    verb: &'static str,
     window: String,
     name: String,
     bytes: u64,
@@ -352,10 +356,17 @@ struct Progress {
 }
 
 impl Progress {
-    fn new(app: &AppHandle, session_id: &str, window: &str, files_total: u32) -> Self {
+    fn new(
+        app: &AppHandle,
+        session_id: &str,
+        verb: &'static str,
+        window: &str,
+        files_total: u32,
+    ) -> Self {
         Self {
             app: app.clone(),
             session_id: session_id.to_string(),
+            verb,
             window: window.to_string(),
             name: String::new(),
             bytes: 0,
@@ -420,6 +431,7 @@ impl Progress {
             "sftp://progress",
             ProgressEvent {
                 session_id: self.session_id.clone(),
+                verb: self.verb.to_string(),
                 name: self.name.clone(),
                 bytes: self.bytes,
                 total: self.total,
@@ -503,7 +515,7 @@ pub async fn upload_path(
     }
 
     let window = ssh::session(app, session_id)?.window.clone();
-    let mut progress = Progress::new(app, session_id, &window, sending.len() as u32);
+    let mut progress = Progress::new(app, session_id, "upload", &window, sending.len() as u32);
 
     let mut total = 0u64;
     for (from, to) in sending {
@@ -512,6 +524,12 @@ pub async fn upload_path(
     }
 
     Ok(total)
+}
+
+/// The last component of a remote path — what the footer shows while a delete
+/// works through a tree, because the full path is longer than the line.
+fn name_of(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
 }
 
 /// Joins a remote directory and a name. Remote paths are always `/`-separated,
@@ -903,18 +921,30 @@ pub async fn remove(app: &AppHandle, session_id: &str, path: &str, is_dir: bool)
         &format!("sftp rm{} {path}", if is_dir { " -r" } else { "" }),
     );
 
+    let window = ssh::session(app, session_id)?.window.clone();
+
     if !is_dir {
+        let mut progress = Progress::new(app, session_id, "delete", &window, 1);
+        progress.start(name_of(path), 0);
         sftp.remove_file(path)
             .await
             .map_err(|e| Error::Ssh(format!("could not delete {path}: {}", tidy(e))))?;
+        progress.finished_file();
         return Ok(1);
     }
 
-    // Descend first, recording directories in the order they are found.
-    let mut removed = 0u64;
+    // The whole tree is walked before anything is deleted, rather than files
+    // being removed as they are discovered. Two reasons, and the second is the
+    // one that matters: a count cannot be shown against a total that is still
+    // being found, and a directory that turns out to be unreadable now fails
+    // before a single file has gone rather than half way through.
+    //
+    // Breadth-first, so a directory is always found before its contents and the
+    // order they come out in is already parents-first.
     let mut dirs = vec![path.to_string()];
-    let mut queue = vec![path.to_string()];
-    while let Some(dir) = queue.pop() {
+    let mut files: Vec<String> = Vec::new();
+    let mut queue = std::collections::VecDeque::from([path.to_string()]);
+    while let Some(dir) = queue.pop_front() {
         let entries = sftp
             .read_dir(&dir)
             .await
@@ -923,22 +953,34 @@ pub async fn remove(app: &AppHandle, session_id: &str, path: &str, is_dir: bool)
             let child = join_remote(&dir, &entry.file_name());
             if entry.metadata().is_dir() {
                 dirs.push(child.clone());
-                queue.push(child);
+                queue.push_back(child);
             } else {
-                sftp.remove_file(&child)
-                    .await
-                    .map_err(|e| Error::Ssh(format!("could not delete {child}: {}", tidy(e))))?;
-                removed += 1;
+                files.push(child);
             }
         }
     }
 
-    // Deepest last in, first out: a directory is only empty once everything
-    // discovered beneath it has gone.
-    for dir in dirs.into_iter().rev() {
-        sftp.remove_dir(&dir)
+    let total = (files.len() + dirs.len()) as u32;
+    let mut progress = Progress::new(app, session_id, "delete", &window, total);
+    let mut removed = 0u64;
+
+    for file in &files {
+        progress.start(name_of(file), 0);
+        sftp.remove_file(file)
+            .await
+            .map_err(|e| Error::Ssh(format!("could not delete {file}: {}", tidy(e))))?;
+        progress.finished_file();
+        removed += 1;
+    }
+
+    // Deepest first: a directory is only empty once everything found beneath it
+    // has gone, and the walk found them the other way round.
+    for dir in dirs.iter().rev() {
+        progress.start(name_of(dir), 0);
+        sftp.remove_dir(dir)
             .await
             .map_err(|e| Error::Ssh(format!("could not delete {dir}: {}", tidy(e))))?;
+        progress.finished_file();
         removed += 1;
     }
     Ok(removed)

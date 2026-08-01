@@ -135,22 +135,43 @@ export function SftpPane({ session, width, resizing }: Props) {
     onUploaded: () => void load(path),
   })
 
+  /** A long operation of our own — a delete — on the same footer an upload
+   *  uses. `done` is the second it stays up afterwards, as uploads do. */
+  const [working, setWorking] = useState<'idle' | 'running' | 'done'>('idle')
+  useEffect(() => {
+    if (working !== 'done') return
+    const timer = window.setTimeout(() => setWorking('idle'), 1000)
+    return () => window.clearTimeout(timer)
+  }, [working])
+
   // `done` keeps the finished bar on screen for a moment — see `DropState`.
-  const transfer = useTransfer(session.id, drop.state === 'uploading' || drop.state === 'done')
+  const transfer = useTransfer(
+    session.id,
+    drop.state === 'uploading' || drop.state === 'done' || working !== 'idle',
+  )
 
   /** Absolute path of a listed entry, in the folder currently shown. */
   const pathOf = (file: RemoteFile) =>
     path.endsWith('/') ? `${path}${file.name}` : `${path}/${file.name}`
 
-  /** Runs one remote change, then re-reads the folder so the row shows truth. */
-  const act = async (run: () => Promise<unknown>) => {
+  /**
+   * Runs one remote change, then re-reads the folder so the row shows truth.
+   *
+   * `reports` marks the operations that send progress — a recursive delete can
+   * take minutes over a big tree, and the dialog closes the moment it starts.
+   * Without this the app looks like it did nothing at all.
+   */
+  const act = async (run: () => Promise<unknown>, reports = false) => {
     setDialog(null)
     setActing(null)
     setOpError(null)
+    if (reports) setWorking('running')
     try {
       await run()
       await load(path)
+      if (reports) setWorking('done')
     } catch (e) {
+      if (reports) setWorking('idle')
       setOpError(message(e))
     }
   }
@@ -447,7 +468,7 @@ export function SftpPane({ session, width, resizing }: Props) {
           confirmLabel="Delete"
           onCancel={() => setDialog(null)}
           onConfirm={() =>
-            void act(() => sftpRemove(session.id, pathOf(acting), acting.kind === 'dir'))
+            void act(() => sftpRemove(session.id, pathOf(acting), acting.kind === 'dir'), true)
           }
         >
           <div className="flex flex-col gap-2">

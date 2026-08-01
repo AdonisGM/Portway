@@ -13,12 +13,21 @@ import type { Transfer } from './useTransfer'
  */
 export function TransferFooter({ transfer }: { transfer: Transfer }) {
   const many = transfer.filesTotal > 1
+  const deleting = transfer.verb === 'delete'
+  // A delete moves no bytes, so the item line has a name and a word and no bar
+  // under it. Only the count above means anything, and for a single file not
+  // even that — which is exactly when the word is the whole message.
+  const weighed = transfer.total > 0
 
   return (
     <div className="flex flex-none flex-col gap-1.5 border-t border-w06 px-3 py-2.25">
       {many ? (
         <Line
-          left={`uploading ${transfer.filesTotal} files`}
+          left={
+            deleting
+              ? `deleting ${transfer.filesTotal} items`
+              : `uploading ${transfer.filesTotal} files`
+          }
           right={`${transfer.filesDone} / ${transfer.filesTotal}`}
           fraction={transfer.filesDone / transfer.filesTotal}
         />
@@ -26,8 +35,15 @@ export function TransferFooter({ transfer }: { transfer: Transfer }) {
 
       <Line
         left={transfer.name}
-        right={`${percent(transfer.bytes, transfer.total)} · ${formatSize(Math.round(transfer.rate))}/s`}
-        fraction={transfer.total === 0 ? 1 : transfer.bytes / transfer.total}
+        right={
+          weighed
+            ? `${percent(transfer.bytes, transfer.total)} · ${formatSize(Math.round(transfer.rate))}/s`
+            : deleting
+              ? 'deleting'
+              : 'uploading'
+        }
+        fraction={weighed ? transfer.bytes / transfer.total : 0}
+        bar={weighed}
         // Moving to another file resets this bar, and a reset has to be
         // instant. Animating one back down from 100% takes as long as the whole
         // of a small file, so the bar spends a folder upload showing the wrong
@@ -46,11 +62,14 @@ function Line({
   right,
   fraction,
   resetOn,
+  bar = true,
   dim = false,
 }: {
   left: string
   right: string
   fraction: number
+  /** Off when there is no quantity behind the number — see the delete case. */
+  bar?: boolean
   /** Changing this replaces the fill, which starts at its width instead of
    *  animating to it — a new element has no previous value to travel from. */
   resetOn?: string
@@ -70,6 +89,7 @@ function Line({
       </div>
       {/* 3px on a 2px radius — the handoff's track, and `--radius-bar` has been
           sitting in the tokens waiting for it. */}
+      {bar ? (
       <div className="h-0.75 overflow-hidden rounded-bar bg-w08">
         <div
           key={resetOn}
@@ -85,6 +105,7 @@ function Line({
           }`}
         />
       </div>
+      ) : null}
     </div>
   )
 }

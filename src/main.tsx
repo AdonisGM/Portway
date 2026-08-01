@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import SessionWindow from './SessionWindow'
+import { installLogCapture } from './lib/log'
 import './styles/global.css'
 
 /**
@@ -15,6 +16,11 @@ import './styles/global.css'
  */
 const hostParam = new URLSearchParams(window.location.search).get('host')
 const hostId = hostParam === null ? null : Number(hostParam)
+
+// Before React, so an error thrown while the tree is first mounting is caught
+// too — that is the failure with no visible symptom at all, because there is
+// nothing on screen yet to look wrong.
+installLogCapture(hostId === null ? 'main' : `session-${hostId}`)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

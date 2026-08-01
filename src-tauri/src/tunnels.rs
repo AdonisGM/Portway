@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use crate::db::{now_ms, Db};
 use crate::error::{Error, Result};
 use crate::hosts;
+use crate::logging::{self, Level, Span};
 use crate::models::{Tunnel, TunnelInput};
 use crate::ssh;
 
@@ -120,6 +121,28 @@ fn clear_error(app: &AppHandle, id: i64) {
     };
     if stale {
         set_state(app, id, "active", None);
+        logging::info("tunnel", "carrying traffic again", Some(&format!("tunnel={id}")));
+    }
+}
+
+/// A connection through a live forward that did not work.
+///
+/// Logged only when the reason *changes*. A browser pointed at a proxy the
+/// far end refuses will fail once per request, and a hundred identical lines
+/// a second would bury the connection that finally succeeded.
+fn report_connection_error(app: &AppHandle, id: i64, reason: String) {
+    let repeat = {
+        let states = app.state::<TunnelStates>();
+        let map = states.0.lock().unwrap();
+        map.get(&id).and_then(|s| s.error.clone()) == Some(reason.clone())
+    };
+    set_state(app, id, "active", Some(reason.clone()));
+    if !repeat {
+        logging::warn(
+            "tunnel",
+            "a connection through this forward failed",
+            Some(&format!("tunnel={id} · {reason}")),
+        );
     }
 }
 
@@ -132,6 +155,15 @@ fn set_state(app: &AppHandle, id: i64, state: &str, error: Option<String>) {
             error,
         },
     );
+}
+
+/// How many forwards are up, for the debug panel's summary.
+pub fn active_count(app: &AppHandle) -> usize {
+    app.state::<TunnelStates>()
+        .0
+        .lock()
+        .map(|map| map.values().filter(|s| s.state == "active").count())
+        .unwrap_or(0)
 }
 
 /* ---------------------------------------------------------------------------
@@ -186,7 +218,16 @@ pub fn create_tunnel(db: State<'_, Db>, input: TunnelInput) -> Result<Tunnel> {
     )
     .map_err(|e| map_conflict(e, &input.label))?;
 
-    fetch(&conn, conn.last_insert_rowid())
+    let tunnel = fetch(&conn, conn.last_insert_rowid())?;
+    logging::info(
+        "tunnel",
+        &format!("created {}", tunnel.label),
+        Some(&format!(
+            "tunnel={} kind={} {}:{} autostart={}",
+            tunnel.id, tunnel.kind, tunnel.bind_address, tunnel.bind_port, tunnel.autostart
+        )),
+    );
+    Ok(tunnel)
 }
 
 /// Editing a running tunnel does not move the running one. The change lands in
@@ -220,6 +261,7 @@ pub fn update_tunnel(db: State<'_, Db>, id: i64, input: TunnelInput) -> Result<T
     if changed == 0 {
         return Err(Error::NotFound(id));
     }
+    logging::info("tunnel", &format!("edited {}", input.label), Some(&format!("tunnel={id}")));
     fetch(&conn, id)
 }
 
@@ -236,6 +278,7 @@ pub async fn delete_tunnel(app: AppHandle, id: i64) -> Result<()> {
         return Err(Error::NotFound(id));
     }
     app.state::<TunnelStates>().0.lock().unwrap().remove(&id);
+    logging::info("tunnel", "deleted", Some(&format!("tunnel={id}")));
     Ok(())
 }
 
@@ -270,6 +313,7 @@ pub fn stop(app: &AppHandle, id: i64) {
     if let Some(running) = running {
         running.cancel.cancel();
         set_state(app, id, "idle", None);
+        logging::info("tunnel", "stopped", Some(&format!("tunnel={id}")));
     }
 }
 
@@ -287,6 +331,11 @@ pub async fn start(app: &AppHandle, id: i64) -> Result<()> {
 
     set_state(app, id, "starting", None);
 
+    // Started, rather than starting: the span covers the SSH connection, the
+    // authentication and the bind, and how long those took together is the
+    // difference between a slow server and a port that was never free.
+    let span = Span::start("tunnel", format!("start {} ({})", tunnel.label, tunnel.kind));
+
     // Failures are reported through the state as well as returned. The button
     // that started this gets the error; so does a start nobody clicked, which
     // is the whole point of the `error` state.
@@ -298,10 +347,18 @@ pub async fn start(app: &AppHandle, id: i64) -> Result<()> {
                 .unwrap()
                 .insert(id, Running { cancel });
             set_state(app, id, "active", None);
+            span.done(
+                Level::Info,
+                Some(&format!(
+                    "tunnel={id} via={} {}:{}",
+                    host.name, tunnel.bind_address, tunnel.bind_port
+                )),
+            );
             Ok(())
         }
         Err(e) => {
             set_state(app, id, "error", Some(e.to_string()));
+            span.failed(&e.to_string());
             Err(e)
         }
     }
@@ -408,7 +465,7 @@ async fn open(
                         // reason by far is `AllowTcpForwarding no` on the far
                         // end, which no amount of retrying will fix.
                         match outcome {
-                            Err(e) => set_state(&reporter, id, "active", Some(e.to_string())),
+                            Err(e) => report_connection_error(&reporter, id, e.to_string()),
                             Ok(()) => clear_error(&reporter, id),
                         }
                     });
@@ -583,6 +640,14 @@ pub fn autostart(app: &AppHandle, trigger: &str, host_id: Option<i64>) {
             },
         }
     };
+
+    if !wanted.is_empty() {
+        logging::info(
+            "tunnel",
+            "starting the forwards that asked to come up",
+            Some(&format!("trigger={trigger} count={}", wanted.len())),
+        );
+    }
 
     for id in wanted {
         let app = app.clone();

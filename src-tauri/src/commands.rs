@@ -3,9 +3,29 @@ use tauri::{AppHandle, Manager, State};
 use crate::audit::{self, LogEntry, Origin};
 use crate::db::Db;
 use crate::error::{Error, Result};
+use crate::logging;
 use crate::sftp::{self, Listing};
 use crate::ssh::{self, SessionInfo};
 use crate::hosts;
+
+/// Writes a failed command to the application log, and passes it on unchanged.
+///
+/// The rule: **a command either times itself or is wrapped in this.** The long
+/// operations — connect, upload a folder, delete a tree, start a tunnel — open
+/// a span of their own, and that span already reports its own failure with the
+/// time it took to get there. Everything else is one round trip, and this is
+/// where its failure is recorded.
+///
+/// Without it, the commonest kind of failure there is — a listing refused, a
+/// rename onto a name that exists — reaches the user as a message in the pane
+/// and leaves no trace anywhere. The pane is dismissed; the log is what is
+/// still there afterwards.
+fn logged<T>(operation: &str, outcome: Result<T>) -> Result<T> {
+    if let Err(error) = &outcome {
+        logging::error("cmd", operation, Some(&error.to_string()));
+    }
+    outcome
+}
 
 /// Opens a connection and an interactive shell. `sessionId` is chosen by the
 /// UI so the tab it just created can subscribe to events before this returns.
@@ -63,7 +83,7 @@ pub async fn sftp_list(
     system: Option<bool>,
 ) -> Result<Listing> {
     let origin = if system.unwrap_or(false) { Origin::System } else { Origin::User };
-    sftp::list(&app, &session_id, &path, origin).await
+    logged(&format!("list {path}"), sftp::list(&app, &session_id, &path, origin).await)
 }
 
 #[tauri::command]
@@ -73,7 +93,7 @@ pub async fn sftp_download(
     remote: String,
     local: String,
 ) -> Result<u64> {
-    sftp::download(&app, &session_id, &remote, &local).await
+    logged(&format!("download {remote}"), sftp::download(&app, &session_id, &remote, &local).await)
 }
 
 #[tauri::command]
@@ -83,7 +103,7 @@ pub async fn sftp_upload(
     local: String,
     remote: String,
 ) -> Result<u64> {
-    sftp::upload(&app, &session_id, &local, &remote).await
+    logged(&format!("upload {remote}"), sftp::upload(&app, &session_id, &local, &remote).await)
 }
 
 /// A dropped path — one file, or a directory and everything under it — into the
@@ -106,7 +126,7 @@ pub async fn sftp_rename(
     from: String,
     to: String,
 ) -> Result<()> {
-    sftp::rename(&app, &session_id, &from, &to).await
+    logged(&format!("rename {from} to {to}"), sftp::rename(&app, &session_id, &from, &to).await)
 }
 
 #[tauri::command]
@@ -116,7 +136,7 @@ pub async fn sftp_chmod(
     path: String,
     mode: u32,
 ) -> Result<()> {
-    sftp::chmod(&app, &session_id, &path, mode).await
+    logged(&format!("chmod {mode:o} {path}"), sftp::chmod(&app, &session_id, &path, mode).await)
 }
 
 /// Returns how many entries were changed, which is the only way the UI can say
@@ -130,7 +150,7 @@ pub async fn sftp_chown(
     gid: u32,
     recursive: bool,
 ) -> Result<u64> {
-    sftp::chown(&app, &session_id, &path, uid, gid, recursive).await
+    logged(&format!("chown {uid}:{gid} {path}"), sftp::chown(&app, &session_id, &path, uid, gid, recursive).await)
 }
 
 /// Downloads a file to a scratch copy, opens it in a local application and
@@ -146,7 +166,7 @@ pub async fn sftp_edit(
     opener: Option<String>,
     confirmed_large: bool,
 ) -> Result<String> {
-    sftp::edit(&app, &session_id, &remote, opener, confirmed_large).await
+    logged(&format!("edit {remote}"), sftp::edit(&app, &session_id, &remote, opener, confirmed_large).await)
 }
 
 /// Deletes a file, or a directory and everything under it. Returns how many
@@ -175,6 +195,7 @@ pub async fn sftp_remove(
 #[tauri::command]
 pub fn open_url(url: String) -> Result<()> {
     if !url.starts_with("https://") {
+        logging::warn("app", "refused to open a link", Some(&url));
         return Err(Error::Invalid(format!("refusing to open {url}")));
     }
 
@@ -226,10 +247,12 @@ pub async fn open_session_window(app: AppHandle, host_id: i64, title: String) ->
     // showing that server rather than opening a second one onto the same box.
     let label = format!("session-{host_id}");
     if let Some(existing) = app.get_webview_window(&label) {
+        logging::debug("app", "raised an existing session window", Some(&label));
         let _ = existing.unminimize();
         let _ = existing.set_focus();
         return Ok(());
     }
+    logging::info("app", "opening a session window", Some(&label));
 
     let url = WebviewUrl::App(format!("index.html?host={host_id}").into());
     let builder = WebviewWindowBuilder::new(&app, &label, url)

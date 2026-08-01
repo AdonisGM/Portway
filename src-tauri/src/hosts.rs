@@ -183,6 +183,7 @@ pub fn delete_host(app: AppHandle, db: State<'_, Db>, id: i64) -> Result<()> {
     // tunnel's listener is not in the database — it is a bound port that would
     // stay bound with nothing left able to close it.
     let tunnels = tunnels::ids_for_host(&conn, id);
+    let stopped = tunnels.len();
     let changed = conn.execute("DELETE FROM hosts WHERE id = ?1", params![id])?;
     if changed == 0 {
         return Err(Error::NotFound(id));
@@ -195,6 +196,7 @@ pub fn delete_host(app: AppHandle, db: State<'_, Db>, id: i64) -> Result<()> {
     // is inert. Failing the delete over it would leave the user with a host
     // they cannot remove.
     let _ = keychain::forget_passphrase(id);
+    crate::logging::info("db", "host deleted", Some(&format!("host={id} tunnels stopped={}", stopped)));
     Ok(())
 }
 

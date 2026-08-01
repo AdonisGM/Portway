@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { TitleBar } from './components/chrome/TitleBar'
+import { DebugRoot } from './components/debug/DebugRoot'
 import { Badge, StatusDot } from './components/ui/primitives'
 import { SessionPanes } from './screens/session/SessionPanes'
 import { revealApp } from './lib/splash'
@@ -111,6 +112,9 @@ export default function SessionWindow({ hostId }: { hostId: number }) {
           </div>
         )}
       </main>
+      {/* The same console as the main window, on the same chord. This is the
+          window where most of what it shows actually happens. */}
+      <DebugRoot />
     </div>
   )
 }

@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::audit::{self, Kind, Origin};
 use crate::db::Db;
 use crate::error::{Error, Result};
+use crate::logging::{self, Level, Span};
 use crate::ssh;
 
 /// One entry in a remote directory.
@@ -171,7 +172,17 @@ async fn open_raw(app: &AppHandle, session_id: &str) -> Result<(RawSftpSession, 
     Ok((sftp, session.host_id))
 }
 
+/// The audit row for one SFTP operation — and, at `debug`, the same line in the
+/// application log.
+///
+/// Both, because they answer different questions: the audit trail is *what was
+/// done to this server*, kept as long as the host exists, and the app log is
+/// *what this program did just now*, which is the one you read when something
+/// is not working. Putting the app-log line here rather than at each call site
+/// is what makes the trail complete — every operation already comes through
+/// this function.
 fn log(app: &AppHandle, host_id: i64, session_id: &str, origin: Origin, command: &str) {
+    logging::debug("sftp", command, Some(&format!("session={session_id}")));
     let db = app.state::<Db>();
     let conn = db.0.lock().unwrap();
     audit::record(&conn, host_id, Some(session_id), origin, Kind::Sftp, command, None);
@@ -199,7 +210,7 @@ pub async fn list(
     let canonical = sftp
         .realpath(&target)
         .await
-        .map_err(|e| Error::Ssh(format!("no such directory {target}: {e}")))?
+        .map_err(|e| Error::Ssh(format!("no such directory {target}: {}", tidy(e))))?
         .files
         .first()
         .map(|f| f.filename.clone())
@@ -210,7 +221,7 @@ pub async fn list(
     let handle = sftp
         .opendir(canonical.clone())
         .await
-        .map_err(|e| Error::Ssh(format!("could not read {canonical}: {e}")))?
+        .map_err(|e| Error::Ssh(format!("could not read {canonical}: {}", tidy(e))))?
         .handle;
 
     // A directory arrives over as many replies as the server feels like using,
@@ -223,7 +234,7 @@ pub async fn list(
             Err(RawError::Status(status)) if status.status_code == StatusCode::Eof => break,
             Err(e) => {
                 let _ = sftp.close(handle).await;
-                return Err(Error::Ssh(format!("could not read {canonical}: {e}")));
+                return Err(Error::Ssh(format!("could not read {canonical}: {}", tidy(e))));
             }
         }
     }
@@ -286,7 +297,7 @@ pub async fn download(
     let mut source = sftp
         .open(remote)
         .await
-        .map_err(|e| Error::Ssh(format!("could not open {remote}: {e}")))?;
+        .map_err(|e| Error::Ssh(format!("could not open {remote}: {}", tidy(e))))?;
     let mut target = tokio::fs::File::create(local).await?;
 
     let mut buffer = vec![0u8; 64 * 1024];
@@ -301,6 +312,11 @@ pub async fn download(
     }
     target.flush().await?;
 
+    logging::info(
+        "sftp",
+        &format!("downloaded {remote}"),
+        Some(&format!("{total} bytes → {local}")),
+    );
     Ok(total)
 }
 
@@ -486,6 +502,13 @@ pub async fn upload_path(
 
     log(app, host_id, session_id, Origin::User, &format!("sftp put {target}"));
 
+    // One line for the whole drop, not one per file: four hundred files would
+    // otherwise be four hundred lines saying nothing each. It starts here so
+    // the walk below is inside the time — on a deep tree that is most of it.
+    // The failure is the exception that names a file, because which one it
+    // stopped on is the whole answer.
+    let span = Span::start("sftp", format!("upload {target}"));
+
     // Walked before anything is sent, rather than uploaded as it is discovered.
     // The footer's second bar counts files, and it cannot count towards a total
     // that is still being found — a bar that grows its own denominator reads as
@@ -519,14 +542,25 @@ pub async fn upload_path(
     }
 
     let window = ssh::session(app, session_id)?.window.clone();
-    let mut progress = Progress::new(app, session_id, "upload", &window, sending.len() as u32);
+    let count = sending.len();
+    let mut progress = Progress::new(app, session_id, "upload", &window, count as u32);
 
     let mut total = 0u64;
     for (from, to) in sending {
-        total += put_file(&sftp, &from, &to, Some(&mut progress)).await?;
+        match put_file(&sftp, &from, &to, Some(&mut progress)).await {
+            Ok(sent) => total += sent,
+            Err(e) => {
+                span.failed(&format!("{to} — {e}"));
+                return Err(e);
+            }
+        }
         progress.finished_file();
     }
 
+    span.done(
+        Level::Info,
+        Some(&format!("{count} files, {total} bytes, {} folders", dirs.len())),
+    );
     Ok(total)
 }
 
@@ -567,7 +601,7 @@ async fn put_file(
     let mut target = sftp
         .create(remote)
         .await
-        .map_err(|e| Error::Ssh(format!("could not write {remote}: {e}")))?;
+        .map_err(|e| Error::Ssh(format!("could not write {remote}: {}", tidy(e))))?;
 
     let mut buffer = vec![0u8; 64 * 1024];
     let mut total = 0u64;
@@ -857,12 +891,25 @@ fn watch(app: AppHandle, session_id: String, remote: String, local: std::path::P
 
             match upload(&app, &session_id, &local.to_string_lossy(), &remote).await {
                 Ok(bytes) => {
+                    logging::info(
+                        "sftp",
+                        &format!("wrote back {remote}"),
+                        Some(&format!("{bytes} bytes, after a save in the local editor")),
+                    );
                     let _ = app.emit(
                         "sftp://saved",
                         SavedEvent { session_id: session_id.clone(), remote: remote.clone(), bytes },
                     );
                 }
                 Err(e) => {
+                    // This one runs with nobody watching — the user is in
+                    // another application and has just pressed save. If the
+                    // banner is missed, the log is the only trace.
+                    logging::error(
+                        "sftp",
+                        &format!("could not write back {remote}"),
+                        Some(&e.to_string()),
+                    );
                     let _ = app.emit(
                         "sftp://save-failed",
                         SaveFailedEvent {
@@ -916,6 +963,23 @@ async fn get_file(
 ///
 /// There is no undo on the far end. The caller is expected to have asked.
 pub async fn remove(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -> Result<u64> {
+    // A wrapper purely so the timing survives every `?` inside. A delete over a
+    // slow link is the operation most likely to leave somebody wondering
+    // whether anything is happening, and "6314 entries in 71.2s" is the answer.
+    let span = Span::start("sftp", format!("delete {path}"));
+    match removing(app, session_id, path, is_dir).await {
+        Ok(count) => {
+            span.done(Level::Info, Some(&format!("{count} entries")));
+            Ok(count)
+        }
+        Err(e) => {
+            span.failed(&e.to_string());
+            Err(e)
+        }
+    }
+}
+
+async fn removing(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -> Result<u64> {
     let (sftp, host_id) = open(app, session_id).await?;
     log(
         app,

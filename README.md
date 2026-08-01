@@ -111,6 +111,52 @@ docker run -d --name portway-test -p 2222:2222 \
 Then add a host: `127.0.0.1`, port `2222`, user `deploy`, private key
 `~/.portway/test_ed25519`.
 
+## The application log and the debug console
+
+There are two records in Portway and they answer different questions. The audit trail above is
+**what reached a server**, kept in the database for as long as the host exists. The application
+log is **what Portway did**, written to a file and thrown away after a week. `logging.rs` owns
+it; `⌘⇧L` (Ctrl+Shift+L elsewhere) opens the console over whichever window you are in.
+
+```
+~/.portway/logs/portway-2026-08-02.log        one file a day, rolled again at 8 MB, pruned after 7
+```
+
+**The log never carries input.** `ssh_write` sees every keystroke, including whatever is typed
+at a remote `sudo` prompt, and none of it comes here — nor do passphrases, key material or
+keychain values, which are logged as *having happened* and never as their contents. That is
+what makes the file safe to send to somebody. The audit trail is where typed command lines live,
+by design and in the database, not in a text file in a folder.
+
+**Durations, not just events.** `Span` times the steps that can hang — the handshake, the
+authentication, reading the private key, bringing a tunnel up — and a span asked to log at
+`debug` is promoted to `info` when it took longer than 400 ms. That rule exists because of a
+real morning lost to it: a key under `~/Documents` makes macOS put a consent dialog in front of
+the read, drawn outside the app, and from inside the app that is indistinguishable from a server
+that has stopped answering. It now reads as one line with `45.2s` on it, and the console warns
+about the gated folder before you even connect.
+
+Everything goes three places at once: the file, a 3000-line ring so a console opened afterwards
+still has the history, and a `log://line` event so one already open is live. The frontend's own
+lines — plus every uncaught error, unhandled rejection and `console.error`, captured by
+`lib/log.ts` — take the round trip through Rust rather than being drawn locally, because a
+session window is a second copy of the frontend and only the backend can put both windows'
+lines in one order.
+
+What it deliberately stays out of: the `ssh://data` pump, the 120 ms transfer progress, and the
+three delete lanes. Operations report a summary and their failures, not their contents — a
+401-entry delete adds three lines, at the noisiest setting.
+
+| in the console | |
+| --- | --- |
+| `All / Info / Warnings / Errors` | filters what is shown |
+| `Verbose` | changes what the backend *records* — `debug` for this run |
+| `Copy` | the filtered lines, formatted as the file is |
+| `Clear view` | this window's view only; the file is untouched |
+| `Esc` | closes, and hands focus back to the terminal it took it from |
+
+`PORTWAY_LOG=debug npm run tauri dev` starts verbose instead of switching it on afterwards.
+
 ## Running it
 
 ```bash

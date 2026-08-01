@@ -2930,6 +2930,7 @@ dependencies = [
 name = "portway"
 version = "0.0.1"
 dependencies = [
+ "chrono",
  "dirs",
  "keyring",
  "rusqlite",

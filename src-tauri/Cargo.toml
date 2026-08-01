@@ -14,6 +14,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Local dates and clock times for the log file. Already in the tree — three
+# crates in the dependency graph pull it, `iana-time-zone` with it — so this
+# names a build that is happening anyway rather than adding one.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 dirs = "6.0.0"
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "windows-native"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }

@@ -37,10 +37,24 @@ pub fn open(path: &PathBuf) -> Result<Connection> {
     Ok(conn)
 }
 
+/// The version `migrate` brings a database up to. Bump it with each new step.
+const LATEST: i64 = 4;
+
 /// Migrations are keyed off `PRAGMA user_version`, so each step runs exactly
 /// once. Add new steps by appending — never by editing one that has shipped.
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+
+    // Schema moves are rare and consequential, and a database that quietly
+    // arrived at the wrong version explains a great deal of otherwise
+    // inexplicable behaviour. One line, only when something actually happens.
+    if version < LATEST {
+        crate::logging::info(
+            "db",
+            "migrating the database",
+            Some(&format!("from={version} to={LATEST}")),
+        );
+    }
 
     if version < 1 {
         conn.execute_batch(

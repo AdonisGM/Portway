@@ -255,6 +255,75 @@ export const openUrl = (url: string) => invoke<void>('open_url', { url })
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })
 
+/* ---------------------------------------------------------------------------
+   The application log
+
+   Not to be confused with `hostLog` above. That is the audit trail — what was
+   run on a *server*, kept in the database for as long as the host exists. This
+   is what *Portway* did: connections, transfers, tunnels, failures and how long
+   each took, written to a file under ~/.portway/logs and rotated after a week.
+--------------------------------------------------------------------------- */
+
+export type AppLogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+export interface AppLogLine {
+  /** Monotonic within a run. The debug panel orders and de-duplicates on it. */
+  seq: number
+  at: number
+  level: AppLogLevel
+  /** `app`, `db`, `ssh`, `sftp`, `tunnel`, `ui`… */
+  target: string
+  message: string
+  detail: string | null
+}
+
+/** Everything the backend still holds above `after`, oldest first. */
+export const logBacklog = (after?: number) => invoke<AppLogLine[]>('log_backlog', { after })
+
+/**
+ * A line from this window.
+ *
+ * It goes to Rust and comes back on `log://line` rather than being drawn
+ * straight into the panel: two windows each run their own copy of the frontend,
+ * and a locally rendered line would be missing from the file and out of order
+ * with everything else.
+ */
+export const logWrite = (
+  level: AppLogLevel,
+  target: string,
+  message: string,
+  detail?: string | null,
+) => invoke<void>('log_write', { level, target, message, detail: detail ?? null })
+
+/** Raises or lowers what the backend records. Returns the level it settled on. */
+export const setLogLevel = (level: AppLogLevel) => invoke<AppLogLevel>('set_log_level', { level })
+
+export interface DebugInfo {
+  version: string
+  os: string
+  arch: string
+  level: AppLogLevel
+  /** This window's Tauri label — `main`, or `session-<hostId>`. */
+  window: string
+  startedAt: number
+  database: string
+  logFile: string
+  logsDir: string
+  sessions: number
+  tunnelsActive: number
+  windows: string[]
+  /**
+   * Hosts whose private key sits in a folder macOS keeps behind a permission
+   * prompt. Empty on every other platform.
+   */
+  gatedKeys: string[]
+}
+
+export const debugInfo = () => invoke<DebugInfo>('debug_info')
+
+/** Opens ~/.portway/logs in the file manager. Takes no path, deliberately. */
+export const revealLogs = () => invoke<void>('reveal_logs')
+
 export function message(error: unknown): string {
   if (typeof error === 'string') return error
   if (error instanceof Error) return error.message

@@ -14,6 +14,7 @@ use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::keychain;
 use crate::hosts;
+use crate::logging::{self, Level, Span};
 use crate::models::Host;
 
 /// A live SSH connection plus its interactive shell.
@@ -245,6 +246,7 @@ pub async fn dial(
         forward_to,
     };
 
+    let handshake = Span::start("ssh", format!("handshake with {addr}"));
     let connected = client::connect(config, (host.address.as_str(), host.port), handler).await;
 
     // Whatever happened, the host-key decision is worth recording — a refusal
@@ -262,21 +264,38 @@ pub async fn dial(
                 "verify host key",
                 Some(&decision),
             );
+            let level = if decision.starts_with("REFUSED") { Level::Error } else { Level::Debug };
+            logging::record(level, "ssh", "host key", Some(&decision));
         }
     }
 
-    let mut handle = connected.map_err(|e| {
-        let decision = verdict.lock().unwrap().clone();
-        if decision.starts_with("REFUSED") {
-            Error::Ssh(format!(
-                "{decision}. Remove the old entry from ~/.ssh/known_hosts if this is expected."
-            ))
-        } else {
-            Error::Ssh(format!("could not reach {addr}: {e}"))
+    let mut handle = match connected {
+        Ok(handle) => {
+            handshake.done(Level::Info, Some(&format!("key={}", server_key.lock().unwrap())));
+            handle
         }
-    })?;
+        Err(e) => {
+            let decision = verdict.lock().unwrap().clone();
+            let error = if decision.starts_with("REFUSED") {
+                Error::Ssh(format!(
+                    "{decision}. Remove the old entry from ~/.ssh/known_hosts if this is expected."
+                ))
+            } else {
+                Error::Ssh(format!("could not reach {addr}: {e}"))
+            };
+            handshake.failed(&error.to_string());
+            return Err(error);
+        }
+    };
 
-    authenticate(&mut handle, host).await?;
+    let auth = Span::start("ssh", format!("authenticate {}@{addr}", host.user));
+    match authenticate(&mut handle, host).await {
+        Ok(()) => auth.done(Level::Info, Some(&format!("method={}", host.auth))),
+        Err(e) => {
+            auth.failed(&e.to_string());
+            return Err(e);
+        }
+    }
 
     let negotiated = server_key.lock().unwrap().clone();
     Ok((handle, negotiated))
@@ -294,7 +313,26 @@ pub async fn connect(
 ) -> Result<SessionInfo> {
     let db = app.state::<Db>();
 
-    let (handle, negotiated) = dial(&app, &host, Some(&session_id), None).await?;
+    // The whole thing, end to end. `dial` times the handshake and the
+    // authentication inside it, so a slow connection can be read down to which
+    // step ate the time.
+    let opening = Span::start("ssh", format!("open a session to {}", host.name));
+    logging::info(
+        "ssh",
+        "connecting",
+        Some(&format!(
+            "host={} address={}@{}:{} auth={} session={session_id} window={window}",
+            host.name, host.user, host.address, host.port, host.auth
+        )),
+    );
+
+    let (handle, negotiated) = match dial(&app, &host, Some(&session_id), None).await {
+        Ok(dialled) => dialled,
+        Err(e) => {
+            opening.failed(&e.to_string());
+            return Err(e);
+        }
+    };
 
     let mut channel = handle
         .channel_open_session()
@@ -409,6 +447,11 @@ pub async fn connect(
                 Origin::System, Kind::Auth, "shell closed", None,
             );
         }
+        logging::info(
+            "ssh",
+            "the shell ended",
+            Some(&format!("session={pump_session} host={host_id}")),
+        );
         let _ = pump_app.emit_to(
             &pump_window,
             "ssh://closed",
@@ -438,6 +481,11 @@ pub async fn connect(
     // Connecting counts as using the host.
     let _ = hosts::touch(&db, host.id);
 
+    opening.done(
+        Level::Info,
+        Some(&format!("session={session_id} hostkey={negotiated}")),
+    );
+
     Ok(SessionInfo {
         id: session_id,
         host_id: host.id,
@@ -453,25 +501,58 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
         "key" => {
             let path = expand_home(host.key_path.as_deref().unwrap_or("~/.ssh/id_ed25519"));
 
+            // Said before the read rather than after it, because the read is
+            // where it goes quiet: macOS draws its consent dialog outside the
+            // app, so from in here a gated key looks like a server that has
+            // stopped answering. The span below then puts a number on it.
+            if logging::is_gated_path(&path) {
+                logging::warn(
+                    "ssh",
+                    "this key is in a folder macOS keeps behind a permission prompt",
+                    Some(&format!(
+                        "{} — the first read blocks until that dialog is answered, and an \
+                         ad-hoc signed build is asked again after every rebuild. ~/.ssh is \
+                         not gated.",
+                        path.display()
+                    )),
+                );
+            }
+
             // Reading the credential store can put a system prompt on screen and
             // block for as long as the user looks at it, so it does not run on a
             // runtime worker.
             let passphrase = if host.unlock_via_keychain {
                 let id = host.id;
-                tokio::task::spawn_blocking(move || keychain::passphrase(id))
+                let span = Span::start("ssh", "keychain lookup");
+                let found = tokio::task::spawn_blocking(move || keychain::passphrase(id))
                     .await
-                    .map_err(|e| Error::Ssh(format!("keychain lookup did not finish: {e}")))??
+                    .map_err(|e| Error::Ssh(format!("keychain lookup did not finish: {e}")))??;
+                // Whether there was one, never what it was.
+                span.done(
+                    Level::Debug,
+                    Some(if found.is_some() { "a passphrase was stored" } else { "nothing stored" }),
+                );
+                found
             } else {
                 None
             };
 
-            let key = load_secret_key(&path, passphrase.as_deref()).map_err(|e| {
-                Error::Ssh(format!(
-                    "could not read {} — {e}. If the key is encrypted, put its \
-                     passphrase in the host's form with \"Unlock via keychain\" on.",
-                    path.display()
-                ))
-            })?;
+            let read = Span::start("ssh", "read the private key");
+            let key = match load_secret_key(&path, passphrase.as_deref()) {
+                Ok(key) => {
+                    read.done(Level::Debug, Some(&path.display().to_string()));
+                    key
+                }
+                Err(e) => {
+                    let error = Error::Ssh(format!(
+                        "could not read {} — {e}. If the key is encrypted, put its \
+                         passphrase in the host's form with \"Unlock via keychain\" on.",
+                        path.display()
+                    ));
+                    read.failed(&error.to_string());
+                    return Err(error);
+                }
+            };
             // Which signature algorithm to sign with, asked of the server rather
             // than assumed. It matters only for RSA keys, and there it is the
             // difference between connecting and not: `None` means `ssh-rsa`,
@@ -595,6 +676,15 @@ pub async fn disconnect(app: &AppHandle, id: &str) -> Result<()> {
             .handle
             .disconnect(Disconnect::ByApplication, "", "en")
             .await;
+        logging::info(
+            "ssh",
+            "disconnected",
+            Some(&format!(
+                "session={id} host={} up={}s",
+                session.host_id,
+                (crate::db::now_ms() - session.started_at) / 1000
+            )),
+        );
     }
     Ok(())
 }

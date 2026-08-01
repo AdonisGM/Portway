@@ -5,6 +5,7 @@ mod error;
 mod hosts;
 mod keychain;
 mod keys;
+mod logging;
 mod models;
 mod sftp;
 mod ssh;
@@ -25,12 +26,29 @@ pub fn run() {
         // filesystem path, and a webview <input type="file"> never yields one.
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // First, before anything that can fail. The database not opening is
+            // exactly the kind of start worth having a record of, and a log
+            // installed after it would miss it.
+            logging::mark_start();
+            logging::init(app.handle());
+
             let home = app
                 .path()
                 .home_dir()
                 .expect("could not resolve the home directory");
             let path = db::database_path(home);
-            let conn = db::open(&path)?;
+            let conn = match db::open(&path) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    logging::error(
+                        "db",
+                        "could not open the database",
+                        Some(&format!("{} — {e}", path.display())),
+                    );
+                    return Err(e.into());
+                }
+            };
+            logging::info("db", "database ready", Some(&path.display().to_string()));
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(ssh::Sessions::default());
             app.manage(sftp::Editing::default());
@@ -52,6 +70,14 @@ pub fn run() {
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(5));
                     if matches!(window.is_visible(), Ok(false)) {
+                        // Worth a line: reaching this means the frontend never
+                        // finished mounting, and the window the user is looking
+                        // at was put there by a timeout rather than by the app.
+                        logging::warn(
+                            "app",
+                            "the window was revealed by the backstop",
+                            Some("the frontend did not report a first paint within 5s"),
+                        );
                         let _ = window.show();
                     }
                 });
@@ -83,6 +109,11 @@ pub fn run() {
             commands::open_session_window,
             commands::host_log,
             commands::open_url,
+            logging::log_backlog,
+            logging::log_write,
+            logging::set_log_level,
+            logging::debug_info,
+            logging::reveal_logs,
             tunnels::list_tunnels,
             tunnels::tunnel_states,
             tunnels::create_tunnel,
@@ -102,7 +133,13 @@ pub fn run() {
             let app = window.app_handle().clone();
             let label = window.label().to_string();
             tauri::async_runtime::spawn(async move {
-                for id in ssh::sessions_of_window(&app, &label) {
+                let owned = ssh::sessions_of_window(&app, &label);
+                logging::info(
+                    "app",
+                    "a window closed",
+                    Some(&format!("window={label} sessions={}", owned.len())),
+                );
+                for id in owned {
                     let _ = ssh::disconnect(&app, &id).await;
                 }
             });

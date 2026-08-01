@@ -41,8 +41,22 @@ const PARENT: RemoteFile = {
   kind: 'dir',
   uid: null,
   gid: null,
+  owner: null,
+  group: null,
   mode: null,
   modeText: null,
+}
+
+/**
+ * `root:staff`, or `1500:1600` where the server had no names for the ids.
+ *
+ * Owner and group are resolved as a pair or not at all — they come out of one
+ * line — so there is no case where a name is mixed with a number.
+ */
+function ownerText(file: RemoteFile): string {
+  if (file.owner !== null) return `${file.owner}:${file.group ?? '?'}`
+  if (file.uid !== null) return `${file.uid}:${file.gid ?? '?'}`
+  return '—'
 }
 
 interface Props {
@@ -196,8 +210,13 @@ export function SftpPane({ session, width, resizing }: Props) {
       key: 'owner',
       header: 'Owner',
       className: 'cell-ellipsis text-meta text-faint',
-      // Numeric: SFTP only carries the names in a field russh-sftp drops.
-      render: (file) => (file.uid === null ? '—' : `${file.uid}:${file.gid ?? '?'}`),
+      // Names when the server resolved them, numbers when it did not. Titled
+      // either way: a long `user:group` pair outgrows this column long before
+      // it stops mattering which one it is.
+      render: (file) => {
+        const text = ownerText(file)
+        return <span title={text === '—' ? undefined : text}>{text}</span>
+      },
     },
     mode: {
       key: 'mode',

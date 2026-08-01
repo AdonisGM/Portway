@@ -27,7 +27,9 @@ export const SFTP_COLUMNS: Spec[] = [
   { id: 'name', label: 'Name', track: '1.7fr', fixed: true },
   { id: 'size', label: 'Size', track: '78px' },
   { id: 'modified', label: 'Modified', track: '100px' },
-  { id: 'owner', label: 'Owner', track: '92px' },
+  // Wider than the numbers needed: `deployment-svc:longgroupname12` is a real
+  // pair, and a column sized for `0:0` would ellipsize almost every named one.
+  { id: 'owner', label: 'Owner', track: '138px' },
   { id: 'mode', label: 'Permissions', track: '104px' },
 ]
 

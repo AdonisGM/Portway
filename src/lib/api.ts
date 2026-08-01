@@ -86,9 +86,12 @@ export interface RemoteFile {
   /** Epoch seconds, or null when the server does not report one. */
   modified: number | null
   kind: 'dir' | 'file'
-  /** Numeric only — SFTP carries owner *names* in a field russh-sftp drops. */
+  /** Numeric owner and group. What `chown` takes, so always present. */
   uid: number | null
   gid: number | null
+  /** The names the server resolved those ids to, when it gave any. */
+  owner: string | null
+  group: string | null
   /** `755`. */
   mode: string | null
   /** `rwxr-xr-x` — the same bits, read rather than typed. */

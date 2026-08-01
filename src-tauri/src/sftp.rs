@@ -1,8 +1,10 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+use russh_sftp::client::error::Error as RawError;
 use russh_sftp::client::fs::Metadata;
-use russh_sftp::client::SftpSession;
+use russh_sftp::client::{RawSftpSession, SftpSession};
+use russh_sftp::protocol::StatusCode;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -21,12 +23,15 @@ pub struct RemoteFile {
     /// Epoch seconds, or `None` when the server does not report one.
     pub modified: Option<u64>,
     pub kind: String,
-    /// Numeric owner and group. SFTP v3 carries the *names* only in the
-    /// `longname` field of a readdir reply, and russh-sftp's client drops it —
-    /// so numbers are all that is reachable without reading `/etc/passwd` off
-    /// the host, which is a round trip the user did not ask for.
+    /// Numeric owner and group, straight from the file attributes. These stay
+    /// even when the names below are known, because `chown` takes numbers.
     pub uid: Option<u32>,
     pub gid: Option<u32>,
+    /// Owner and group as the *server* names them, read out of the `longname`
+    /// line — `None` when it did not parse, or when the server has no name for
+    /// that id and printed the number instead.
+    pub owner: Option<String>,
+    pub group: Option<String>,
     /// `755` — what the user asked for by name.
     pub mode: Option<String>,
     /// `rwxr-xr-x` — the same bits, in the form that makes a wrong one obvious.
@@ -66,6 +71,55 @@ fn permissions(bits: u32) -> (String, String) {
     )
 }
 
+/// Pulls the owner and group *names* out of a readdir `longname`.
+///
+/// SFTP v3 sends the numeric ids in the attributes and the resolved names
+/// nowhere else — they exist only inside this one human-readable line, which
+/// OpenSSH builds like `ls -l`:
+///
+/// ```text
+/// -rw-r--r--    ? deployment-svc longgroupname12        0 Aug  1 09:07 notes.txt
+/// ```
+///
+/// The format is a convention rather than a rule, so this validates before
+/// trusting it and gives up rather than guessing: whatever it cannot read, the
+/// caller still has the numbers for. Fields are taken by whitespace splitting
+/// and never by character offset — the columns are padded, not aligned, and
+/// OpenSSH prints `?` where it has no link count.
+///
+/// A server with no name for an id prints the number there, which is exactly
+/// what the numbers would have shown anyway — so it is passed through rather
+/// than special-cased, and a user genuinely called `4242` still reads right.
+fn owner_group(longname: &str) -> Option<(String, String)> {
+    let fields: Vec<&str> = longname.split_whitespace().collect();
+    // mode, links, owner, group, size, and at least a date and a name.
+    if fields.len() < 7 {
+        return None;
+    }
+
+    // `drwxr-xr-x`, sometimes with a trailing `.` or `+` for SELinux or an ACL.
+    let mode = fields[0];
+    if !(10..=11).contains(&mode.len()) {
+        return None;
+    }
+    let mut chars = mode.chars();
+    if !matches!(chars.next()?, '-' | 'd' | 'l' | 'b' | 'c' | 'p' | 's' | 'D' | '?') {
+        return None;
+    }
+    if !chars.clone().take(9).all(|c| matches!(c, 'r' | 'w' | 'x' | 's' | 'S' | 't' | 'T' | '-')) {
+        return None;
+    }
+    if mode.len() == 11 && !matches!(mode.chars().last()?, '.' | '+') {
+        return None;
+    }
+
+    // The size is the one field after the names that must be a number. Checking
+    // it is what rules out a line whose shape only happens to resemble `ls -l`.
+    fields[4].parse::<u64>().ok()?;
+
+    Some((fields[2].to_string(), fields[3].to_string()))
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Listing {
@@ -96,6 +150,26 @@ async fn open(app: &AppHandle, session_id: &str) -> Result<(SftpSession, i64)> {
     Ok((sftp, session.host_id))
 }
 
+/// The same channel, opened onto the raw protocol instead. Only `list` wants
+/// this, and only because the convenience layer discards the field it needs.
+async fn open_raw(app: &AppHandle, session_id: &str) -> Result<(RawSftpSession, i64)> {
+    let session = ssh::session(app, session_id)?;
+    let channel = session
+        .handle
+        .channel_open_session()
+        .await
+        .map_err(|e| Error::Ssh(format!("could not open an SFTP channel: {e}")))?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .map_err(|e| Error::Ssh(format!("the server refused SFTP: {e}")))?;
+    let sftp = RawSftpSession::new(channel.into_stream());
+    sftp.init()
+        .await
+        .map_err(|e| Error::Ssh(format!("SFTP handshake failed: {e}")))?;
+    Ok((sftp, session.host_id))
+}
+
 fn log(app: &AppHandle, host_id: i64, session_id: &str, origin: Origin, command: &str) {
     let db = app.state::<Db>();
     let conn = db.0.lock().unwrap();
@@ -113,22 +187,51 @@ pub async fn list(
     path: &str,
     origin: Origin,
 ) -> Result<Listing> {
-    let (sftp, host_id) = open(app, session_id).await?;
+    // The one operation that goes through the raw protocol rather than the
+    // convenience layer. `SftpSession::read_dir` keeps `(filename, attrs)` and
+    // throws the `longname` away, and the owner and group names exist nowhere
+    // else in an SFTP v3 reply — so a listing built on it can only ever show
+    // numbers. Everything else in this file stays on the high-level session.
+    let (sftp, host_id) = open_raw(app, session_id).await?;
 
     let target = if path.trim().is_empty() { ".".to_string() } else { path.to_string() };
     let canonical = sftp
-        .canonicalize(&target)
+        .realpath(&target)
         .await
-        .map_err(|e| Error::Ssh(format!("no such directory {target}: {e}")))?;
+        .map_err(|e| Error::Ssh(format!("no such directory {target}: {e}")))?
+        .files
+        .first()
+        .map(|f| f.filename.clone())
+        .ok_or_else(|| Error::Ssh(format!("no such directory {target}")))?;
 
     log(app, host_id, session_id, origin, &format!("sftp ls {canonical}"));
 
-    let mut files: Vec<RemoteFile> = sftp
-        .read_dir(&canonical)
+    let handle = sftp
+        .opendir(canonical.clone())
         .await
         .map_err(|e| Error::Ssh(format!("could not read {canonical}: {e}")))?
+        .handle;
+
+    // A directory arrives over as many replies as the server feels like using,
+    // ending in an EOF status. Reading one and stopping looks right on every
+    // small directory and quietly truncates the big ones.
+    let mut entries = Vec::new();
+    loop {
+        match sftp.readdir(handle.as_str()).await {
+            Ok(name) => entries.extend(name.files),
+            Err(RawError::Status(status)) if status.status_code == StatusCode::Eof => break,
+            Err(e) => {
+                let _ = sftp.close(handle).await;
+                return Err(Error::Ssh(format!("could not read {canonical}: {e}")));
+            }
+        }
+    }
+    let _ = sftp.close(handle).await;
+
+    let mut files: Vec<RemoteFile> = entries
+        .into_iter()
         .map(|entry| {
-            let meta = entry.metadata();
+            let meta = entry.attrs;
             let is_dir = meta.is_dir();
             let (mode, mode_text) = match meta.permissions {
                 Some(bits) => {
@@ -137,13 +240,19 @@ pub async fn list(
                 }
                 None => (None, None),
             };
+            let (owner, group) = match owner_group(&entry.longname) {
+                Some((o, g)) => (Some(o), Some(g)),
+                None => (None, None),
+            };
             RemoteFile {
-                name: entry.file_name(),
+                name: entry.filename,
                 size: if is_dir { None } else { meta.size },
                 modified: meta.mtime.map(u64::from),
                 kind: if is_dir { "dir".into() } else { "file".into() },
                 uid: meta.uid,
                 gid: meta.gid,
+                owner,
+                group,
                 mode,
                 mode_text,
             }
@@ -669,4 +778,67 @@ pub async fn remove(app: &AppHandle, session_id: &str, path: &str, is_dir: bool)
         removed += 1;
     }
     Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::owner_group;
+
+    /// Captured from a real OpenSSH sftp-server, which is where the shape of
+    /// this string is actually decided.
+    #[test]
+    fn reads_the_names_openssh_sends() {
+        let long = "-rw-r--r--    ? deployment-svc longgroupname12        0 Aug  1 09:07 notes.txt";
+        assert_eq!(
+            owner_group(long),
+            Some(("deployment-svc".into(), "longgroupname12".into()))
+        );
+    }
+
+    /// A server with no name for an id prints the number, and that is the right
+    /// answer to show — not a reason to fall back.
+    #[test]
+    fn passes_numbers_through_when_the_server_has_no_name() {
+        let long = "-rw-r--r--    ? 4242     4243            0 Aug  1 09:07 orphan.txt";
+        assert_eq!(owner_group(long), Some(("4242".into(), "4243".into())));
+    }
+
+    #[test]
+    fn survives_a_name_with_spaces_in_it() {
+        let long = "-rw-r--r--    1 root     root            0 Aug  1 09:07 name with spaces.txt";
+        assert_eq!(owner_group(long), Some(("root".into(), "root".into())));
+    }
+
+    #[test]
+    fn accepts_the_selinux_and_acl_suffixes() {
+        for mode in ["drwxr-xr-x.", "-rw-rw-r--+"] {
+            let long = format!("{mode} 2 alice devs 4096 Aug  1 09:07 thing");
+            assert_eq!(owner_group(&long), Some(("alice".into(), "devs".into())));
+        }
+    }
+
+    #[test]
+    fn keeps_the_special_bit_modes() {
+        let long = "-rwsr-xr-t    1 root     root         1234 Aug  1 09:07 sudo";
+        assert_eq!(owner_group(long), Some(("root".into(), "root".into())));
+    }
+
+    /// Anything that is not an `ls -l` line gives up rather than inventing an
+    /// owner: the caller still has the numeric ids.
+    #[test]
+    fn gives_up_on_anything_else() {
+        for long in [
+            "",
+            "notes.txt",
+            "some server that formats its own way entirely here ok",
+            // Right shape, but the size field is not a number.
+            "-rw-r--r--    1 root     root         many Aug  1 09:07 notes.txt",
+            // Mode is the wrong length.
+            "-rw-r--r 1 root root 0 Aug  1 09:07 notes.txt",
+            // Mode has a character that is not a permission bit.
+            "-rw-r--q--    1 root     root            0 Aug  1 09:07 notes.txt",
+        ] {
+            assert_eq!(owner_group(long), None, "{long:?}");
+        }
+    }
 }

@@ -1,0 +1,3 @@
+# The lab's key. Throwaway, and still a private key — it does not go in a repo.
+# `up.sh` makes a new one whenever it is missing.
+keys/

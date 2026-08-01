@@ -190,7 +190,7 @@ pub async fn open_session_window(app: AppHandle, host_id: i64, title: String) ->
     let url = WebviewUrl::App(format!("index.html?host={host_id}").into());
     let builder = WebviewWindowBuilder::new(&app, &label, url)
         .title(title)
-        .inner_size(1100.0, 760.0)
+        .inner_size(1320.0, 836.0)
         .min_inner_size(820.0, 520.0)
         .background_color(tauri::window::Color(0x1b, 0x1e, 0x22, 0xff))
         .theme(Some(tauri::Theme::Dark))

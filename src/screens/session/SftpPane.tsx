@@ -18,6 +18,8 @@ import { FileIcon } from './FileIcons'
 import { useSftpColumns, type SftpColumnId } from './columns'
 import { ColumnPicker } from './ColumnPicker'
 import { useDropUpload } from './useDropUpload'
+import { useTransfer } from './useTransfer'
+import { TransferFooter } from './TransferFooter'
 import { ContextMenu, MenuItem, MenuSeparator, type MenuPoint } from '@/components/ui/ContextMenu'
 import { OwnerDialog, PermissionsDialog, RenameDialog } from './FileDialogs'
 import { useEditing } from './useEditing'
@@ -133,6 +135,8 @@ export function SftpPane({ session, width, resizing }: Props) {
     onUploaded: () => void load(path),
   })
 
+  const transfer = useTransfer(session.id, drop.state === 'uploading')
+
   /** Absolute path of a listed entry, in the folder currently shown. */
   const pathOf = (file: RemoteFile) =>
     path.endsWith('/') ? `${path}${file.name}` : `${path}/${file.name}`
@@ -240,11 +244,14 @@ export function SftpPane({ session, width, resizing }: Props) {
     >
       {/* The drop target is the whole pane, so there is no small rectangle to
           find. Drawn as an overlay rather than a border so the table underneath
-          does not reflow the moment a file crosses the window. */}
-      {drop.state !== 'idle' ? (
+          does not reflow the moment a file crosses the window.
+          Only while the pointer is over it: once the upload starts, the footer
+          says how it is going, and a scrim over the listing would hide both the
+          files and the bar reporting on them. */}
+      {drop.state === 'over' ? (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-scrim">
           <span className="rounded-field border border-accent-27 bg-drawer px-3 py-2 font-mono text-cell text-fg">
-            {drop.state === 'uploading' ? 'uploading…' : `drop to upload into ${path || '/'}`}
+            drop to upload into {path || '/'}
           </span>
         </div>
       ) : null}
@@ -331,6 +338,13 @@ export function SftpPane({ session, width, resizing }: Props) {
           }}
         />
       )}
+
+      {/* Below the table, per the handoff. It appears and disappears with the
+          transfer, which does resize the listing above it — but the listing is
+          scrolled by the user, not anchored to the bottom, so a row moving up
+          three lines is the whole of it. */}
+      {transfer ? <TransferFooter transfer={transfer} /> : null}
+
       <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 270 : 190}>
         {menu?.file.kind === 'file' ? (
           <>

@@ -303,6 +303,134 @@ pub async fn download(
     Ok(total)
 }
 
+/// What the transfer footer draws while something is moving.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProgressEvent {
+    session_id: String,
+    /// The file currently on the wire, by its own name.
+    name: String,
+    /// Bytes sent of that file, and its size.
+    bytes: u64,
+    total: u64,
+    /// Bytes per second.
+    rate: f64,
+    /// Position in the whole drop. `files_total` is 1 for a single file, which
+    /// is how the UI knows not to draw a second bar for it.
+    files_done: u32,
+    files_total: u32,
+}
+
+/// How often the footer is told anything.
+///
+/// The read loop moves 64 KB at a time — on a fast link that is thousands of
+/// steps a second, and a bar cannot show more than the screen refreshes. The
+/// limit is on the whole transfer rather than per file, or a folder of small
+/// files would emit two events each and flood exactly when it matters least.
+const PROGRESS_EVERY: std::time::Duration = std::time::Duration::from_millis(120);
+
+/// Carries a transfer's progress to the window that asked for it.
+///
+/// Emitted to that one window rather than broadcast: with a session in a window
+/// of its own, every other window would have to receive and discard these.
+struct Progress {
+    app: AppHandle,
+    session_id: String,
+    window: String,
+    name: String,
+    bytes: u64,
+    total: u64,
+    files_done: u32,
+    files_total: u32,
+    rate: f64,
+    last_emit: std::time::Instant,
+    /// Everything sent since the transfer began. `bytes` restarts at every file
+    /// and cannot measure a rate across a folder — the bytes of each file that
+    /// completed between two samples would simply not be counted.
+    sent_total: u64,
+    last_sent_total: u64,
+}
+
+impl Progress {
+    fn new(app: &AppHandle, session_id: &str, window: &str, files_total: u32) -> Self {
+        Self {
+            app: app.clone(),
+            session_id: session_id.to_string(),
+            window: window.to_string(),
+            name: String::new(),
+            bytes: 0,
+            total: 0,
+            files_done: 0,
+            files_total,
+            rate: 0.0,
+            last_emit: std::time::Instant::now(),
+            sent_total: 0,
+            last_sent_total: 0,
+        }
+    }
+
+    /// Starts a file. The first one is announced immediately — a transfer that
+    /// spends its first tenth of a second silent looks like one that has not
+    /// begun.
+    fn start(&mut self, name: &str, total: u64) {
+        self.name = name.to_string();
+        self.bytes = 0;
+        self.total = total;
+        if self.files_done == 0 {
+            self.emit();
+        }
+    }
+
+    fn advance(&mut self, sent: u64) {
+        self.bytes += sent;
+        self.sent_total += sent;
+        if self.last_emit.elapsed() >= PROGRESS_EVERY {
+            self.emit();
+        }
+    }
+
+    /// Throttled like everything else. Four hundred small files finish in a few
+    /// milliseconds each, and reporting every one of them is both a flood and
+    /// self-defeating: updates arriving faster than the bar's own animation
+    /// leave it permanently chasing a target it never reaches.
+    fn finished_file(&mut self) {
+        self.files_done += 1;
+        self.bytes = self.total;
+        // The last file always reports, so the bar lands on full instead of
+        // stopping wherever the throttle happened to leave it.
+        if self.files_done == self.files_total || self.last_emit.elapsed() >= PROGRESS_EVERY {
+            self.emit();
+        }
+    }
+
+    fn emit(&mut self) {
+        let elapsed = self.last_emit.elapsed().as_secs_f64();
+        if elapsed > 0.0 {
+            let instant = (self.sent_total - self.last_sent_total) as f64 / elapsed;
+            // Smoothed, because the raw figure between two 120ms samples jumps
+            // around enough to be unreadable. First sample seeds it outright so
+            // the number does not have to climb out of zero.
+            self.rate = if self.rate == 0.0 { instant } else { self.rate * 0.7 + instant * 0.3 };
+        }
+        self.last_emit = std::time::Instant::now();
+        self.last_sent_total = self.sent_total;
+
+        let _ = self.app.emit_to(
+            self.window.as_str(),
+            "sftp://progress",
+            ProgressEvent {
+                session_id: self.session_id.clone(),
+                name: self.name.clone(),
+                bytes: self.bytes,
+                total: self.total,
+                rate: self.rate,
+                files_done: self.files_done,
+                files_total: self.files_total,
+            },
+        );
+    }
+}
+
 /// Uploads a local file to the remote directory.
 pub async fn upload(
     app: &AppHandle,
@@ -312,7 +440,9 @@ pub async fn upload(
 ) -> Result<u64> {
     let (sftp, host_id) = open(app, session_id).await?;
     log(app, host_id, session_id, Origin::User, &format!("sftp put {remote}"));
-    put_file(&sftp, std::path::Path::new(local), remote).await
+    // No progress: the only caller is the editor writing a file back after a
+    // save, and a footer that flashes on every ⌘S is noise, not information.
+    put_file(&sftp, std::path::Path::new(local), remote, None).await
 }
 
 /// Uploads whatever was dropped: a file, or a directory and everything under it.
@@ -340,23 +470,45 @@ pub async fn upload_path(
 
     log(app, host_id, session_id, Origin::User, &format!("sftp put {target}"));
 
-    // Walked iteratively: a recursive async fn needs boxing, and the explicit
-    // stack also keeps the traversal order predictable in the audit trail.
-    let mut total = 0u64;
-    let mut stack = vec![(source, target)];
-    while let Some((from, to)) = stack.pop() {
-        if from.is_dir() {
-            // Already existing is the ordinary case when re-uploading a tree.
-            let _ = sftp.create_dir(&to).await;
-            let mut entries = tokio::fs::read_dir(&from).await?;
-            while let Some(entry) = entries.next_entry().await? {
-                let child = entry.file_name();
-                let Some(child) = child.to_str() else { continue };
-                stack.push((entry.path(), join_remote(&to, child)));
-            }
-        } else {
-            total += put_file(&sftp, &from, &to).await?;
+    // Walked before anything is sent, rather than uploaded as it is discovered.
+    // The footer's second bar counts files, and it cannot count towards a total
+    // that is still being found — a bar that grows its own denominator reads as
+    // going backwards.
+    //
+    // Breadth-first, so a directory is always listed before the things inside
+    // it and creating them in this order needs no sorting. Iterative because a
+    // recursive async fn would need boxing.
+    let mut dirs: Vec<String> = Vec::new();
+    let mut queue = std::collections::VecDeque::from([(source, target)]);
+    let mut sending: Vec<(std::path::PathBuf, String)> = Vec::new();
+    while let Some((from, to)) = queue.pop_front() {
+        if !from.is_dir() {
+            sending.push((from, to));
+            continue;
         }
+        dirs.push(to.clone());
+        // One unreadable subdirectory should cost that subdirectory, not the
+        // other thirty-nine files in the drop.
+        let Ok(mut entries) = tokio::fs::read_dir(&from).await else { continue };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let child = entry.file_name();
+            let Some(child) = child.to_str() else { continue };
+            queue.push_back((entry.path(), join_remote(&to, child)));
+        }
+    }
+
+    for dir in &dirs {
+        // Already existing is the ordinary case when re-uploading a tree.
+        let _ = sftp.create_dir(dir).await;
+    }
+
+    let window = ssh::session(app, session_id)?.window.clone();
+    let mut progress = Progress::new(app, session_id, &window, sending.len() as u32);
+
+    let mut total = 0u64;
+    for (from, to) in sending {
+        total += put_file(&sftp, &from, &to, Some(&mut progress)).await?;
+        progress.finished_file();
     }
 
     Ok(total)
@@ -377,10 +529,19 @@ async fn put_file(
     sftp: &russh_sftp::client::SftpSession,
     local: &std::path::Path,
     remote: &str,
+    mut progress: Option<&mut Progress>,
 ) -> Result<u64> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let mut source = tokio::fs::File::open(local).await?;
+    // Taken from the open handle rather than the path: the size has to describe
+    // the bytes about to be read, and a file can change between the two.
+    let size = source.metadata().await?.len();
+    if let Some(p) = progress.as_deref_mut() {
+        let name = local.file_name().and_then(|n| n.to_str()).unwrap_or(remote);
+        p.start(name, size);
+    }
+
     let mut target = sftp
         .create(remote)
         .await
@@ -395,6 +556,9 @@ async fn put_file(
         }
         target.write_all(&buffer[..read]).await?;
         total += read as u64;
+        if let Some(p) = progress.as_deref_mut() {
+            p.advance(read as u64);
+        }
     }
     target.flush().await?;
     Ok(total)

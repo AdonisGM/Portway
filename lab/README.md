@@ -70,10 +70,22 @@ having gone through Alpine. Service names are `alpine`, `debian`, `ubuntu`,
 
 ## The key
 
-`keys/lab_ed25519`, made by `up.sh` on first run and **not** committed —
-`.gitignore` in this folder keeps it out. It is throwaway and it is still a
-private key. Delete the folder and `up.sh` makes a new one; the machines pick it
-up at their next start, since it is mounted rather than baked in.
+`~/.ssh/portway-lab_ed25519`, made by `up.sh` on first run. Deliberately not in
+this folder, for a reason worth knowing:
+
+This repository lives under `~/Documents`, and macOS gates that directory behind
+a permission prompt. An app reading a key from there blocks on the prompt until
+somebody answers it — which looks, from inside the app, exactly like a
+connection hanging. And because the app is ad-hoc signed, the grant is tied to a
+code signature that changes with every build, so it asks again after each one.
+`~/.ssh` is not gated, and is where a private key belongs anyway.
+
+The same applies to your own hosts: a key kept in `~/Documents`, `~/Desktop` or
+`~/Downloads` will make Portway ask, every build. Moving it to `~/.ssh` is the
+fix.
+
+Delete the key and `up.sh` makes a new one; the machines pick it up at their
+next start, since it is mounted rather than baked in.
 
 Host keys are regenerated every time a container is created, so re-creating the
 lab makes `known_hosts` disagree with what answers on those ports. `down.sh

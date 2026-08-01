@@ -16,32 +16,32 @@ services:
     container_name: portway-lab-alpine
     ports: ['2201:22']
     environment: { LAB_USER: deploy, LAB_GROUP: deploy, LAB_HOME: /home/deploy, LAB_OS: 'Alpine 3.20' }
-    volumes: ['./keys/lab_ed25519.pub:/tmp/authorized_keys:ro']
+    volumes: ['${HOME}/.ssh/portway-lab_ed25519.pub:/tmp/authorized_keys:ro']
 
   debian:
     build: { context: ., dockerfile: images/debian.Dockerfile }
     container_name: portway-lab-debian
     ports: ['2202:22']
     environment: { LAB_USER: webops, LAB_GROUP: webops, LAB_HOME: /home/webops, LAB_OS: 'Debian 12' }
-    volumes: ['./keys/lab_ed25519.pub:/tmp/authorized_keys:ro']
+    volumes: ['${HOME}/.ssh/portway-lab_ed25519.pub:/tmp/authorized_keys:ro']
 
   ubuntu:
     build: { context: ., dockerfile: images/ubuntu.Dockerfile }
     container_name: portway-lab-ubuntu
     ports: ['2203:22']
     environment: { LAB_USER: ubuntu, LAB_GROUP: ubuntu, LAB_HOME: /home/ubuntu, LAB_OS: 'Ubuntu 24.04' }
-    volumes: ['./keys/lab_ed25519.pub:/tmp/authorized_keys:ro']
+    volumes: ['${HOME}/.ssh/portway-lab_ed25519.pub:/tmp/authorized_keys:ro']
 
   almalinux:
     build: { context: ., dockerfile: images/almalinux.Dockerfile }
     container_name: portway-lab-almalinux
     ports: ['2204:22']
     environment: { LAB_USER: svc, LAB_GROUP: svc, LAB_HOME: /home/svc, LAB_OS: 'AlmaLinux 9' }
-    volumes: ['./keys/lab_ed25519.pub:/tmp/authorized_keys:ro']
+    volumes: ['${HOME}/.ssh/portway-lab_ed25519.pub:/tmp/authorized_keys:ro']
 
   opensuse:
     build: { context: ., dockerfile: images/opensuse.Dockerfile }
     container_name: portway-lab-opensuse
     ports: ['2205:22']
     environment: { LAB_USER: root, LAB_GROUP: root, LAB_HOME: /root, LAB_OS: 'openSUSE Leap 15.6' }
-    volumes: ['./keys/lab_ed25519.pub:/tmp/authorized_keys:ro']
+    volumes: ['${HOME}/.ssh/portway-lab_ed25519.pub:/tmp/authorized_keys:ro']

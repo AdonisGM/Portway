@@ -4,12 +4,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 source ./machines.sh
 
-KEY=keys/lab_ed25519
+KEY="$LAB_KEY"
 
 if [ ! -f "$KEY" ]; then
-  mkdir -p keys
+  mkdir -p "$(dirname "$KEY")"
   ssh-keygen -t ed25519 -N '' -C portway-lab -f "$KEY" -q
-  echo "made a new key at lab/$KEY"
+  echo "made a new key at $KEY"
 fi
 
 docker compose up -d --build

@@ -1,3 +1,4 @@
-# The lab's key. Throwaway, and still a private key — it does not go in a repo.
-# `up.sh` makes a new one whenever it is missing.
+# Kept as a guard. The key now lives in ~/.ssh — see the note in machines.sh —
+# so nothing should land here, and if something ever does it stays out of the
+# repository.
 keys/

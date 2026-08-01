@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 source ./machines.sh
 
 DB="$HOME/.portway/portway.db"
-KEY="$(cd "$(dirname keys/lab_ed25519)" && pwd)/lab_ed25519"
+KEY="$LAB_KEY"
 
 [ -f "$DB" ] || { echo "no database at $DB — start Portway once first"; exit 1; }
 [ -f "$KEY" ] || { echo "no key — run ./up.sh first"; exit 1; }

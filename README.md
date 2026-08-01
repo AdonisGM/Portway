@@ -138,6 +138,20 @@ Not to be confused with the handoff's bastion column, which is still absent and 
 be: `hosts.jump_host` is stored and `ssh.rs` never implements ProxyJump, so a relay drawn
 *before* the via host would be a hop that does not happen.
 
+Lines begin and end on the **port labels**, not on the cards. A line drawn from the card edge
+runs underneath its own chip for sixty pixels and reads as coming out of the box with a label
+sitting on it. A forward passing *through* a via host gets a small dot on each edge instead of
+a port, because the socket the server opens outbound is ephemeral and there is no number to
+write; the dot still terminates the line, so it arrives at the box rather than into it. A
+dynamic forward's far end is labelled `anywhere` — a line ending in mid-air is not "there is no
+port here", it is an unfinished drawing.
+
+Column positions come from the chips rather than the cards, and the vertical pitch from the
+chip height rather than the row count: what makes a busy map unreadable is labels touching, not
+boxes being large. Past a certain number of forwards no amount of spacing helps, so selecting
+one pushes the rest back to a quarter strength instead — the map stays whole and the route you
+asked about is the only one at full weight.
+
 **The two hops are coloured separately**, which is the reason for splitting the line at all. A
 forward whose SSH connection is perfect and whose destination refuses is one good hop and one
 bad one; drawing the whole route as broken sends you looking in the wrong place. Red — and a

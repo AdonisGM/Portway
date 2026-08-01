@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import type { Tunnel, TunnelState } from '@/lib/api'
 import { GroupDot } from '@/components/ui/primitives'
 import type { Host } from '@/data/types'
-import { mapLayout, type DestNode, type HostNode, type PortChip } from './layout'
+import { mapLayout, type Connector, type DestNode, type HostNode, type PortChip } from './layout'
 import { useMapView } from './useMapView'
 
 /**
@@ -81,7 +81,11 @@ export function TunnelMap({
           {layout.edges.map((edge) => {
             const isSelected = edge.tunnelId === selected
             return (
-              <g key={edge.key}>
+              // With a dozen forwards on screen the lines are the clutter, and
+              // no amount of spacing fixes twelve of anything. Selecting one
+              // pushes the rest back instead — the map stays whole, and the
+              // route you asked about is the only one at full strength.
+              <g key={edge.key} opacity={selected !== null && !isSelected ? 0.25 : 1}>
                 {/* Three paths on one geometry: a track so an idle line still
                     reads as a route, the line itself, and a fat transparent
                     one to click — a 2px stroke is not a target. */}
@@ -173,8 +177,17 @@ export function TunnelMap({
           <DestCard key={dest.key} dest={dest} />
         ))}
 
+        {layout.dots.map((dot) => (
+          <ThroughDot key={dot.key} dot={dot} dimmed={selected !== null && dot.tunnelId !== selected} />
+        ))}
+
         {layout.chips.map((chip) => (
-          <Chip key={chip.key} chip={chip} onSelect={onSelect} />
+          <Chip
+            key={chip.key}
+            chip={chip}
+            onSelect={onSelect}
+            dimmed={selected !== null && chip.tunnelId !== selected}
+          />
         ))}
       </div>
 
@@ -340,15 +353,28 @@ function DestCard({ dest }: { dest: DestNode }) {
  * Never straddling the border: a chip half over the card sits on top of its
  * copy at some zoom levels and looks like a rendering fault at all of them.
  */
-function Chip({ chip, onSelect }: { chip: PortChip; onSelect: (id: number) => void }) {
+function Chip({
+  chip,
+  onSelect,
+  dimmed,
+}: {
+  chip: PortChip
+  onSelect: (id: number) => void
+  dimmed: boolean
+}) {
   return (
     <button
       type="button"
       onClick={() => onSelect(chip.tunnelId)}
+      title={chip.hint}
+      // `CHIP_GAP` in layout.ts is the same 8, and has to stay the same: the
+      // lines are drawn to `chip.x ± (gap + width)`, so a chip that floats a
+      // different distance is a chip the line no longer touches.
       style={{
-        left: chip.side === 'right' ? chip.x + 6 : chip.x - 6,
+        left: chip.side === 'right' ? chip.x + 8 : chip.x - 8,
         top: chip.y,
         transform: chip.side === 'right' ? 'translate(0,-50%)' : 'translate(-100%,-50%)',
+        opacity: dimmed ? 0.3 : 1,
       }}
       className={`pointer-events-auto absolute z-10 flex items-center gap-1.25 rounded-chip border px-2 py-0.75 font-mono text-mono whitespace-nowrap ${
         chip.refused
@@ -370,6 +396,30 @@ function Chip({ chip, onSelect }: { chip: PortChip; onSelect: (id: number) => vo
       />
       {chip.label}
     </button>
+  )
+}
+
+/**
+ * Where a line meets a card it is only passing through.
+ *
+ * Small on purpose. It is a terminator, not a thing to read — it exists so the
+ * line stops at the edge of the box instead of driving into it, which is the
+ * difference between "arrives here and carries on" and "this is the end of the
+ * road".
+ */
+function ThroughDot({ dot, dimmed }: { dot: Connector; dimmed: boolean }) {
+  return (
+    <span
+      aria-hidden
+      style={{ left: dot.x, top: dot.y, opacity: dimmed ? 0.3 : 1 }}
+      className={`pointer-events-none absolute z-10 size-2 -translate-x-1/2 -translate-y-1/2 rounded-chip border ${
+        dot.refused
+          ? 'border-danger bg-danger-bright'
+          : dot.active
+            ? 'border-accent-50 bg-accent'
+            : 'border-w24 bg-panel'
+      }`}
+    />
   )
 }
 

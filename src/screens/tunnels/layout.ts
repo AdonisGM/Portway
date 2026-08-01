@@ -37,20 +37,40 @@ const LOCAL_W = 222
 const LOCAL_MIN_H = 196
 
 /**
- * Where the via column sits with and without a third column after it.
+ * Where the columns sit.
  *
- * The gaps are set by the *chips*, not the cards. Every column edge carries port
- * labels that hang outside it, so two columns 70px apart end up with the local
- * card's right-hand chips sitting on top of the via card's left-hand ones —
- * which is not a tight layout, it is two labels in the same place. Each gap
- * leaves room for a chip on both sides plus a length of curve between them.
+ * Set by the *chips*, not the cards. Every line begins and ends on a port
+ * label that hangs outside the card it belongs to, so the space a column needs
+ * is a chip on each side plus enough curve between them to be followed by eye.
+ * Columns placed by card width alone put one column's labels on top of the
+ * next one's, which is not a tight layout — it is two labels in the same place.
+ *
+ * One position for the via column whether or not a third follows it, so adding
+ * a forward to some other machine does not slide everything already on screen.
  */
-const VIA_X_TWO = 520
-const VIA_X_THREE = 470
+const VIA_X = 560
 const HOST_W = 252
 
-const DEST_X = 860
+const DEST_X = 1020
 const DEST_W = 236
+
+/** How far a chip floats off the edge it belongs to. */
+const CHIP_GAP = 8
+
+/**
+ * A chip's width, from its label.
+ *
+ * The map has to know this because the lines start and end at the chip's outer
+ * edge — not at the card's, which would run the line underneath its own label
+ * for sixty pixels and make it look as though the line came out of the box and
+ * the chip were sitting on top of it.
+ *
+ * Monospace, so the width is arithmetic rather than a measurement: 12.5px type
+ * advances 6.6px a character, plus 8 of padding each side, a 5px dot, a 5px
+ * gap, and the border. Two pixels of slack, because erring wide leaves an
+ * invisible gap and erring narrow puts the line back under the label.
+ */
+const chipWidth = (label: string) => 30 + label.length * 6.6
 
 /**
  * A card's own height, before its ports are counted.
@@ -62,12 +82,20 @@ const DEST_W = 236
  * that is the one thing a diagram of your infrastructure must not look like.
  */
 const HOST_MIN_H = 96
-const HOST_GAP = 38
-/** Vertical distance between two ports on a host card. */
-const HOST_PITCH = 30
+const HOST_GAP = 44
 
-/** Vertical distance between two ports on the local card. */
-const PORT_PITCH = 40
+/**
+ * Vertical distance between two ports on a card.
+ *
+ * A chip is 24px tall, so 30 left six pixels between one label and the next —
+ * legible with three forwards and a wall of text with ten. These are set from
+ * the chip rather than from the card: the card can always grow, and what makes
+ * a busy map unreadable is labels touching, not boxes being large.
+ */
+const HOST_PITCH = 38
+
+/** Same, on the local card, which has more room to spend. */
+const PORT_PITCH = 46
 const MARGIN = 38
 
 export interface MapNode {
@@ -107,13 +135,37 @@ export interface DestNode extends MapNode {
 export interface PortChip {
   key: string
   tunnelId: number
+  /** The card edge it hangs off. The chip itself is `CHIP_GAP` beyond it. */
   x: number
   y: number
-  /** Which way it hangs off the card edge. */
+  /** Which way it hangs off that edge. */
   side: 'right' | 'left'
   label: string
+  /** Computed, so the lines can start where the chip stops. */
+  w: number
+  /** Shown on hover, for a label that is a word rather than a number. */
+  hint?: string
   active: boolean
   /** Drawn in danger when the leg it belongs to has been refused. */
+  refused: boolean
+}
+
+/**
+ * Where a line meets a card that has no port to name there.
+ *
+ * A forward on its way *through* a via host arrives on one edge and leaves by
+ * the other, and neither is a port anybody could write down — the outbound
+ * socket the server opens is ephemeral. A small dot on the edge terminates the
+ * line honestly: something arrives here, something leaves there. Without it the
+ * line drives into the side of the box, which reads as the box being the
+ * destination when it is the thing in the middle.
+ */
+export interface Connector {
+  key: string
+  tunnelId: number
+  x: number
+  y: number
+  active: boolean
   refused: boolean
 }
 
@@ -149,6 +201,7 @@ export interface MapLayout {
   hosts: HostNode[]
   dests: DestNode[]
   chips: PortChip[]
+  dots: Connector[]
   edges: MapEdge[]
 }
 
@@ -184,8 +237,12 @@ export function relayed(t: Tunnel): boolean {
  * card in a three-column one. Same port either way; it belongs to whichever
  * machine actually listens on it.
  */
-function ports(t: Tunnel): { here: string; there: string | null } {
-  if (t.kind === 'dynamic') return { here: `:${t.bindPort}`, there: null }
+function ports(t: Tunnel): { here: string; there: string } {
+  // A dynamic forward has no port on the far side and never will — each client
+  // that connects names its own destination. It gets a label rather than
+  // nothing, because a line ending in mid-air is not "there is no port here",
+  // it is an unfinished drawing. `anywhere` is what is actually true.
+  if (t.kind === 'dynamic') return { here: `:${t.bindPort}`, there: 'anywhere' }
   if (t.kind === 'remote') {
     return { here: `:${t.targetPort ?? '?'}`, there: `:${t.bindPort}` }
   }
@@ -199,8 +256,6 @@ export function mapLayout(
   const active = (t: Tunnel) => stateOf(t, states) === 'active'
   const reach = (t: Tunnel) => states[t.id]?.reachable ?? null
   const anyRelay = tunnels.some(relayed)
-
-  const VIA_X = anyRelay ? VIA_X_THREE : VIA_X_TWO
 
   // One node per host that has a forward through it, in the order the tunnels
   // were created — the same order the list below is in, so the eye can move
@@ -315,6 +370,7 @@ export function mapLayout(
   const portsTop = localY + (localH - tunnels.length * PORT_PITCH) / 2 + PORT_PITCH / 2
 
   const chips: PortChip[] = []
+  const dots: Connector[] = []
   const edges: MapEdge[] = []
   let pulsing = 0
 
@@ -335,6 +391,10 @@ export function mapLayout(
     const viaY = rowOn(host, byHost[hostIndex]?.tunnels, tunnel.id)
     const stagger = isActive ? (pulsing++ * 0.6) % 1.9 : 0
 
+    const via = relayed(tunnel)
+    const failed = reach(tunnel) === false
+    const untried = isActive && reach(tunnel) === null
+
     chips.push({
       key: `here-${tunnel.id}`,
       tunnelId: tunnel.id,
@@ -342,82 +402,122 @@ export function mapLayout(
       y: hereY,
       side: 'right',
       label: here,
+      w: chipWidth(here),
       active: isActive,
       refused: false,
     })
+    /** Leg one leaves the label, not the card. */
+    const fromX = local.x + local.w + CHIP_GAP + chipWidth(here)
 
-    const via = relayed(tunnel)
-    const failed = reach(tunnel) === false
-    const untried = isActive && reach(tunnel) === null
-
-    // Leg one: this machine to the via host. Up whenever the tunnel is up —
-    // the SSH connection is what `active` means.
-    edges.push({
-      key: `a-${tunnel.id}`,
-      tunnelId: tunnel.id,
-      path: curve(local.x + local.w, hereY, host.x, viaY),
-      active: isActive,
-      refused: false,
-      untried: false,
-      endX: host.x,
-      endY: viaY,
-      midX: (local.x + local.w + host.x) / 2,
-      midY: (hereY + viaY) / 2,
-      delay: stagger,
-    })
+    // Where the far port is named: on the via card when the destination is
+    // that server, on the destination card when it is a machine of its own.
+    const farX = via ? DEST_X : host.x
+    const farW = chipWidth(there)
 
     if (!via) {
-      // Two columns: the destination port belongs to the via host, so its chip
-      // hangs off that card and the line ends there.
-      if (there !== null) {
-        chips.push({
-          key: `there-${tunnel.id}`,
-          tunnelId: tunnel.id,
-          x: host.x,
-          y: viaY,
-          side: 'left',
-          label: there,
-          active: isActive && !failed,
-          refused: failed,
-        })
-      }
+      // Two columns: one hop, ending on the port it is aimed at.
+      chips.push({
+        key: `there-${tunnel.id}`,
+        tunnelId: tunnel.id,
+        x: host.x,
+        y: viaY,
+        side: 'left',
+        label: there,
+        w: farW,
+        hint:
+          tunnel.kind === 'dynamic'
+            ? 'A dynamic forward has no one destination — each client that connects names its own, and the server dials it.'
+            : undefined,
+        active: isActive && !failed,
+        refused: failed,
+      })
+      const toX = host.x - CHIP_GAP - farW
+      edges.push({
+        key: `a-${tunnel.id}`,
+        tunnelId: tunnel.id,
+        path: curve(fromX, hereY, toX, viaY),
+        active: isActive,
+        refused: false,
+        untried: false,
+        endX: toX,
+        endY: viaY,
+        midX: (fromX + toX) / 2,
+        midY: (hereY + viaY) / 2,
+        delay: stagger,
+      })
       return
     }
 
-    // Three columns: leg two, the hop the server makes on our behalf. This is
-    // the one that can be refused while everything else is fine.
+    // Three columns. The via card is passed *through*, so both its edges get a
+    // connector: the line arrives on one and leaves from the other rather than
+    // disappearing into the box.
     const destIndex = byDest.findIndex((d) => d.address === (tunnel.targetHost ?? '').trim())
     const dest = dests[destIndex]
     if (!dest) return
     const destY = rowOn(dest, byDest[destIndex]?.tunnels, tunnel.id)
 
+    dots.push(
+      {
+        key: `in-${tunnel.id}`,
+        tunnelId: tunnel.id,
+        x: host.x,
+        y: viaY,
+        active: isActive,
+        refused: false,
+      },
+      {
+        key: `out-${tunnel.id}`,
+        tunnelId: tunnel.id,
+        x: host.x + host.w,
+        y: viaY,
+        active: isActive && !failed && !untried,
+        refused: failed,
+      },
+    )
+
+    edges.push({
+      key: `a-${tunnel.id}`,
+      tunnelId: tunnel.id,
+      path: curve(fromX, hereY, host.x, viaY),
+      active: isActive,
+      refused: false,
+      untried: false,
+      endX: host.x,
+      endY: viaY,
+      midX: (fromX + host.x) / 2,
+      midY: (hereY + viaY) / 2,
+      delay: stagger,
+    })
+
+    // Leg two: the hop the server makes on our behalf, and the one that can be
+    // refused while everything else is fine.
+    const toX = farX - CHIP_GAP - farW
     edges.push({
       key: `b-${tunnel.id}`,
       tunnelId: tunnel.id,
-      path: curve(host.x + host.w, viaY, dest.x, destY),
+      path: curve(host.x + host.w, viaY, toX, destY),
       active: isActive && !failed && !untried,
       refused: failed,
       untried,
-      endX: dest.x,
+      endX: toX,
       endY: destY,
-      midX: (host.x + host.w + dest.x) / 2,
+      midX: (host.x + host.w + toX) / 2,
       midY: (viaY + destY) / 2,
       delay: stagger,
     })
 
-    if (there !== null) {
-      chips.push({
-        key: `there-${tunnel.id}`,
-        tunnelId: tunnel.id,
-        x: dest.x,
-        y: destY,
-        side: 'left',
-        label: there,
-        active: isActive && !failed && !untried,
-        refused: failed,
-      })
-    }
+    chips.push({
+      key: `there-${tunnel.id}`,
+      tunnelId: tunnel.id,
+      x: dest.x,
+      y: destY,
+      side: 'left',
+      label: there,
+      w: farW,
+      active: isActive && !failed && !untried,
+      refused: failed,
+    })
   })
 
-  return { stage: { w: stageW, h: stageH }, local, hosts, dests, chips, edges }
+  return { stage: { w: stageW, h: stageH }, local, hosts, dests, chips, dots, edges }
 }

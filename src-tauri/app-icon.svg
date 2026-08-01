@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Portway">
+  <!--
+    The source every icon in `icons/` is generated from, with
+    `npx tauri icon src-tauri/app-icon.svg`.
+
+    A shell prompt drawn on the same 4px grid the rest of the app is spaced on:
+    a chevron and a block cursor, nothing else. Kept as flat rectangles with
+    `crispEdges` so it scales from a 16px favicon to a 1024px Dock tile without
+    ever being resampled into mush.
+
+    The gradient runs light to deep along the diagonal, the way the artwork was
+    drawn; only the hue changed, from amber and pink to the app's own green. The
+    middle stop is the accent token exactly, so the icon and everything the UI
+    paints accent are the same colour rather than nearly the same.
+  -->
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="32" y2="32">
+      <stop offset="0" stop-color="#8CE6A8"/>
+      <stop offset="0.55" stop-color="#5EC8B0"/>
+      <stop offset="1" stop-color="#2C8F76"/>
+    </linearGradient>
+  </defs>
+  <g shape-rendering="crispEdges">
+    <rect x="2.0" y="4.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="6.0" y="4.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="6.0" y="8.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="10.0" y="8.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="10.0" y="12.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="14.0" y="12.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="10.0" y="16.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="14.0" y="16.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="6.0" y="20.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="10.0" y="20.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="2.0" y="24.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="6.0" y="24.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="22.0" y="8.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="26.0" y="8.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="22.0" y="12.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="26.0" y="12.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="22.0" y="16.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="26.0" y="16.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="22.0" y="20.0" width="4" height="4" fill="url(#g)"/>
+    <rect x="26.0" y="20.0" width="4" height="4" fill="url(#g)"/>
+  </g>
+</svg>

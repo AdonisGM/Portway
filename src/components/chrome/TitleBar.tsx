@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { isMac } from '@/lib/platform'
+import { BrandMark } from './BrandMark'
 import { WindowControls } from './WindowControls'
 
 /**
@@ -38,7 +39,7 @@ export function TitleBar({ subject }: { subject?: ReactNode }) {
           isMac ? 'pl-lights pr-4' : 'px-4'
         }`}
       >
-        {!isMac && <div className="size-4.5 flex-none rounded-chip bg-accent" />}
+        {!isMac && <BrandMark className="size-4.5 flex-none" />}
         {/* Same reason as the subject below: the word is not a control, and
             grabbing the app's own name is the most natural place to drag. */}
         <span className="pointer-events-none text-body font-semibold tracking-brand select-none">

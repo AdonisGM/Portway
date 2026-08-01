@@ -43,6 +43,28 @@ export function buildSshCommand({
 export const hostTitle = (host: Host): string =>
   `${host.name} — ${host.user}@${host.address}:${host.port}`
 
+/**
+ * What a forward moves, in one line: `127.0.0.1:5432 → 10.20.4.31:5432`.
+ *
+ * Derived rather than stored, so the arrow can never disagree with the ports
+ * either side of it. A dynamic forward has only the listening half — it learns
+ * its destination from whatever connects.
+ */
+export function tunnelForward(t: {
+  kind: string
+  bindAddress: string
+  bindPort: number
+  targetHost: string | null
+  targetPort: number | null
+}): string {
+  const listen = `${t.bindAddress}:${t.bindPort}`
+  if (t.kind === 'dynamic') return listen
+  const target = `${t.targetHost ?? '?'}:${t.targetPort ?? '?'}`
+  // A remote forward listens on the far end and delivers here, so the arrow
+  // points the other way round.
+  return t.kind === 'remote' ? `${target} ← ${listen}` : `${listen} → ${target}`
+}
+
 export const DEFAULT_KEY_PATH = '~/.ssh/id_ed25519'
 
 /**

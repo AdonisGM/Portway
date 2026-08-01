@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import { TitleBar } from './components/chrome/TitleBar'
 import { Sidebar } from './components/layout/Sidebar'
 import { ServersScreen } from './screens/servers/ServersScreen'
@@ -9,6 +10,7 @@ import { TunnelsScreen } from './screens/TunnelsScreen'
 import { KnownHostsScreen } from './screens/KnownHostsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { revealApp } from './lib/splash'
+import type { TunnelState } from './lib/api'
 import { useApp } from './store/appStore'
 
 const SCREENS = {
@@ -26,6 +28,8 @@ export default function App() {
   const accent = useApp((s) => s.settings.accent)
   const loadHosts = useApp((s) => s.loadHosts)
   const loadKeys = useApp((s) => s.loadKeys)
+  const loadTunnels = useApp((s) => s.loadTunnels)
+  const setTunnelState = useApp((s) => s.setTunnelState)
 
   /**
    * No native context menu anywhere. A desktop app that pops up the webview's
@@ -63,6 +67,22 @@ export default function App() {
   useEffect(() => {
     void loadKeys()
   }, [loadKeys])
+
+  /**
+   * Tunnels are read at boot rather than when the screen opens, because the
+   * rail counts the running ones — a badge that only becomes true after you
+   * visit the screen it is describing is worse than no badge.
+   *
+   * The listener is what keeps that count honest afterwards: a tunnel can come
+   * up from autostart, or go down on its own, with nobody looking at it.
+   */
+  useEffect(() => {
+    void loadTunnels()
+    const pending = listen<TunnelState>('tunnel://state', (event) => setTunnelState(event.payload))
+    return () => {
+      void pending.then((un) => un())
+    }
+  }, [loadTunnels, setTunnelState])
 
   // One variable write repaints every accent surface in the app, because each
   // Tailwind utility compiles down to var(--color-accent).

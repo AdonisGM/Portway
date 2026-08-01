@@ -1,5 +1,11 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Host, HostInput } from '@/data/types'
+import type {
+  Host,
+  HostInput,
+  TunnelAutostart,
+  TunnelKind,
+  TunnelRunState,
+} from '@/data/types'
 import { hostTitle } from '@/lib/command'
 
 /**
@@ -186,6 +192,62 @@ export const sftpRemove = (sessionId: string, path: string, isDir: boolean) =>
 /** Opens a session for this host in a window of its own. */
 export const openSessionWindow = (host: Host) =>
   invoke<void>('open_session_window', { hostId: host.id, title: hostTitle(host) })
+
+/* ---------------------------------------------------------------------------
+   Tunnels
+--------------------------------------------------------------------------- */
+
+export interface Tunnel {
+  id: number
+  label: string
+  hostId: number
+  /** The host's label, joined in by the backend so a row always says which
+   *  server it goes through — the table can render before hosts have loaded. */
+  via: string
+  kind: TunnelKind
+  bindAddress: string
+  bindPort: number
+  /** Null for a dynamic forward, which is told where to go per connection. */
+  targetHost: string | null
+  targetPort: number | null
+  autostart: TunnelAutostart
+  createdAt: number
+  updatedAt: number
+}
+
+export interface TunnelInput {
+  label: string
+  hostId: number
+  kind: TunnelKind
+  bindAddress: string
+  bindPort: number
+  targetHost: string | null
+  targetPort: number | null
+  autostart: TunnelAutostart
+}
+
+export interface TunnelState {
+  id: number
+  state: TunnelRunState
+  /** Why it stopped, when it stopped badly. */
+  error: string | null
+}
+
+export const listTunnels = () => invoke<Tunnel[]>('list_tunnels')
+
+/** Every tunnel's live state, for a screen that opened after the events fired. */
+export const tunnelStates = () => invoke<TunnelState[]>('tunnel_states')
+
+export const createTunnel = (input: TunnelInput) => invoke<Tunnel>('create_tunnel', { input })
+
+export const updateTunnel = (id: number, input: TunnelInput) =>
+  invoke<Tunnel>('update_tunnel', { id, input })
+
+export const deleteTunnel = (id: number) => invoke<void>('delete_tunnel', { id })
+
+export const startTunnel = (id: number) => invoke<void>('start_tunnel', { id })
+
+export const stopTunnel = (id: number) => invoke<void>('stop_tunnel', { id })
 
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { groupCounts } from '@/data/groups'
-import { KNOWN_HOSTS_TOTAL, TUNNELS } from '@/data/mock'
+import { KNOWN_HOSTS_TOTAL } from '@/data/mock'
 import { GroupDot, SectionLabel, StatusDot } from '@/components/ui/primitives'
 import { useApp, type Screen } from '@/store/appStore'
 import { NAV_ICONS } from './NavIcons'
@@ -17,6 +17,8 @@ export function Sidebar() {
   const groupFilter = useApp((s) => s.groupFilter)
   const sessions = useApp((s) => s.sessions)
   const keys = useApp((s) => s.keys)
+  const tunnelStates = useApp((s) => s.tunnelStates)
+  const activeTunnels = Object.values(tunnelStates).filter((t) => t.state === 'active').length
   const goScreen = useApp((s) => s.goScreen)
   const toggleGroup = useApp((s) => s.toggleGroup)
   const activateTab = useApp((s) => s.activateTab)
@@ -28,7 +30,9 @@ export function Sidebar() {
   const nav: { id: Screen; label: string; count: number | null }[] = [
     { id: 'servers', label: 'Servers', count: hosts.length },
     { id: 'keys', label: 'SSH Keys', count: keys.length },
-    { id: 'tunnels', label: 'Tunnels', count: TUNNELS.filter((t) => t.state === 'active').length },
+    // Running, not saved: the rail counts what is *doing* something, which is
+    // what the design's badge means everywhere else it appears.
+    { id: 'tunnels', label: 'Tunnels', count: activeTunnels },
     { id: 'known', label: 'Known hosts', count: KNOWN_HOSTS_TOTAL },
     { id: 'settings', label: 'Settings', count: null },
   ]

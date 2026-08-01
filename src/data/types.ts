@@ -50,17 +50,17 @@ export type HostInput = Omit<Host, 'id' | 'lastUsedAt' | 'createdAt' | 'updatedA
  * Semantic status, never a colour. Writing the accent hex into data would make
  * the Settings accent picker recolour unrelated status dots.
  */
-export type TunnelType = 'local' | 'dynamic' | 'remote'
-export type TunnelState = 'active' | 'idle'
+export type TunnelKind = 'local' | 'dynamic' | 'remote'
 
-export interface Tunnel {
-  label: string
-  type: TunnelType
-  forward: string
-  via: string
-  autostart: string
-  state: TunnelState
-}
+/**
+ * Wider than the design's `active | idle`, which cannot tell "still
+ * connecting" from "stopped because something went wrong". A forward that
+ * silently reads idle after failing to bind its port is one the user will keep
+ * starting and keep watching do nothing.
+ */
+export type TunnelRunState = 'idle' | 'starting' | 'active' | 'error'
+
+export type TunnelAutostart = 'manual' | 'session' | 'launch'
 
 export type KnownHostStatus = 'verified' | 'changed'
 

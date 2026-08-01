@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import * as api from '@/lib/api'
 import * as ssh from '@/lib/sshBus'
-import type { KeyFile } from '@/lib/api'
+import type { KeyFile, Tunnel, TunnelInput, TunnelState } from '@/lib/api'
 import type { AuthMethod, GroupId, Host, HostInput, Session, SessionStatus } from '@/data/types'
 
 export type Screen = 'servers' | 'session' | 'form' | 'keys' | 'tunnels' | 'known' | 'settings'
@@ -43,6 +43,9 @@ interface AppState {
   /** Real keys from `~/.ssh`. The rail's count, the Keys screen and the form's
    *  picker all read this, so they cannot disagree about what is on the disk. */
   keys: KeyFile[]
+  tunnels: Tunnel[]
+  /** Live state by tunnel id. Anything absent has never run, so it is idle. */
+  tunnelStates: Record<number, TunnelState>
   loading: boolean
   /** Set when the database itself is unreachable, not for form validation. */
   loadError: string | null
@@ -67,6 +70,13 @@ interface AppState {
 
   loadHosts: () => Promise<void>
   loadKeys: () => Promise<void>
+  loadTunnels: () => Promise<void>
+  createTunnel: (input: TunnelInput) => Promise<void>
+  updateTunnel: (id: number, input: TunnelInput) => Promise<void>
+  deleteTunnel: (id: number) => Promise<void>
+  startTunnel: (id: number) => Promise<void>
+  stopTunnel: (id: number) => Promise<void>
+  setTunnelState: (state: TunnelState) => void
   copyPublicKey: (key: KeyFile) => Promise<boolean>
   createHost: (input: HostInput) => Promise<Host>
   updateHost: (id: number, input: HostInput) => Promise<Host>
@@ -112,6 +122,8 @@ export const useApp = create<AppState>((set, get) => ({
 
   hosts: [],
   keys: [],
+  tunnels: [],
+  tunnelStates: {},
   loading: true,
   loadError: null,
 
@@ -162,6 +174,56 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   /**
+   * Tunnels and their live state, fetched together: the table draws both, and
+   * a list without states would flash every row as idle before correcting
+   * itself. States are also pushed as they change — see `setTunnelState`.
+   */
+  loadTunnels: async () => {
+    try {
+      const [tunnels, states] = await Promise.all([api.listTunnels(), api.tunnelStates()])
+      set({
+        tunnels,
+        tunnelStates: Object.fromEntries(states.map((s) => [s.id, s])),
+      })
+    } catch {
+      set({ tunnels: [] })
+    }
+  },
+
+  createTunnel: async (input) => {
+    const tunnel = await api.createTunnel(input)
+    set((state) => ({ tunnels: [...state.tunnels, tunnel] }))
+  },
+
+  updateTunnel: async (id, input) => {
+    const tunnel = await api.updateTunnel(id, input)
+    set((state) => ({ tunnels: state.tunnels.map((t) => (t.id === id ? tunnel : t)) }))
+  },
+
+  deleteTunnel: async (id) => {
+    await api.deleteTunnel(id)
+    set((state) => {
+      const tunnelStates = { ...state.tunnelStates }
+      delete tunnelStates[id]
+      return { tunnels: state.tunnels.filter((t) => t.id !== id), tunnelStates }
+    })
+  },
+
+  // Start and stop report through `tunnel://state` rather than a return value,
+  // because a tunnel can also stop on its own. One path into the state means
+  // the table cannot show one thing while the backend believes another.
+  startTunnel: async (id) => {
+    await api.startTunnel(id)
+  },
+
+  stopTunnel: async (id) => {
+    await api.stopTunnel(id)
+  },
+
+  setTunnelState: (state) =>
+    set((current) => ({ tunnelStates: { ...current.tunnelStates, [state.id]: state } })),
+
+  /**
    * Public half to the clipboard — what you paste into a host's
    * `authorized_keys`. Returns whether it landed, so the row can say "Copied"
    * only when it actually did.
@@ -204,6 +266,9 @@ export const useApp = create<AppState>((set, get) => ({
 
     set((state) => ({
       hosts: state.hosts.filter((h) => h.id !== id),
+      // The backend cascades the rows away and stops their listeners; this is
+      // the same removal on the copy the screens are reading.
+      tunnels: state.tunnels.filter((t) => t.hostId !== id),
       sessions: state.sessions.filter((s) => s.hostId !== id),
       selectedId: state.selectedId === id ? null : state.selectedId,
       drawer: state.selectedId === id ? false : state.drawer,

@@ -1,45 +1,10 @@
-import type { KnownHost, SftpFile, Tunnel } from './types'
+import type { KnownHost, SftpFile } from './types'
 
 /**
  * Everything the prototype's data script holds beyond the host list
  * (SSH Client.dc.html:840-890), with the accent hex stripped out in favour of
  * semantic status — see the note in types.ts.
  */
-
-export const TUNNELS: Tunnel[] = [
-  {
-    label: 'pg replica',
-    type: 'local',
-    forward: '127.0.0.1:5432 → 10.20.4.31:5432',
-    via: 'db-primary.prod',
-    autostart: 'on session',
-    state: 'active',
-  },
-  {
-    label: 'grafana',
-    type: 'local',
-    forward: '127.0.0.1:3000 → 10.20.4.20:3000',
-    via: 'api-gw.prod',
-    autostart: 'on launch',
-    state: 'active',
-  },
-  {
-    label: 'socks proxy',
-    type: 'dynamic',
-    forward: '127.0.0.1:1080',
-    via: 'bastion.corp',
-    autostart: 'manual',
-    state: 'idle',
-  },
-  {
-    label: 'nas webui',
-    type: 'local',
-    forward: '127.0.0.1:5000 → 192.168.1.20:5000',
-    via: 'nas.home',
-    autostart: 'manual',
-    state: 'idle',
-  },
-]
 
 export const KNOWN_HOSTS: KnownHost[] = [
   { host: '10.20.4.11', type: 'ed25519', fingerprint: 'SHA256:Kd8s…pW2', firstSeen: 'Mar 2026', status: 'verified' },

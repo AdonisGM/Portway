@@ -26,6 +26,7 @@
   --spacing-nav: 214px; /* left nav          */
   --spacing-drawer: 348px; /* servers detail drawer */
   --spacing-sftp: 470px; /* session SFTP pane — starting width; the divider is draggable */
+  --spacing-map: 520px; /* tunnel map — the canvas never gets shorter than this */
   --spacing-summary: 300px; /* form summary column  */
   --spacing-titlebar: 32px; /* custom window chrome */
   --spacing-lights: 86px; /* macOS traffic-light gutter — see TitleBar */
@@ -40,6 +41,7 @@
   --color-drawer: #22262b;
   --color-field: #2a2e34;
   --color-tab-active: #262a30;
+  --color-map: #191c20; /* the tunnel map's canvas */
 
   /* -- text ----------------------------------------------------------------
      text-fg, text-fg-2, text-muted, text-faint, text-term-fg, text-term-dim */
@@ -101,12 +103,20 @@
      harder now, which is what keeps them legible after the rail gained icons
      and the surfaces underneath it were lifted. */
   --color-w09: #ffffff17; /* nav item hover           */
+  /* The tunnel map is the one screen drawn on its own darker canvas, so its
+     hairlines have to be heavier than the rest of the app's to survive it. */
+  --color-w13: #ffffff21; /* map header rule          */
+  --color-w17: #ffffff2b; /* edge track, node border  */
+  --color-w24: #ffffff3d; /* idle node, dashed        */
 
   /* -- accent (live) -------------------------------------------------------
      Settings rewrites --color-accent on :root; every utility compiles to
      var(--color-accent), so one write repaints the whole app. */
   --color-accent: #5ec8b0;
   --color-accent-27: color-mix(in srgb, var(--color-accent) 27%, transparent);
+  /* The map's live port chips, which have to hold their own against a darker
+     canvas than the rest of the app is drawn on. */
+  --color-accent-50: color-mix(in srgb, var(--color-accent) 50%, transparent);
   /* "Accent text sits on #1b1e22" (README). Same value as --color-base, but it
      needs its own name: `text-base` is Tailwind's built-in 1rem font size, so
      it would never resolve as a colour. Being a separate token, it does not
@@ -167,8 +177,10 @@
   --radius-nav: 6px;
   --radius-field: 6px;
   --radius-toggle: 9px;
+  --radius-node: 9px; /* tunnel map node card */
 
   --shadow-drawer: -18px 0 40px #00000073;
+  --shadow-node: 0 8px 26px #00000047; /* tunnel map node card */
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 

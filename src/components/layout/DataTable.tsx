@@ -74,6 +74,13 @@ interface Props<T> {
   /** Right-click on a row. The event carries the point the menu opens at. */
   onRowContextMenu?: (row: T, event: React.MouseEvent) => void
   isSelected?: (row: T, index: number) => boolean
+  /**
+   * Extra classes for one row. The `selected` variant above is shared with
+   * every table in the app, so a screen that needs its own emphasis — the
+   * tunnel map's selected line and its row have to look like the same thing —
+   * adds it here instead of changing what selection means everywhere.
+   */
+  rowClassName?: (row: T, index: number) => string
   /** Approximate row height; the virtualiser measures the real one after mount. */
   estimateRowHeight?: number
   emptyMessage?: string
@@ -92,6 +99,7 @@ export function DataTable<T>({
   onRowClick,
   onRowContextMenu,
   isSelected,
+  rowClassName,
   estimateRowHeight = 38,
   emptyMessage,
   sort,
@@ -114,6 +122,7 @@ export function DataTable<T>({
       density,
       interactive: !!onRowClick,
       selected: isSelected?.(row, index) ?? false,
+      className: rowClassName?.(row, index),
     }),
     onClick: onRowClick ? () => onRowClick(row, index) : undefined,
     onContextMenu: onRowContextMenu

@@ -86,3 +86,58 @@
     background: transparent;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The tunnel map's three animations, and the only ones in the app besides the
+   splash. They are what separates a diagram of what *could* be forwarded from
+   a picture of what is moving right now: a dash marching toward the far end, a
+   halo breaking at the receiving port, a dot breathing on a live endpoint.
+--------------------------------------------------------------------------- */
+
+@keyframes tun-flow {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+@keyframes tun-halo {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes tun-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Motion here carries meaning — which way traffic runs — so what replaces it
+   has to carry the same meaning standing still. The dash pattern stays: an
+   active line is still dashed and still accent, it simply stops marching. */
+@media (prefers-reduced-motion: reduce) {
+  /* `!important` because these animations are set inline — their duration and
+     delay are computed per line so several tunnels do not pulse in lockstep,
+     and an inline style outranks any rule that does not shout. */
+  .tun-flow,
+  .tun-halo,
+  .tun-pulse {
+    animation: none !important;
+  }
+
+  /* The halo's first frame is half-opaque; left alone it would sit there as a
+     solid dot on every live port. */
+  .tun-halo {
+    opacity: 0.35;
+  }
+}

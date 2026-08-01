@@ -5,6 +5,7 @@ import { tunnelForward } from '@/lib/command'
 import { Button } from '@/components/ui/Button'
 import { Chip } from '@/components/ui/Chip'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { Segmented } from '@/components/ui/Segmented'
 import { StatusDot } from '@/components/ui/primitives'
 import { DataTable, type Column } from '@/components/layout/DataTable'
 import {
@@ -16,6 +17,8 @@ import {
 } from '@/components/layout/ScreenShell'
 import { useApp } from '@/store/appStore'
 import { TunnelForm } from './tunnels/TunnelForm'
+import { TunnelMap } from './tunnels/TunnelMap'
+import { useTunnelView } from './tunnels/useTunnelView'
 
 /** What the design's `on session` / `on launch` / `manual` say in the table. */
 const AUTOSTART_LABEL: Record<string, string> = {
@@ -38,6 +41,9 @@ export function TunnelsScreen() {
   const [editing, setEditing] = useState<{ tunnel: Tunnel | null } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Tunnel | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [view, setView] = useTunnelView()
+  /** One selection for both halves: a line and its row are the same tunnel. */
+  const [selected, setSelected] = useState<number | null>(null)
 
   useEffect(() => {
     void loadTunnels()
@@ -169,9 +175,18 @@ export function TunnelsScreen() {
           <ScreenSubtitle>
             {active} active · {tunnels.length - active} idle
           </ScreenSubtitle>
+          <Segmented
+            className="ml-auto"
+            aria-label="How to show the tunnels"
+            options={[
+              { value: 'map', label: 'Map' },
+              { value: 'list', label: 'List' },
+            ]}
+            value={view}
+            onChange={setView}
+          />
           <Button
             variant="accent"
-            className="ml-auto"
             disabled={hosts.length === 0}
             title={hosts.length === 0 ? 'Add a server first — a tunnel goes through one' : undefined}
             onClick={() => setEditing({ tunnel: null })}
@@ -195,13 +210,37 @@ export function TunnelsScreen() {
           no tunnels yet
         </div>
       ) : (
-        <DataTable
-          rows={tunnels}
-          columns={columns}
-          gridTemplate="1.2fr 78px 2fr 1.1fr 88px 130px 150px"
-          rowKey={(t) => String(t.id)}
-          density="relaxed"
-        />
+        <>
+          {view === 'map' ? (
+            <TunnelMap
+              tunnels={tunnels}
+              states={states}
+              hosts={hosts}
+              selected={selected}
+              onSelect={setSelected}
+            />
+          ) : null}
+
+          {/* A sibling of the map, never inside it: the table has its own
+              scrolling and its own selection, and a table that panned with the
+              diagram would be unusable. In map view it is the shorter half. */}
+          <div className={view === 'map' ? 'flex max-h-64 flex-none flex-col border-t border-w06' : 'flex flex-1 flex-col'}>
+            <DataTable
+              rows={tunnels}
+              columns={columns}
+              gridTemplate="1.2fr 78px 2fr 1.1fr 88px 130px 150px"
+              rowKey={(t) => String(t.id)}
+              density="relaxed"
+              onRowClick={(t) => setSelected(t.id)}
+              // Heavier than the table's shared `selected`, and with the accent
+              // edge the design puts on it — this row is answering for a line
+              // in the diagram above, so the two have to read as one thing.
+              rowClassName={(t) =>
+                t.id === selected ? 'bg-w10 shadow-[inset_3px_0_0_var(--color-accent)]' : ''
+              }
+            />
+          </div>
+        </>
       )}
 
       {editing ? (

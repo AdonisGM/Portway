@@ -82,6 +82,7 @@ pub fn run() {
             commands::sftp_edit,
             commands::open_session_window,
             commands::host_log,
+            commands::open_url,
             tunnels::list_tunnels,
             tunnels::tunnel_states,
             tunnels::create_tunnel,

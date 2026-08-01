@@ -4,6 +4,7 @@ import { KNOWN_HOSTS_TOTAL } from '@/data/mock'
 import { GroupDot, SectionLabel, StatusDot } from '@/components/ui/primitives'
 import { useApp, type Screen } from '@/store/appStore'
 import { NAV_ICONS } from './NavIcons'
+import { Colophon } from './Colophon'
 
 /**
  * Fixed 214px rail. Four blocks: nav list, Groups, the Sessions list pinned to
@@ -109,12 +110,15 @@ export function Sidebar() {
         ))}
       </div>
 
-      <div className="flex-none border-t border-w06 px-4 py-2.75 font-mono text-mono text-faint">
+      <div className="flex flex-none flex-col gap-1.5 border-t border-w06 px-4 py-2.75 font-mono text-mono text-faint">
         {/* The rail's one live reading of the agent. `0 keys loaded` is a real
             answer — no agent running, or nothing added to it — so it is shown
             rather than hidden. The mock's string was always plural because it
             was always 3; a real count reaches 1. */}
-        agent · {loadedInAgent} {loadedInAgent === 1 ? 'key' : 'keys'} loaded
+        <span>
+          agent · {loadedInAgent} {loadedInAgent === 1 ? 'key' : 'keys'} loaded
+        </span>
+        <Colophon />
       </div>
     </nav>
   )

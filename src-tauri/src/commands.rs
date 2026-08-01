@@ -162,6 +162,44 @@ pub async fn sftp_remove(
     sftp::remove(&app, &session_id, &path, is_dir).await
 }
 
+/// Hands a link to the browser.
+///
+/// Restricted to `https`, and deliberately. This is a process launcher exposed
+/// to the webview: on macOS `open` will just as happily take a local path, a
+/// `file://` URL or an application, so anything that could ever put a string
+/// into this call could put one of those in instead. The app has exactly one
+/// link and it is a web address.
+///
+/// No shell is involved — the URL is an argument, not a command line — so
+/// quoting is not the concern here; what it points at is.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<()> {
+    if !url.starts_with("https://") {
+        return Err(Error::Invalid(format!("refusing to open {url}")));
+    }
+
+    let mut command = if cfg!(target_os = "macos") {
+        let mut c = std::process::Command::new("open");
+        c.arg(&url);
+        c
+    } else if cfg!(target_os = "windows") {
+        // The empty argument is `start`'s window title; without it `start`
+        // reads the first quoted argument as the title and opens nothing.
+        let mut c = std::process::Command::new("cmd");
+        c.arg("/C").arg("start").arg("").arg(&url);
+        c
+    } else {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(&url);
+        c
+    };
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| Error::Invalid(format!("could not open {url}: {e}")))
+}
+
 /// The audit trail for one host, newest first.
 #[tauri::command]
 pub fn host_log(db: State<'_, Db>, host_id: i64, limit: Option<i64>) -> Result<Vec<LogEntry>> {

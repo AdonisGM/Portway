@@ -249,6 +249,9 @@ export const startTunnel = (id: number) => invoke<void>('start_tunnel', { id })
 
 export const stopTunnel = (id: number) => invoke<void>('stop_tunnel', { id })
 
+/** Hands a link to the browser. The backend accepts `https` and nothing else. */
+export const openUrl = (url: string) => invoke<void>('open_url', { url })
+
 export const hostLog = (hostId: number, limit?: number) =>
   invoke<LogEntry[]>('host_log', { hostId, limit })
 

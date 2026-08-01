@@ -228,37 +228,33 @@ pub fn host_log(db: State<'_, Db>, host_id: i64, limit: Option<i64>) -> Result<V
     audit::recent(&conn, host_id, limit.unwrap_or(50))
 }
 
-/// Opens a session in a window of its own.
+/// A second window, wearing the same chrome as the first.
 ///
-/// The window is created *empty* and connects for itself once it has booted:
-/// `ssh_connect` records whichever window invoked it, so letting the new window
-/// do the connecting is what makes its output arrive there rather than in the
-/// window that asked for it.
+/// Every option has to be repeated for each one. `tauri.macos.conf.json`
+/// applies to `app.windows[0]` and nothing else, so a runtime window inherits
+/// none of the traffic-light treatment and would otherwise open with a stock
+/// frame in the middle of an app that has none. Said once here rather than at
+/// each call site, because two copies of it would drift and the difference
+/// would only show up as one window with a system titlebar.
 ///
-/// Every chrome option has to be repeated here. `tauri.macos.conf.json` applies
-/// to `app.windows[0]` and nothing else, so a runtime window inherits none of
-/// the traffic-light treatment and would otherwise open with a stock frame in
-/// the middle of an app that has none.
-#[tauri::command]
-pub async fn open_session_window(app: AppHandle, host_id: i64, title: String) -> Result<()> {
+/// Anything opened this way must also be named in `capabilities/default.json`.
+/// A window that list does not name gets no `core:event` at all — it renders
+/// perfectly and never receives a single thing the backend emits.
+fn open_window(
+    app: &AppHandle,
+    label: &str,
+    query: &str,
+    title: &str,
+    size: (f64, f64),
+    minimum: (f64, f64),
+) -> Result<()> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-    // One window per host: asking twice should raise the window that is already
-    // showing that server rather than opening a second one onto the same box.
-    let label = format!("session-{host_id}");
-    if let Some(existing) = app.get_webview_window(&label) {
-        logging::debug("app", "raised an existing session window", Some(&label));
-        let _ = existing.unminimize();
-        let _ = existing.set_focus();
-        return Ok(());
-    }
-    logging::info("app", "opening a session window", Some(&label));
-
-    let url = WebviewUrl::App(format!("index.html?host={host_id}").into());
-    let builder = WebviewWindowBuilder::new(&app, &label, url)
+    let url = WebviewUrl::App(format!("index.html?{query}").into());
+    let builder = WebviewWindowBuilder::new(app, label, url)
         .title(title)
-        .inner_size(1320.0, 836.0)
-        .min_inner_size(820.0, 520.0)
+        .inner_size(size.0, size.1)
+        .min_inner_size(minimum.0, minimum.1)
         .background_color(tauri::window::Color(0x1b, 0x1e, 0x22, 0xff))
         .theme(Some(tauri::Theme::Dark))
         .center();
@@ -277,4 +273,75 @@ pub async fn open_session_window(app: AppHandle, host_id: i64, title: String) ->
         .build()
         .map_err(|e| Error::Invalid(format!("could not open a window: {e}")))?;
     Ok(())
+}
+
+/// Raises a window that already exists. `true` when there was one.
+fn raise(app: &AppHandle, label: &str) -> bool {
+    match app.get_webview_window(label) {
+        Some(window) => {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+            true
+        }
+        None => false,
+    }
+}
+
+/// Opens a session in a window of its own.
+///
+/// The window is created *empty* and connects for itself once it has booted:
+/// `ssh_connect` records whichever window invoked it, so letting the new window
+/// do the connecting is what makes its output arrive there rather than in the
+/// window that asked for it.
+#[tauri::command]
+pub async fn open_session_window(app: AppHandle, host_id: i64, title: String) -> Result<()> {
+    // One window per host: asking twice should raise the window that is already
+    // showing that server rather than opening a second one onto the same box.
+    let label = format!("session-{host_id}");
+    if raise(&app, &label) {
+        logging::debug("app", "raised an existing session window", Some(&label));
+        return Ok(());
+    }
+    logging::info("app", "opening a session window", Some(&label));
+
+    open_window(
+        &app,
+        &label,
+        &format!("host={host_id}"),
+        &title,
+        (1320.0, 836.0),
+        (820.0, 520.0),
+    )
+}
+
+/// Opens the debug console, in a window of its own.
+///
+/// A window rather than a panel over the app, because the two things you want
+/// it for both need it beside what it is describing: watching a connection go
+/// through while you are looking at the terminal it is for, and putting it on a
+/// second screen while something runs. An overlay hides the very thing you
+/// opened it to explain.
+///
+/// One console for the whole app, not one per window — there is a single log,
+/// and two views of it side by side would only be two copies of the same
+/// stream. Asking again from anywhere raises the one that exists.
+#[tauri::command]
+pub async fn open_debug_window(app: AppHandle) -> Result<()> {
+    if raise(&app, "debug") {
+        return Ok(());
+    }
+    logging::info("app", "opening the debug console", None);
+
+    open_window(
+        &app,
+        "debug",
+        "debug=1",
+        // The name it goes by in the Window menu, in Mission Control and on the
+        // taskbar. The bar inside the window says it again with the log file
+        // under it — the one place where "which log am I looking at" is
+        // answerable at a glance.
+        "Portway — Debug & logs",
+        (1180.0, 760.0),
+        (720.0, 420.0),
+    )
 }

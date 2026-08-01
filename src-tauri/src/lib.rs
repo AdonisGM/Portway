@@ -107,6 +107,7 @@ pub fn run() {
             commands::sftp_remove,
             commands::sftp_edit,
             commands::open_session_window,
+            commands::open_debug_window,
             commands::host_log,
             commands::open_url,
             logging::log_backlog,

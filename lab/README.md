@@ -21,6 +21,18 @@ Portway against something real instead of a mock.
 `machines.sh` is the one table all of this reads, so a machine cannot be
 described one way in the compose file and another in the import.
 
+**If a machine suddenly refuses with "host key changed":** its container was
+rebuilt and generated a fresh host key, while `~/.ssh/known_hosts` still has the
+old one. Portway refuses on change and is right to — that is a real key
+substitution as far as it can tell. Forget the stale entry and connect again:
+
+```bash
+ssh-keygen -R "[127.0.0.1]:2201"     # or whichever port
+```
+
+`./down.sh --purge` does it for all five, which is the tidier way round when you
+are finished with them anyway.
+
 ## Why five distributions and not five Alpines
 
 They disagree about the things the app has to get right, and each disagreement

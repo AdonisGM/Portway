@@ -36,7 +36,14 @@ declare global {
  * splash is already covering the window, so the user sees branding rather than
  * an empty frame, and the handover to the UI is a fade.
  */
-export function revealApp(): void {
+/**
+ * `hold` is how long the splash owes. It defaults to the figure above, which is
+ * right for a window somebody launched and waited for; a utility window opened
+ * from a keystroke passes 0. Branding on the way into a tool you hit a chord
+ * for is a stutter, not an entrance — the app is already running and already on
+ * screen, and there is nothing left to cover.
+ */
+export function revealApp(hold: number = MIN_SPLASH_VISIBLE_MS): void {
   void (async () => {
     try {
       // No-op when the inline script already showed it.
@@ -47,7 +54,7 @@ export function revealApp(): void {
       }
     } finally {
       // In `finally` so a failed show() can never strand the splash on screen.
-      window.setTimeout(hideSplash, remainingSplashTime())
+      window.setTimeout(hideSplash, remainingSplashTime(hold))
     }
   })()
 }
@@ -57,11 +64,12 @@ export function revealApp(): void {
  * visible — not from launch, so the hold is the same length whichever path
  * revealed it.
  */
-function remainingSplashTime(): number {
+function remainingSplashTime(hold: number): number {
+  if (hold <= 0) return 0
   const shownAt = window.__portwayShownAt
-  if (shownAt === undefined) return MIN_SPLASH_VISIBLE_MS
+  if (shownAt === undefined) return hold
   const elapsed = performance.now() - shownAt
-  return Math.max(0, MIN_SPLASH_VISIBLE_MS - elapsed)
+  return Math.max(0, hold - elapsed)
 }
 
 /** Idempotent — StrictMode runs mount effects twice in development. */

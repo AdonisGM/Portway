@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { TitleBar } from './components/chrome/TitleBar'
-import { DebugRoot } from './components/debug/DebugRoot'
+import { DebugShortcut } from './components/debug/DebugShortcut'
 import { Sidebar } from './components/layout/Sidebar'
 import { ServersScreen } from './screens/servers/ServersScreen'
 import { SessionScreen } from './screens/session/SessionScreen'
@@ -104,10 +104,10 @@ export default function App() {
           <Screen />
         </main>
       </div>
-      {/* Over everything below the titlebar, on ⌘⇧L. Mounted here rather than
-          added to the rail: it is a tool for when something is wrong, not a
-          seventh screen. */}
-      <DebugRoot />
+      {/* ⌘⇧L, from anywhere, opens the log console in a window of its own —
+          mounted here rather than added to the rail because it is a tool for
+          when something is wrong, not a seventh screen. */}
+      <DebugShortcut />
     </div>
   )
 }

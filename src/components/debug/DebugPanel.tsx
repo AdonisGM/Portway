@@ -11,17 +11,13 @@ import { DEBUG_CHORD } from './chord'
 /**
  * The debug console: what the app is doing, as it does it.
  *
- * Deliberately an overlay rather than a screen or a window of its own. A screen
- * would only exist in the main window, and half of what is worth watching
- * happens in a session window; a window of its own would need adding to the
- * capability list, would not share a store with either parent, and would be one
- * more thing to arrange on screen. An overlay opens over whatever you were
- * already looking at, in the window you were looking at it in, and closes
- * again — which is what a diagnostic should do.
+ * Fills whatever it is put in, which is `DebugWindow` — the console is a window
+ * of its own so it can sit beside the thing it is describing rather than over
+ * it. Kept as a component rather than folded into that window because the
+ * window is a shell of nine lines and this is the tool.
  *
- * It starts below the titlebar on purpose: covering it would take the traffic
- * lights and the drag region with it, and a debug tool that makes the window
- * unmovable is its own bug report.
+ * The window's titlebar already names it and says which file it is reading, so
+ * the header here is state and controls only.
  */
 
 type View = 'all' | 'info' | 'warn' | 'error'
@@ -181,14 +177,9 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
   )
 
   return (
-    // Fixed rather than absolute, and starting below the titlebar: it has to
-    // cover the rail and every screen whichever window it is in, and it must
-    // not cover the bar — that is where the traffic lights and the drag region
-    // are, and a debug tool that pins the window in place is its own bug.
-    <div className="fixed inset-x-0 top-titlebar bottom-0 z-40 flex flex-col bg-base">
+    <div className="flex min-h-0 flex-1 flex-col bg-base">
       <div className="flex flex-none items-center gap-2.5 border-b border-w06 px-4.5 py-3">
         <StatusDot tone={errors > 0 ? 'warn' : 'accent'} size="sm" />
-        <span className="flex-none text-title font-semibold">Debug</span>
         <span className="flex-none font-mono text-meta text-faint">
           {lines.length} lines · {warnings} warnings · {errors} errors
         </span>
@@ -226,7 +217,7 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
             Clear view
           </Button>
           <Button size="sm" variant="outline" onClick={onClose}>
-            Close · Esc
+            Close
           </Button>
         </span>
       </div>
@@ -266,8 +257,14 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
+      {/* The file itself is named in the titlebar; this says what the view is
+          doing to it. */}
       <div className="flex flex-none items-center gap-4 border-t border-w06 px-4 py-2.5 font-mono text-mono text-faint">
-        <span>{info ? info.logFile : '~/.portway/logs'}</span>
+        <span>
+          {shown.length === lines.length
+            ? `${lines.length} lines`
+            : `${shown.length} of ${lines.length} lines`}
+        </span>
         <span>{follow ? 'following' : 'scrolled back — scroll to the bottom to follow again'}</span>
         <span className="ml-auto">{DEBUG_CHORD} to close</span>
       </div>

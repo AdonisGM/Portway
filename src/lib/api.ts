@@ -193,6 +193,9 @@ export const sftpRemove = (sessionId: string, path: string, isDir: boolean) =>
 export const openSessionWindow = (host: Host) =>
   invoke<void>('open_session_window', { hostId: host.id, title: hostTitle(host) })
 
+/** Opens the debug console, or raises the one already open. */
+export const openDebugWindow = () => invoke<void>('open_debug_window')
+
 /* ---------------------------------------------------------------------------
    Tunnels
 --------------------------------------------------------------------------- */

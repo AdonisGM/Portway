@@ -116,7 +116,9 @@ Then add a host: `127.0.0.1`, port `2222`, user `deploy`, private key
 There are two records in Portway and they answer different questions. The audit trail above is
 **what reached a server**, kept in the database for as long as the host exists. The application
 log is **what Portway did**, written to a file and thrown away after a week. `logging.rs` owns
-it; `⌘⇧L` (Ctrl+Shift+L elsewhere) opens the console over whichever window you are in.
+it; `⌘⇧L` (Ctrl+Shift+L elsewhere) opens the console — *Portway — Debug & logs*, a window of its
+own, one for the whole app. The chord works from any window and raises the console if it is
+already up; pressing it inside the console closes it again.
 
 ```
 ~/.portway/logs/portway-2026-08-02.log        one file a day, rolled again at 8 MB, pruned after 7
@@ -147,13 +149,21 @@ What it deliberately stays out of: the `ssh://data` pump, the 120 ms transfer pr
 three delete lanes. Operations report a summary and their failures, not their contents — a
 401-entry delete adds three lines, at the noisiest setting.
 
+A window rather than a panel over the app, because both things it is for need it *beside* what
+it is describing: watching a connection go through while you look at the terminal it belongs to,
+or parking it on a second screen while something long runs. An overlay covers the thing you
+opened it to explain. It is the third thing `index.html` can be — `?debug=1`, next to
+`?host=<id>` — and like a session window it is a second copy of the frontend sharing one Rust
+process. It is also named in `capabilities/default.json`; a window that list does not name gets
+no `core:event` at all, so the stream would be permanently empty.
+
 | in the console | |
 | --- | --- |
 | `All / Info / Warnings / Errors` | filters what is shown |
 | `Verbose` | changes what the backend *records* — `debug` for this run |
 | `Copy` | the filtered lines, formatted as the file is |
 | `Clear view` | this window's view only; the file is untouched |
-| `Esc` | closes, and hands focus back to the terminal it took it from |
+| `Close` / `⌘W` / `⌘⇧L` | all close the window |
 
 `PORTWAY_LOG=debug npm run tauri dev` starts verbose instead of switching it on afterwards.
 

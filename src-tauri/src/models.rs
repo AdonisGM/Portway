@@ -145,3 +145,89 @@ fn blank_to_none(value: Option<String>) -> Option<String> {
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty() && v != "—")
 }
+
+/// A saved port forward.
+///
+/// `via` is the host's label, joined in rather than looked up by the screen:
+/// the Tunnels table can render before the host list has loaded, and a row that
+/// says which server it goes through only sometimes is worse than one that
+/// always does.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tunnel {
+    pub id: i64,
+    pub label: String,
+    pub host_id: i64,
+    pub via: String,
+    pub kind: String,
+    pub bind_address: String,
+    pub bind_port: u16,
+    /// `None` for a dynamic forward, which learns its destination per
+    /// connection instead of being told one up front.
+    pub target_host: Option<String>,
+    pub target_port: Option<u16>,
+    pub autostart: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelInput {
+    pub label: String,
+    pub host_id: i64,
+    pub kind: String,
+    pub bind_address: String,
+    pub bind_port: u16,
+    pub target_host: Option<String>,
+    pub target_port: Option<u16>,
+    pub autostart: String,
+}
+
+const TUNNEL_KINDS: [&str; 3] = ["local", "remote", "dynamic"];
+const AUTOSTARTS: [&str; 3] = ["manual", "session", "launch"];
+
+impl TunnelInput {
+    pub fn validate(&self) -> Result<()> {
+        if self.label.trim().is_empty() {
+            return Err(Error::Invalid("Label cannot be empty".into()));
+        }
+        if !TUNNEL_KINDS.contains(&self.kind.as_str()) {
+            return Err(Error::Invalid(format!("Unknown tunnel type '{}'", self.kind)));
+        }
+        if !AUTOSTARTS.contains(&self.autostart.as_str()) {
+            return Err(Error::Invalid(format!(
+                "Unknown autostart '{}'",
+                self.autostart
+            )));
+        }
+        if self.bind_address.trim().is_empty() {
+            return Err(Error::Invalid("Bind address cannot be empty".into()));
+        }
+        if self.bind_port == 0 {
+            return Err(Error::Invalid("Listen port must be between 1 and 65535".into()));
+        }
+        // A dynamic forward is told where to go by each client that connects,
+        // so a destination here would be a field with nothing to do.
+        if self.kind == "dynamic" {
+            return Ok(());
+        }
+        match (self.target_host.as_deref().map(str::trim), self.target_port) {
+            (Some(host), Some(port)) if !host.is_empty() && port != 0 => Ok(()),
+            _ => Err(Error::Invalid(
+                "A local or remote forward needs a destination host and port".into(),
+            )),
+        }
+    }
+
+    pub fn normalized(mut self) -> Self {
+        self.label = self.label.trim().to_string();
+        self.bind_address = self.bind_address.trim().to_string();
+        self.target_host = blank_to_none(self.target_host);
+        if self.kind == "dynamic" {
+            self.target_host = None;
+            self.target_port = None;
+        }
+        self
+    }
+}

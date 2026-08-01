@@ -8,6 +8,7 @@ mod keys;
 mod models;
 mod sftp;
 mod ssh;
+mod tunnels;
 
 use std::sync::Mutex;
 
@@ -33,6 +34,14 @@ pub fn run() {
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(ssh::Sessions::default());
             app.manage(sftp::Editing::default());
+            app.manage(tunnels::Tunnels::default());
+            app.manage(tunnels::TunnelStates::default());
+
+            // Tunnels that asked to come up on their own. Spawned rather than
+            // awaited: a server that is slow to answer must not hold the
+            // window back, and a forward that cannot start reports itself
+            // through its own state rather than a startup failure.
+            tunnels::autostart(app.handle(), "launch", None);
 
             // The window is created hidden and the frontend reveals it once it
             // has painted, so a cold start never shows a blank rectangle. This
@@ -73,6 +82,13 @@ pub fn run() {
             commands::sftp_edit,
             commands::open_session_window,
             commands::host_log,
+            tunnels::list_tunnels,
+            tunnels::tunnel_states,
+            tunnels::create_tunnel,
+            tunnels::update_tunnel,
+            tunnels::delete_tunnel,
+            tunnels::start_tunnel,
+            tunnels::stop_tunnel,
         ])
         // Closing a session window has to end its connections. A tab close
         // goes through `ssh_disconnect`; a window close does not, and an

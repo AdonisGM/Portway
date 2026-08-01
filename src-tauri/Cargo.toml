@@ -24,6 +24,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 thiserror = "2.0.19"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time", "net"] }
+# CancellationToken: one signal that both ends an accept loop and drops the
+# listener with it, so a stopped tunnel actually gives its port back.
+tokio-util = { version = "0.7", default-features = false }
 
 [profile.release]
 codegen-units = 1

@@ -24,7 +24,13 @@ pub async fn ssh_connect(
         let db = app.state::<Db>();
         hosts::get(&db, host_id)?
     };
-    ssh::connect(app.clone(), host, session_id, window.label().to_string()).await
+    let info = ssh::connect(app.clone(), host, session_id, window.label().to_string()).await?;
+
+    // "Autostart: on session" means exactly this moment. Tunnels hold their own
+    // connections, so this only decides *when* one comes up, not what it rides.
+    crate::tunnels::autostart(&app, "session", Some(host_id));
+
+    Ok(info)
 }
 
 /// Sends keystrokes. The bytes are base64 so control characters survive JSON.

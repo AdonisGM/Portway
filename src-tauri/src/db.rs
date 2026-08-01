@@ -114,6 +114,41 @@ fn migrate(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    if version < 4 {
+        // Port forwards. A tunnel belongs to a host because that is the
+        // connection it rides, and goes with it — a forward through a server
+        // that no longer exists has nothing to forward through.
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE tunnels (
+               id           INTEGER PRIMARY KEY AUTOINCREMENT,
+               label        TEXT    NOT NULL,
+               host_id      INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+               -- 'local'   listen here, connect from the far end   (ssh -L)
+               -- 'remote'  listen there, connect from this end     (ssh -R)
+               -- 'dynamic' listen here as a SOCKS5 proxy           (ssh -D)
+               kind         TEXT    NOT NULL,
+               -- Where the listening socket binds. Loopback unless the user
+               -- deliberately widened it; the far side of a remote forward is
+               -- further limited by the server's own GatewayPorts setting.
+               bind_address TEXT    NOT NULL DEFAULT '127.0.0.1',
+               bind_port    INTEGER NOT NULL,
+               -- Where connections are delivered. NULL for dynamic, which is
+               -- told by each client where it wants to go.
+               target_host  TEXT,
+               target_port  INTEGER,
+               -- 'manual' | 'session' (a session to this host opens) | 'launch'
+               autostart    TEXT    NOT NULL DEFAULT 'manual',
+               created_at   INTEGER NOT NULL,
+               updated_at   INTEGER NOT NULL
+             );
+             CREATE UNIQUE INDEX idx_tunnels_label ON tunnels(label);
+             CREATE INDEX idx_tunnels_host ON tunnels(host_id);
+             PRAGMA user_version = 4;
+             COMMIT;",
+        )?;
+    }
+
     Ok(())
 }
 

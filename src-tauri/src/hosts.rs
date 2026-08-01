@@ -1,10 +1,11 @@
 use rusqlite::{params, Connection, Row};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::db::{now_ms, Db};
 use crate::error::{Error, Result};
 use crate::keychain;
 use crate::models::{Host, HostInput};
+use crate::tunnels;
 
 const COLUMNS: &str = "id, name, address, port, user, group_id, auth, key_path, jump_host, \
                        run_on_connect, agent_forwarding, keep_alive, save_to_keychain, \
@@ -176,13 +177,20 @@ pub fn update_host(db: State<'_, Db>, id: i64, input: HostInput) -> Result<Host>
 }
 
 #[tauri::command]
-pub fn delete_host(db: State<'_, Db>, id: i64) -> Result<()> {
+pub fn delete_host(app: AppHandle, db: State<'_, Db>, id: i64) -> Result<()> {
     let conn = db.0.lock().unwrap();
+    // Read before the delete: `ON DELETE CASCADE` takes the rows away, and a
+    // tunnel's listener is not in the database — it is a bound port that would
+    // stay bound with nothing left able to close it.
+    let tunnels = tunnels::ids_for_host(&conn, id);
     let changed = conn.execute("DELETE FROM hosts WHERE id = ?1", params![id])?;
     if changed == 0 {
         return Err(Error::NotFound(id));
     }
     drop(conn);
+    for tunnel in tunnels {
+        tunnels::stop(&app, tunnel);
+    }
     // Best effort: the host is gone either way, and a stranded keychain entry
     // is inert. Failing the delete over it would leave the user with a host
     // they cannot remove.

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Portway">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-7 -7 46 46" width="46" height="46" role="img" aria-label="Portway">
   <!--
     The source every icon in `icons/` is generated from, with
     `npx tauri icon src-tauri/app-icon.svg`.
@@ -12,6 +12,12 @@
     drawn; only the hue changed, from amber and pink to the app's own green. The
     middle stop is the accent token exactly, so the icon and everything the UI
     paints accent are the same colour rather than nearly the same.
+
+    The drawing itself still sits on 0..32; the viewBox is the thing that grew,
+    to 46 square centred on the same point. That leaves the glyph at 70% of the
+    tile, which is the margin every other icon in a Dock has and this one did
+    not. Padding the canvas rather than scaling the rectangles keeps every edge
+    on an integer coordinate.
   -->
   <defs>
     <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="32" y2="32">

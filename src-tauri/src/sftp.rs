@@ -1,5 +1,6 @@
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex};
 
 use russh_sftp::client::error::Error as RawError;
 use russh_sftp::client::fs::Metadata;
@@ -331,6 +332,9 @@ struct ProgressEvent {
 /// limit is on the whole transfer rather than per file, or a folder of small
 /// files would emit two events each and flood exactly when it matters least.
 const PROGRESS_EVERY: std::time::Duration = std::time::Duration::from_millis(120);
+
+/// How many delete requests are allowed on the wire at once. See `remove`.
+const DELETE_LANES: usize = 3;
 
 /// Carries a transfer's progress to the window that asked for it.
 ///
@@ -961,27 +965,80 @@ pub async fn remove(app: &AppHandle, session_id: &str, path: &str, is_dir: bool)
     }
 
     let total = (files.len() + dirs.len()) as u32;
-    let mut progress = Progress::new(app, session_id, "delete", &window, total);
-    let mut removed = 0u64;
+    let removed = total as u64;
+    let progress = Arc::new(Mutex::new(Progress::new(
+        app,
+        session_id,
+        "delete",
+        &window,
+        total,
+    )));
 
-    for file in &files {
-        progress.start(name_of(file), 0);
-        sftp.remove_file(file)
-            .await
-            .map_err(|e| Error::Ssh(format!("could not delete {file}: {}", tidy(e))))?;
-        progress.finished_file();
-        removed += 1;
+    // Files go three at a time. SFTP has no recursive delete — the protocol
+    // offers one file and one empty directory per request and nothing else — so
+    // a tree of six thousand entries is six thousand round trips, and sending
+    // them one after another means paying the network's latency six thousand
+    // times over. On a link 40ms from the server that is four minutes of
+    // waiting for work the server itself does instantly.
+    //
+    // Replies are matched to requests by id, and ids come from an atomic, so
+    // several can be in flight on the one session. Three rather than more
+    // because the gain flattens quickly and a server is entitled to its own
+    // limits: this is somebody's box, not a benchmark.
+    let sftp = Arc::new(sftp);
+    let files = Arc::new(files);
+    let cursor = Arc::new(AtomicUsize::new(0));
+    let mut lanes = tokio::task::JoinSet::new();
+    for _ in 0..DELETE_LANES {
+        let sftp = Arc::clone(&sftp);
+        let files = Arc::clone(&files);
+        let cursor = Arc::clone(&cursor);
+        let progress = Arc::clone(&progress);
+        lanes.spawn(async move {
+            loop {
+                let next = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(file) = files.get(next) else { return Ok(()) };
+                sftp.remove_file(file)
+                    .await
+                    .map_err(|e| Error::Ssh(format!("could not delete {file}: {}", tidy(e))))?;
+                // Held only to count — no await happens inside the lock.
+                let mut p = progress.lock().unwrap();
+                p.start(name_of(file), 0);
+                p.finished_file();
+            }
+        });
     }
 
-    // Deepest first: a directory is only empty once everything found beneath it
-    // has gone, and the walk found them the other way round.
+    // The first failure ends the whole delete: the other lanes would be
+    // emptying a tree that is not going to come out anyway.
+    while let Some(joined) = lanes.join_next().await {
+        match joined {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                lanes.abort_all();
+                return Err(e);
+            }
+            Err(e) => {
+                lanes.abort_all();
+                return Err(Error::Ssh(format!("a delete did not finish: {e}")));
+            }
+        }
+    }
+
+    // Directories stay one at a time, deepest first. A directory can only be
+    // removed once it is empty, so this order is a real dependency rather than
+    // a preference — and the walk found them the other way round. There are
+    // always far fewer of these than files, which is why the lanes above are
+    // where the time actually was.
     for dir in dirs.iter().rev() {
-        progress.start(name_of(dir), 0);
+        {
+            let mut p = progress.lock().unwrap();
+            p.start(name_of(dir), 0);
+        }
         sftp.remove_dir(dir)
             .await
             .map_err(|e| Error::Ssh(format!("could not delete {dir}: {}", tidy(e))))?;
-        progress.finished_file();
-        removed += 1;
+        progress.lock().unwrap().finished_file();
     }
     Ok(removed)
 }

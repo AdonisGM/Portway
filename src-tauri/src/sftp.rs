@@ -669,6 +669,44 @@ fn name_of(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
+/// The filename to give the scratch copy of a file being edited — or a refusal.
+///
+/// The name comes from the far end. A remote path is `/`-separated whatever the
+/// server runs, so splitting on `/` leaves one component on Unix and the check
+/// below would never fire; on Windows it is not enough, and that is the whole
+/// point. `\` is a path separator there, `..` is not normalised away by
+/// `Path::join`, and a component like `C:\Users\Public\evil.exe` is *absolute*,
+/// which makes `join` discard the scratch directory entirely and return the
+/// pushed path. All three are legal characters in a Linux filename, so a
+/// hostile — or merely compromised — server can name a file
+/// `..\..\..\Start Menu\Programs\Startup\updater.exe`, and a single click on
+/// Edit would write the server's bytes there and `launch` would run them.
+///
+/// So the name is required to be one ordinary component and nothing else.
+/// Refusing is the right answer rather than sanitising into some nearby name:
+/// the file the user asked to edit is not the file that would be opened, and
+/// the honest outcome is to say what is wrong with it.
+fn scratch_name(remote: &str) -> Result<&str> {
+    let name = remote.rsplit('/').next().unwrap_or("");
+    let refuse = |why: &str| {
+        Err(Error::Invalid(format!(
+            "refusing to edit {remote}: its name {why}. Rename it on the server, or download it \
+             instead."
+        )))
+    };
+
+    if name.is_empty() || name == "." || name == ".." {
+        return refuse("is not a file name");
+    }
+    // `:` alongside the separators because on Windows it is what makes a
+    // component drive-absolute, and a drive letter is the shortest escape of
+    // all. NUL because it terminates a path before the OS ever sees the rest.
+    if name.contains(['/', '\\', ':', '\0']) {
+        return refuse("contains a path separator");
+    }
+    Ok(name)
+}
+
 /// Joins a remote directory and a name. Remote paths are always `/`-separated,
 /// whatever the local platform uses, so this cannot go through `PathBuf`.
 fn join_remote(dir: &str, name: &str) -> String {
@@ -883,7 +921,7 @@ pub async fn edit(
         )));
     }
 
-    let name = remote.rsplit('/').next().unwrap_or("file");
+    let name = scratch_name(remote)?;
     let dir = crate::db::app_dir().join("edit").join(session_id);
     tokio::fs::create_dir_all(&dir).await?;
     let local = dir.join(name);
@@ -1208,7 +1246,36 @@ async fn removing(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -
 
 #[cfg(test)]
 mod tests {
-    use super::{owner_group, parse_table};
+    use super::{owner_group, parse_table, scratch_name};
+
+    #[test]
+    fn keeps_an_ordinary_name() {
+        assert_eq!(scratch_name("/var/log/nginx/access.log").unwrap(), "access.log");
+        assert_eq!(scratch_name("notes.txt").unwrap(), "notes.txt");
+        // Legal, and not an escape: only a *leading* pair of dots as the whole
+        // name is a parent reference.
+        assert_eq!(scratch_name("/tmp/..hidden").unwrap(), "..hidden");
+        assert_eq!(scratch_name("/tmp/report.2026.tar.gz").unwrap(), "report.2026.tar.gz");
+    }
+
+    /// The names a server would choose if it wanted to write outside the
+    /// scratch directory. Every one of them is a legal Linux filename, and on
+    /// Windows every one of them escapes.
+    #[test]
+    fn refuses_a_name_that_is_a_path() {
+        for hostile in [
+            r"/home/user/..\..\..\Start Menu\Programs\Startup\updater.exe",
+            r"/home/user/C:\Users\Public\evil.exe",
+            r"/home/user/subdir\payload.dll",
+            "/home/user/..",
+            "/home/user/.",
+            "/home/user/",
+            "",
+        ] {
+            let refused = scratch_name(hostile).unwrap_err().to_string();
+            assert!(refused.contains("refusing to edit"), "{hostile:?} → {refused}");
+        }
+    }
 
     /// A real `/etc/passwd`, including the lines that are not accounts.
     #[test]

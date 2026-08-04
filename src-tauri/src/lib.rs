@@ -18,9 +18,10 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 /// Hosts are persisted, SSH and SFTP are live, and every command that reaches
-/// a host is written to the audit trail in `command_log`. Key passphrases go to
-/// the OS keychain (`keychain.rs`) and never to the database. Still ahead:
-/// password auth, which is refused with a message rather than guessed at.
+/// a host is written to the audit trail in `command_log`. Passwords and key
+/// passphrases go to the OS keychain (`keychain.rs`) and never to the database.
+/// Still ahead: ssh-agent auth, which is refused with a message rather than
+/// guessed at.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

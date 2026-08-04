@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 /// "credentials always live in the OS keychain; the app stores only
 /// references", so the database keeps the auth *method* and the key path, and
 /// nothing that would be a secret in plaintext. `keychain.rs` is where the
-/// secret half will attach.
+/// secret half attaches.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Host {
@@ -90,6 +90,10 @@ pub struct HostInput {
     /// clear anything. Clearing is what `unlock_via_keychain: false` does.
     #[serde(default)]
     pub passphrase: Option<Secret>,
+    /// The account password, travelling the same way and under the same rules,
+    /// with `save_to_keychain` as its toggle instead.
+    #[serde(default)]
+    pub password: Option<Secret>,
 }
 
 const GROUPS: [&str; 4] = ["prod", "staging", "dev", "home"];
@@ -125,6 +129,10 @@ impl HostInput {
 
     /// Trims the free-text fields and drops blanks to NULL, so the database
     /// never holds `""` where the rest of the app tests for absence.
+    ///
+    /// The two secrets are left exactly as typed. A password may legitimately
+    /// begin or end with a space, and trimming one here would surface as the
+    /// server rejecting a password the user is certain is right.
     pub fn normalized(mut self) -> Self {
         self.name = self.name.trim().to_string();
         self.address = self.address.trim().to_string();

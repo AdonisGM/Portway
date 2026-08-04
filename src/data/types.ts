@@ -36,14 +36,16 @@ export interface Host {
 
 /** What the form sends on save — a Host without the server-assigned fields. */
 /**
- * Asymmetric with `Host` on purpose: the passphrase travels in and never comes
- * back. It is written to the OS keychain, never to a column, so there is
- * nothing to read it out of — and the form is not meant to redisplay a secret
+ * Asymmetric with `Host` on purpose: the two secrets travel in and never come
+ * back. They are written to the OS keychain, never to a column, so there is
+ * nothing to read them out of — and the form is not meant to redisplay a secret
  * anyway. Empty or omitted means "leave what is stored alone"; clearing one is
- * what turning `unlockViaKeychain` off does.
+ * what turning its toggle off does — `unlockViaKeychain` for the passphrase,
+ * `saveToKeychain` for the password.
  */
 export type HostInput = Omit<Host, 'id' | 'lastUsedAt' | 'createdAt' | 'updatedAt'> & {
   passphrase?: string | null
+  password?: string | null
 }
 
 /**

@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 use crate::db::{now_ms, Db};
 use crate::error::{Error, Result};
 use crate::keychain;
-use crate::models::{Host, HostInput};
+use crate::models::{Host, HostInput, Secret};
 use crate::tunnels;
 
 const COLUMNS: &str = "id, name, address, port, user, group_id, auth, key_path, jump_host, \
@@ -105,25 +105,44 @@ pub fn create_host(db: State<'_, Db>, input: HostInput) -> Result<Host> {
     // does, so the database lock is released first — otherwise every other
     // query in the app waits behind a dialog.
     drop(conn);
-    store_passphrase(host.id, &input).map_err(saved_but)?;
+    store_secrets(host.id, &input).map_err(saved_but)?;
     Ok(host)
 }
 
-/// Applies the form's intent for the passphrase. The secret goes to the OS
-/// keychain and never to a column — `INSERT`/`UPDATE` above bind every field of
-/// `HostInput` except this one.
+/// Applies the form's intent for both secrets. They go to the OS keychain and
+/// never to a column — `INSERT`/`UPDATE` above bind every field of `HostInput`
+/// except these two.
 ///
 /// Absent or empty means "leave what is stored alone", because the form has no
-/// way to show an existing passphrase: the box is empty every time a host is
-/// opened for editing, and treating that as "clear it" would silently drop the
-/// secret on any unrelated edit. Turning "Unlock via keychain" off is the
-/// deliberate way to forget one.
-fn store_passphrase(id: i64, input: &HostInput) -> Result<()> {
-    if !input.unlock_via_keychain {
-        return keychain::forget_passphrase(id);
+/// way to show an existing secret: the box is empty every time a host is opened
+/// for editing, and treating that as "clear it" would silently drop the secret
+/// on any unrelated edit. Turning the matching toggle off is the deliberate way
+/// to forget one.
+///
+/// Each slot is also cleared when the host stops using it, the way the form
+/// already nulls `key_path` for non-key auth: a host switched from Password to
+/// Private key must not leave a live password sitting in the credential store.
+fn store_secrets(id: i64, input: &HostInput) -> Result<()> {
+    store(
+        keychain::Slot::Passphrase,
+        id,
+        input.auth == "key" && input.unlock_via_keychain,
+        input.passphrase.as_ref(),
+    )?;
+    store(
+        keychain::Slot::Password,
+        id,
+        input.auth == "password" && input.save_to_keychain,
+        input.password.as_ref(),
+    )
+}
+
+fn store(slot: keychain::Slot, id: i64, wanted: bool, secret: Option<&Secret>) -> Result<()> {
+    if !wanted {
+        return keychain::forget(slot, id);
     }
-    match &input.passphrase {
-        Some(secret) if !secret.is_empty() => keychain::set_passphrase(id, secret.expose()),
+    match secret {
+        Some(secret) if !secret.is_empty() => keychain::set(slot, id, secret.expose()),
         _ => Ok(()),
     }
 }
@@ -131,7 +150,7 @@ fn store_passphrase(id: i64, input: &HostInput) -> Result<()> {
 /// The row is already written by the time the keychain is touched, so a refused
 /// prompt must not read as "nothing happened".
 fn saved_but(e: Error) -> Error {
-    Error::Keychain(format!("{e} — the host was saved, but its passphrase was not"))
+    Error::Keychain(format!("{e} — the host was saved, but its credentials were not"))
 }
 
 #[tauri::command]
@@ -172,7 +191,7 @@ pub fn update_host(db: State<'_, Db>, id: i64, input: HostInput) -> Result<Host>
     }
     let host = fetch(&conn, id)?;
     drop(conn);
-    store_passphrase(id, &input).map_err(saved_but)?;
+    store_secrets(id, &input).map_err(saved_but)?;
     Ok(host)
 }
 
@@ -194,8 +213,10 @@ pub fn delete_host(app: AppHandle, db: State<'_, Db>, id: i64) -> Result<()> {
     }
     // Best effort: the host is gone either way, and a stranded keychain entry
     // is inert. Failing the delete over it would leave the user with a host
-    // they cannot remove.
-    let _ = keychain::forget_passphrase(id);
+    // they cannot remove. Both slots, because a host that changed auth method
+    // over its life may have left an entry in either.
+    let _ = keychain::forget(keychain::Slot::Passphrase, id);
+    let _ = keychain::forget(keychain::Slot::Password, id);
     crate::logging::info("db", "host deleted", Some(&format!("host={id} tunnels stopped={}", stopped)));
     Ok(())
 }

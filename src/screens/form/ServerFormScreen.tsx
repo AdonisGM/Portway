@@ -169,8 +169,11 @@ export function ServerFormScreen() {
     try {
       if (editing) await updateHost(editing.id, input)
       else await createHost(input)
-      // Drop them as soon as the keychain has them, so a secret does not sit
-      // in component state for as long as the app is open.
+      // Dropped as soon as the keychain has them, so a secret does not sit in
+      // component state for as long as the app is open. Only on the way out:
+      // a save that failed leaves the boxes filled on purpose, because the
+      // thing that failed is usually the label, and clearing what was typed
+      // would make an unrelated error cost the user their password.
       setPassphrase('')
       setPassword('')
       goScreen('servers')

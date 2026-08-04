@@ -8,6 +8,7 @@ use russh::{ChannelMsg, Disconnect, MethodKind, MethodSet};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
+use zeroize::Zeroizing;
 
 use crate::audit::{self, Kind, LineReader, Origin};
 use crate::db::Db;
@@ -320,7 +321,22 @@ pub async fn dial(
 
     let auth = Span::start("ssh", format!("authenticate {}@{addr}", host.user));
     match authenticate(&mut handle, host).await {
-        Ok(()) => auth.done(Level::Info, Some(&format!("method={}", host.auth))),
+        Ok(method) => {
+            auth.done(Level::Info, Some(&format!("method={method}")));
+            // The entry written before the handshake records what the host was
+            // *set* to use. This one records what the server actually took, and
+            // the two differ every time the keyboard-interactive fallback runs.
+            let conn = db.0.lock().unwrap();
+            audit::record(
+                &conn,
+                host.id,
+                session_id,
+                Origin::System,
+                Kind::Auth,
+                "authenticated",
+                Some(&format!("method={method}")),
+            );
+        }
         Err(e) => {
             auth.failed(&e.to_string());
             return Err(e);
@@ -526,7 +542,12 @@ pub async fn connect(
     })
 }
 
-async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result<()> {
+/// Authenticates, and answers with the method that actually worked.
+///
+/// Not the same as the method the host was configured with: a host set to
+/// Password may get in by `keyboard-interactive`, and the audit trail should
+/// say which of the two happened rather than repeating the form's intent.
+async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result<&'static str> {
     match host.auth.as_str() {
         "key" => {
             let path = expand_home(host.key_path.as_deref().unwrap_or("~/.ssh/id_ed25519"));
@@ -558,7 +579,7 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
             };
 
             let read = Span::start("ssh", "read the private key");
-            let key = match load_secret_key(&path, passphrase.as_deref()) {
+            let key = match load_secret_key(&path, passphrase.as_ref().map(|p| p.as_str())) {
                 Ok(key) => {
                     read.done(Level::Debug, Some(&path.display().to_string()));
                     key
@@ -612,7 +633,7 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
                     }
                 )));
             }
-            Ok(())
+            Ok("publickey")
         }
         "password" => {
             let Some(password) = stored_secret(keychain::Slot::Password, host.id).await? else {
@@ -636,11 +657,15 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
 ///
 /// The credential store can put a system prompt on screen and block for as long
 /// as the user looks at it, so this never runs on a worker thread.
-async fn stored_secret(slot: keychain::Slot, host_id: i64) -> Result<Option<String>> {
+///
+/// `Zeroizing` so the copy this end holds is wiped when the connection attempt
+/// ends, whichever way it ended.
+async fn stored_secret(slot: keychain::Slot, host_id: i64) -> Result<Option<Zeroizing<String>>> {
     let span = Span::start("ssh", "keychain lookup");
     let found = tokio::task::spawn_blocking(move || keychain::get(slot, host_id))
         .await
-        .map_err(|e| Error::Ssh(format!("keychain lookup did not finish: {e}")))??;
+        .map_err(|e| Error::Ssh(format!("keychain lookup did not finish: {e}")))??
+        .map(Zeroizing::new);
     // Whether there was one, never what it was.
     span.done(
         Level::Debug,
@@ -665,31 +690,44 @@ async fn password_auth(
     handle: &mut Handle<ClientHandler>,
     host: &Host,
     password: &str,
-) -> Result<()> {
-    let mut offered = match handle.authenticate_none(&host.user).await {
+) -> Result<&'static str> {
+    let offered = match handle.authenticate_none(&host.user).await {
         // A server that admits anyone with no credentials at all. Rare, and
         // never what the form intended, but it has just said the connection is
-        // authenticated and there is nothing left to send.
-        Ok(AuthResult::Success) => return Ok(()),
-        Ok(AuthResult::Failure { remaining_methods, .. }) => remaining_methods,
-        Err(e) => {
-            return Err(Error::Ssh(format!("could not start authentication: {e}")));
+        // authenticated and there is nothing left to send. Said out loud,
+        // because a host that stops asking for a password is worth knowing
+        // about — it is either misconfigured or not the host it was.
+        Ok(AuthResult::Success) => {
+            logging::warn(
+                "ssh",
+                "the server let this connection in without any credentials",
+                Some(&format!("{}@{} — nothing was sent", host.user, host.address)),
+            );
+            return Ok("none");
         }
+        Ok(AuthResult::Failure { remaining_methods, .. }) => remaining_methods,
+        Err(e) => return Err(disconnected_or(e, "could not start authentication")),
     };
     logging::debug("ssh", "the server accepts", Some(&method_names(&offered)));
 
-    // An empty list is a server that named nothing rather than a server that
-    // accepts nothing: try both instead of refusing on its silence.
-    let silent = offered.is_empty();
+    // Two things are tracked across the attempt rather than one list, because a
+    // server names its methods more than once and the lists do not always
+    // agree. `named_something` is whether it has ever said anything at all — an
+    // empty list is silence, not a refusal, and silence is no reason to skip a
+    // method. `mentions_keyboard` is whether keyboard-interactive appeared in
+    // *any* of what it said: a server that lists it up front and then answers a
+    // refusal with an empty list has not withdrawn it.
+    let mut named_something = !offered.is_empty();
+    let mut mentions_keyboard = offered.contains(&MethodKind::KeyboardInteractive);
     let mut tried = false;
 
-    if silent || offered.contains(&MethodKind::Password) {
+    if !named_something || offered.contains(&MethodKind::Password) {
         tried = true;
         let span = Span::start("ssh", "password auth");
         match handle.authenticate_password(&host.user, password).await {
             Ok(AuthResult::Success) => {
                 span.done(Level::Debug, Some("accepted"));
-                return Ok(());
+                return Ok("password");
             }
             Ok(AuthResult::Failure { partial_success: true, .. }) => {
                 span.failed("accepted, but the server wants another factor");
@@ -697,15 +735,17 @@ async fn password_auth(
             }
             Ok(AuthResult::Failure { remaining_methods, .. }) => {
                 span.failed("the server did not accept it");
-                // What it will still take *after* this attempt, which is not
-                // always what it listed before one.
-                offered = remaining_methods;
+                named_something |= !remaining_methods.is_empty();
+                mentions_keyboard |= remaining_methods.contains(&MethodKind::KeyboardInteractive);
             }
-            Err(e) => return Err(Error::Ssh(format!("password auth failed: {e}"))),
+            Err(e) => return Err(disconnected_or(e, "password auth failed")),
         }
     }
 
-    if silent || offered.contains(&MethodKind::KeyboardInteractive) {
+    // Starting a method the server has ruled out spends one of the few tries it
+    // allows and gets nowhere, so this runs only where there is a reason to
+    // think it will be taken: it was named, or the server named nothing.
+    if mentions_keyboard || !named_something {
         return keyboard_interactive(handle, host, password).await;
     }
 
@@ -733,12 +773,12 @@ async fn keyboard_interactive(
     handle: &mut Handle<ClientHandler>,
     host: &Host,
     password: &str,
-) -> Result<()> {
+) -> Result<&'static str> {
     let span = Span::start("ssh", "keyboard-interactive auth");
     let mut response = handle
         .authenticate_keyboard_interactive_start(&host.user, None::<String>)
         .await
-        .map_err(|e| Error::Ssh(format!("keyboard-interactive auth failed: {e}")))?;
+        .map_err(|e| disconnected_or(e, "keyboard-interactive auth failed"))?;
     let mut sent_password = false;
 
     // Bounded because the far end decides how many rounds there are: a server
@@ -747,7 +787,7 @@ async fn keyboard_interactive(
         let answers = match response {
             KeyboardInteractiveAuthResponse::Success => {
                 span.done(Level::Debug, Some("accepted"));
-                return Ok(());
+                return Ok("keyboard-interactive");
             }
             KeyboardInteractiveAuthResponse::Failure { partial_success, .. } => {
                 span.failed(if partial_success {
@@ -760,21 +800,27 @@ async fn keyboard_interactive(
             KeyboardInteractiveAuthResponse::InfoRequest { name, instructions, prompts } => {
                 // The server's own words, and the one thing that explains a
                 // refusal after the fact — "Password expired", "Account locked",
-                // a 2FA prompt. Written down; the answers never are.
-                logging::debug(
-                    "ssh",
-                    "the server asks",
-                    Some(&describe(&name, &instructions, &prompts)),
-                );
+                // a 2FA prompt. Written down; the answers never are. Built once
+                // here because the failure below quotes the same line.
+                let asked = describe(&name, &instructions, &prompts);
+                logging::debug("ssh", "the server asks", Some(&asked));
                 match prompts.as_slice() {
                     // A banner, or an instruction with nothing to answer.
                     [] => Vec::new(),
-                    [prompt] if !prompt.echo && !sent_password => {
+                    // Asked twice for the same thing: the server refused what
+                    // was sent and is offering another go. Saying "this needs
+                    // an interactive login" here would send somebody hunting
+                    // for a second factor that does not exist, when the answer
+                    // is that the stored password is wrong.
+                    [prompt] if !prompt.echo && !asks_for_a_second_factor(&prompt.prompt) => {
+                        if sent_password {
+                            span.failed("asked for the password again");
+                            return Err(rejected(host));
+                        }
                         sent_password = true;
                         vec![password.to_string()]
                     }
                     _ => {
-                        let asked = describe(&name, &instructions, &prompts);
                         span.failed(&asked);
                         return Err(Error::Ssh(format!(
                             "the server is asking for something the app cannot answer from a \
@@ -789,7 +835,7 @@ async fn keyboard_interactive(
         response = handle
             .authenticate_keyboard_interactive_respond(answers)
             .await
-            .map_err(|e| Error::Ssh(format!("keyboard-interactive auth failed: {e}")))?;
+            .map_err(|e| disconnected_or(e, "keyboard-interactive auth failed"))?;
     }
 
     span.failed("the server kept asking");
@@ -797,6 +843,24 @@ async fn keyboard_interactive(
         "the server kept asking for more input than a stored password can answer for user '{}'",
         host.user
     )))
+}
+
+/// A connection that ended, said as that rather than as an auth failure.
+///
+/// russh reports a closed session as `SendError`/`RecvError` from whatever call
+/// happened to be in flight, and it also answers a *probe* on a dead connection
+/// with `Failure { remaining_methods: <empty> }` rather than an error — so a
+/// server that hangs up mid-handshake arrives here looking like a refusal.
+/// Blaming the password for a connection that is no longer there sends somebody
+/// retyping a password that was never sent.
+fn disconnected_or(error: russh::Error, context: &str) -> Error {
+    Error::Ssh(match error {
+        russh::Error::SendError | russh::Error::RecvError => format!(
+            "the server closed the connection during authentication. \
+             Nothing was rejected — check the host is reachable and try again ({context})."
+        ),
+        other => format!("{context}: {other}"),
+    })
 }
 
 /// Named separately from a plain rejection: the password was *right*, and
@@ -826,10 +890,39 @@ fn method_names(methods: &MethodSet) -> String {
     methods.iter().map(<&str>::from).collect::<Vec<_>>().join(", ")
 }
 
+/// Whether a prompt is asking for a second factor rather than a password.
+///
+/// The distinction decides where the stored password goes. A PAM stack that
+/// runs its one-time-code module before `pam_unix` opens with "Verification
+/// code:", and answering that with the account password spends the password on
+/// a question it cannot satisfy — sending it to the server as the answer to a
+/// different prompt, and burning an attempt to do it.
+///
+/// This names the second factor rather than trying to recognise a password
+/// prompt, on purpose: "Password:" is translated on plenty of hosts, and a test
+/// for the English word would refuse a login that works today. The words below
+/// are the ones the modules print, and a prompt this does not recognise is
+/// answered as before.
+fn asks_for_a_second_factor(prompt: &str) -> bool {
+    let prompt = prompt.to_lowercase();
+    [
+        "verification", "one-time", "one time", "otp", "token", "authenticator", "2fa",
+        "second factor", "duo", "yubikey", "passcode",
+    ]
+    .iter()
+    .any(|needle| prompt.contains(needle))
+}
+
 /// Server-supplied text, flattened to one line for a log or an error. Prompts
 /// are named but never their answers, and `echo` is noted because it is the
 /// difference between "type your password" and "type the code from your phone".
+///
+/// Clipped, because this is the far end's text and it ends up in an error the
+/// form renders: `instructions` may be a whole screenful of banner, and there
+/// is nothing to stop a server from sending one.
 fn describe(name: &str, instructions: &str, prompts: &[Prompt]) -> String {
+    const MAX: usize = 300;
+
     let mut parts: Vec<String> = Vec::new();
     for text in [name, instructions] {
         let text = text.trim();
@@ -842,10 +935,16 @@ fn describe(name: &str, instructions: &str, prompts: &[Prompt]) -> String {
         parts.push(if prompt.echo { format!("{text} [visible]") } else { text });
     }
     if parts.is_empty() {
-        "nothing at all".into()
-    } else {
-        parts.join(" · ")
+        return "nothing at all".into();
     }
+
+    let line = parts.join(" · ");
+    if line.chars().count() <= MAX {
+        return line;
+    }
+    // On a character boundary: a banner can hold anything, and half a UTF-8
+    // sequence in a log file is worse than a shorter line.
+    line.chars().take(MAX).collect::<String>() + "…"
 }
 
 /// Base64 without pulling in a crate for it.
@@ -963,6 +1062,12 @@ mod tests {
     enum Accepts {
         Password,
         KeyboardInteractive,
+        /// A PAM stack that runs its one-time-code module first: the opening
+        /// question is not the password, and nothing here can answer it.
+        SecondFactorFirst,
+        /// A PAM stack with `retry` set: a wrong password is asked for again
+        /// rather than refused outright.
+        AnotherGo,
         /// Neither — a server that offers password login and turns down the
         /// password.
         Nothing,
@@ -975,6 +1080,13 @@ mod tests {
         /// The exchange opens with a promptless round, the way a PAM stack
         /// sends its banner before it asks anything.
         asked: bool,
+        /// Set if the account password is ever received. The point of the
+        /// second-factor case is that it never is.
+        saw_password: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    fn prompt(text: &'static str) -> Cow<'static, [(Cow<'static, str>, bool)]> {
+        Cow::Owned(vec![(text.into(), false)])
     }
 
     impl server::Server for Sshd {
@@ -1005,29 +1117,51 @@ mod tests {
             _submethods: &str,
             response: Option<server::Response<'a>>,
         ) -> std::result::Result<Auth, Self::Error> {
-            if self.accepts != Accepts::KeyboardInteractive {
-                return Ok(Auth::reject());
-            }
-            let Some(mut answers) = response else {
-                // Opening round: a banner and nothing to answer.
-                return Ok(Auth::Partial {
-                    name: "".into(),
-                    instructions: "Portway test server".into(),
-                    prompts: Cow::Owned(Vec::new()),
-                });
+            let asking = |text: &'static str| Auth::Partial {
+                name: "".into(),
+                instructions: "".into(),
+                prompts: prompt(text),
             };
-            if !self.asked {
-                self.asked = true;
-                return Ok(Auth::Partial {
-                    name: "".into(),
-                    instructions: "".into(),
-                    prompts: Cow::Owned(vec![("Password: ".into(), false)]),
-                });
+
+            let mut answers = match response {
+                // Opening round: a banner and nothing to answer, which is how
+                // a PAM stack commonly starts.
+                None => {
+                    return Ok(match self.accepts {
+                        Accepts::KeyboardInteractive => Auth::Partial {
+                            name: "".into(),
+                            instructions: "Portway test server".into(),
+                            prompts: Cow::Owned(Vec::new()),
+                        },
+                        Accepts::SecondFactorFirst => asking("Verification code: "),
+                        Accepts::AnotherGo => asking("Password: "),
+                        _ => Auth::reject(),
+                    })
+                }
+                Some(answers) => answers,
+            };
+
+            let given = answers.next();
+            if given.as_deref() == Some(PASSWORD.as_bytes()) {
+                self.saw_password.store(true, std::sync::atomic::Ordering::SeqCst);
             }
-            Ok(match answers.next() {
-                Some(given) if given == PASSWORD.as_bytes() => Auth::Accept,
-                _ => Auth::reject(),
-            })
+
+            match self.accepts {
+                Accepts::KeyboardInteractive => {
+                    if !self.asked {
+                        self.asked = true;
+                        return Ok(asking("Password: "));
+                    }
+                    Ok(match given {
+                        Some(given) if given == PASSWORD.as_bytes() => Auth::Accept,
+                        _ => Auth::reject(),
+                    })
+                }
+                // Asks the same thing again rather than refusing, however many
+                // times it is answered.
+                Accepts::AnotherGo => Ok(asking("Password: ")),
+                _ => Ok(Auth::reject()),
+            }
         }
     }
 
@@ -1039,7 +1173,10 @@ mod tests {
     fn scratch_home() {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
-            let dir = std::env::temp_dir().join("portway-ssh-tests");
+            // Named for this process: two `cargo test` runs at once would
+            // otherwise share one known_hosts and one of them would clear it
+            // out from under the other.
+            let dir = std::env::temp_dir().join(format!("portway-ssh-tests-{}", std::process::id()));
             std::fs::create_dir_all(dir.join(".ssh")).unwrap();
             // Entries are keyed by host *and port*, and the port is a new one
             // every run, so the file would only ever grow.
@@ -1077,7 +1214,12 @@ mod tests {
 
     /// Runs the server on a loopback port and connects to it exactly as `dial`
     /// does — same handler, same host-key policy — stopping short of auth.
-    async fn connected(accepts: Accepts, advertises: &[MethodKind]) -> Handle<ClientHandler> {
+    /// The handle, and the flag that says whether the server ever received the
+    /// account password.
+    async fn connected(
+        accepts: Accepts,
+        advertises: &[MethodKind],
+    ) -> (Handle<ClientHandler>, Arc<std::sync::atomic::AtomicBool>) {
         scratch_home();
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -1091,7 +1233,8 @@ mod tests {
             auth_rejection_time_initial: Some(std::time::Duration::ZERO),
             ..Default::default()
         });
-        let mut sshd = Sshd { accepts, asked: false };
+        let saw_password = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut sshd = Sshd { accepts, asked: false, saw_password: saw_password.clone() };
         tokio::spawn(async move { sshd.run_on_socket(config, &listener).await });
 
         let handler = ClientHandler {
@@ -1100,34 +1243,40 @@ mod tests {
             known_hosts: KnownHostsPolicy { host: "127.0.0.1".into(), port, strict: false },
             forward_to: None,
         };
-        client::connect(Arc::new(client::Config::default()), ("127.0.0.1", port), handler)
-            .await
-            .expect("the test server completes a handshake")
+        let handle =
+            client::connect(Arc::new(client::Config::default()), ("127.0.0.1", port), handler)
+                .await
+                .expect("the test server completes a handshake");
+        (handle, saw_password)
     }
 
     #[tokio::test]
     async fn logs_in_with_the_password_method() {
-        let mut handle = connected(Accepts::Password, &[MethodKind::Password]).await;
-        password_auth(&mut handle, &host(), PASSWORD).await.expect("logs in");
+        let (mut handle, _) = connected(Accepts::Password, &[MethodKind::Password]).await;
+        let method = password_auth(&mut handle, &host(), PASSWORD).await.expect("logs in");
+        assert_eq!(method, "password");
     }
 
     /// The configuration this was written for: the server lists `password`,
     /// turns one down anyway, and means `keyboard-interactive`.
     #[tokio::test]
     async fn falls_back_to_keyboard_interactive() {
-        let mut handle = connected(
+        let (mut handle, _) = connected(
             Accepts::KeyboardInteractive,
             &[MethodKind::Password, MethodKind::KeyboardInteractive],
         )
         .await;
-        password_auth(&mut handle, &host(), PASSWORD).await.expect("logs in");
+        let method = password_auth(&mut handle, &host(), PASSWORD).await.expect("logs in");
+        // Reported as what it was, not as what the host was set to: the audit
+        // trail says which of the two methods the server actually took.
+        assert_eq!(method, "keyboard-interactive");
     }
 
     /// And the same server with `PasswordAuthentication no`, which does not
     /// list `password` at all — nothing to fall back *from*.
     #[tokio::test]
     async fn logs_in_where_only_keyboard_interactive_is_offered() {
-        let mut handle =
+        let (mut handle, _) =
             connected(Accepts::KeyboardInteractive, &[MethodKind::KeyboardInteractive]).await;
         password_auth(&mut handle, &host(), PASSWORD).await.expect("logs in");
     }
@@ -1136,18 +1285,58 @@ mod tests {
     /// sends somebody to the server's logs if the message is vague.
     #[tokio::test]
     async fn says_so_when_the_password_is_wrong() {
-        let mut handle = connected(Accepts::Nothing, &[MethodKind::Password]).await;
+        let (mut handle, _) = connected(Accepts::Nothing, &[MethodKind::Password]).await;
         let error = password_auth(&mut handle, &host(), "wrong").await.unwrap_err().to_string();
         assert!(error.contains("rejected the password"), "{error}");
+    }
+
+    /// The same verdict when the refusal arrives as another prompt instead of a
+    /// failure — `pam_unix` with `retry` asks again rather than giving up, and
+    /// answering that with "this host needs an interactive login" would send
+    /// somebody looking for a second factor that is not there.
+    #[tokio::test]
+    async fn a_repeated_prompt_is_a_refusal_not_a_second_factor() {
+        let (mut handle, _) = connected(Accepts::AnotherGo, &[MethodKind::KeyboardInteractive]).await;
+        let error = password_auth(&mut handle, &host(), "wrong").await.unwrap_err().to_string();
+        assert!(error.contains("rejected the password"), "{error}");
+    }
+
+    /// A stack that asks for the one-time code first. The password must not be
+    /// typed into that box: it cannot answer the question, and it would reach
+    /// the server as the answer to a different one.
+    #[tokio::test]
+    async fn never_answers_a_second_factor_with_the_password() {
+        let (mut handle, saw_password) =
+            connected(Accepts::SecondFactorFirst, &[MethodKind::KeyboardInteractive]).await;
+        let error = password_auth(&mut handle, &host(), PASSWORD).await.unwrap_err().to_string();
+        assert!(error.contains("cannot answer"), "{error}");
+        // Quoted back so the message names what was actually asked.
+        assert!(error.contains("Verification code"), "{error}");
+        assert!(
+            !saw_password.load(std::sync::atomic::Ordering::SeqCst),
+            "the password reached the server as the answer to the code prompt"
+        );
     }
 
     /// A server that will not take a password at all is not the same failure,
     /// and pointing at the password would be the wrong advice.
     #[tokio::test]
     async fn distinguishes_a_server_that_offers_no_password_login() {
-        let mut handle = connected(Accepts::Nothing, &[MethodKind::PublicKey]).await;
+        let (mut handle, _) = connected(Accepts::Nothing, &[MethodKind::PublicKey]).await;
         let error = password_auth(&mut handle, &host(), PASSWORD).await.unwrap_err().to_string();
         assert!(error.contains("does not offer password login"), "{error}");
         assert!(error.contains("publickey"), "{error}");
+    }
+
+    /// Prompt text decides where the password goes, so the two kinds have to
+    /// stay apart — including the ones that are not the English word.
+    #[test]
+    fn tells_a_code_prompt_from_a_password_prompt() {
+        for asks in ["Verification code: ", "One-time password: ", "Duo passcode: ", "OTP:"] {
+            assert!(asks_for_a_second_factor(asks), "{asks}");
+        }
+        for asks in ["Password: ", "Mot de passe : ", "Passwort:", "密码：", "Contraseña:"] {
+            assert!(!asks_for_a_second_factor(asks), "{asks}");
+        }
     }
 }

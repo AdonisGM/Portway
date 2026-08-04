@@ -69,13 +69,14 @@ pub fn list_hosts(db: State<'_, Db>) -> Result<Vec<Host>> {
 }
 
 #[tauri::command]
-pub fn create_host(db: State<'_, Db>, input: HostInput) -> Result<Host> {
+pub async fn create_host(db: State<'_, Db>, input: HostInput) -> Result<Host> {
     let input = input.normalized();
     input.validate()?;
 
-    let conn = db.0.lock().unwrap();
-    let now = now_ms();
-    conn.execute(
+    let host = {
+        let conn = db.0.lock().unwrap();
+        let now = now_ms();
+        conn.execute(
         "INSERT INTO hosts (name, address, port, user, group_id, auth, key_path, jump_host,
                             run_on_connect, agent_forwarding, keep_alive, save_to_keychain,
                             unlock_via_keychain, favorite, last_used_at, created_at, updated_at)
@@ -98,14 +99,15 @@ pub fn create_host(db: State<'_, Db>, input: HostInput) -> Result<Host> {
             now,
         ],
     )
-    .map_err(|e| map_conflict(e, &input.name))?;
+        .map_err(|e| map_conflict(e, &input.name))?;
 
-    let host = fetch(&conn, conn.last_insert_rowid())?;
-    // The keychain can put a prompt on screen and wait as long as the user
-    // does, so the database lock is released first — otherwise every other
-    // query in the app waits behind a dialog.
-    drop(conn);
-    store_secrets(host.id, &input).map_err(saved_but)?;
+        // The lock is released with this block, before the keychain is touched:
+        // that call can put a prompt on screen and wait as long as the user
+        // does, and every other query in the app would queue behind the dialog.
+        fetch(&conn, conn.last_insert_rowid())?
+    };
+
+    store_secrets_off_thread(host.id, input).await?;
     Ok(host)
 }
 
@@ -123,18 +125,39 @@ pub fn create_host(db: State<'_, Db>, input: HostInput) -> Result<Host> {
 /// already nulls `key_path` for non-key auth: a host switched from Password to
 /// Private key must not leave a live password sitting in the credential store.
 fn store_secrets(id: i64, input: &HostInput) -> Result<()> {
-    store(
+    // Both slots are attempted whatever the other does. A refused prompt on the
+    // one being cleared must not stop the one being written — that would drop
+    // the secret the user just typed on the way past — and an error has to name
+    // which slot it was, because "the credentials were not saved" leaves the
+    // caller unable to tell which of two states the host is in. `delete_host`
+    // treats them independently for the same reason.
+    let passphrase = store(
         keychain::Slot::Passphrase,
         id,
         input.auth == "key" && input.unlock_via_keychain,
         input.passphrase.as_ref(),
-    )?;
-    store(
+    );
+    let password = store(
         keychain::Slot::Password,
         id,
         input.auth == "password" && input.save_to_keychain,
         input.password.as_ref(),
-    )
+    );
+
+    match (passphrase, password) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(e), Ok(())) => Err(about("passphrase", e)),
+        (Ok(()), Err(e)) => Err(about("password", e)),
+        (Err(first), Err(second)) => Err(Error::Keychain(format!(
+            "{} and {}",
+            about("passphrase", first),
+            about("password", second)
+        ))),
+    }
+}
+
+fn about(slot: &str, e: Error) -> Error {
+    Error::Keychain(format!("the {slot} could not be stored: {e}"))
 }
 
 fn store(slot: keychain::Slot, id: i64, wanted: bool, secret: Option<&Secret>) -> Result<()> {
@@ -147,19 +170,33 @@ fn store(slot: keychain::Slot, id: i64, wanted: bool, secret: Option<&Secret>) -
     }
 }
 
+/// Writes both secrets, off the runtime's workers.
+///
+/// The credential store can put a system prompt on screen and wait as long as
+/// the user looks at it. The database lock is already released by the time this
+/// runs, and now the executor is not held either — `keys.rs` treats its own
+/// blocking work the same way.
+async fn store_secrets_off_thread(id: i64, input: HostInput) -> Result<()> {
+    tokio::task::spawn_blocking(move || store_secrets(id, &input))
+        .await
+        .map_err(|e| Error::Keychain(format!("the keychain write did not finish: {e}")))?
+        .map_err(saved_but)
+}
+
 /// The row is already written by the time the keychain is touched, so a refused
 /// prompt must not read as "nothing happened".
 fn saved_but(e: Error) -> Error {
-    Error::Keychain(format!("{e} — the host was saved, but its credentials were not"))
+    Error::Keychain(format!("{e} — the host was saved, but that secret was not"))
 }
 
 #[tauri::command]
-pub fn update_host(db: State<'_, Db>, id: i64, input: HostInput) -> Result<Host> {
+pub async fn update_host(db: State<'_, Db>, id: i64, input: HostInput) -> Result<Host> {
     let input = input.normalized();
     input.validate()?;
 
-    let conn = db.0.lock().unwrap();
-    let changed = conn.execute(
+    let host = {
+        let conn = db.0.lock().unwrap();
+        let changed = conn.execute(
         "UPDATE hosts SET name = ?1, address = ?2, port = ?3, user = ?4, group_id = ?5,
                           auth = ?6, key_path = ?7, jump_host = ?8, run_on_connect = ?9,
                           agent_forwarding = ?10, keep_alive = ?11, save_to_keychain = ?12,
@@ -184,14 +221,15 @@ pub fn update_host(db: State<'_, Db>, id: i64, input: HostInput) -> Result<Host>
             id,
         ],
     )
-    .map_err(|e| map_conflict(e, &input.name))?;
+        .map_err(|e| map_conflict(e, &input.name))?;
 
-    if changed == 0 {
-        return Err(Error::NotFound(id));
-    }
-    let host = fetch(&conn, id)?;
-    drop(conn);
-    store_secrets(id, &input).map_err(saved_but)?;
+        if changed == 0 {
+            return Err(Error::NotFound(id));
+        }
+        fetch(&conn, id)?
+    };
+
+    store_secrets_off_thread(id, input).await?;
     Ok(host)
 }
 

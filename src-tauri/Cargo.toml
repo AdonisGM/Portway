@@ -31,6 +31,13 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "io-util"
 # CancellationToken: one signal that both ends an accept loop and drops the
 # listener with it, so a stopped tunnel actually gives its port back.
 tokio-util = { version = "0.7", default-features = false }
+# Wipes a password out of the heap when the value holding it is dropped. Already
+# in the graph — russh's key handling pulls it — so this names a build that is
+# happening anyway. It cannot cover the copies russh's own buffers make, which
+# is why it is worth doing on the ones that can be covered rather than not at
+# all: a failed login otherwise leaves the plaintext in freed pages for the life
+# of the process, where a crash report would find it.
+zeroize = "1.9.0"
 
 [profile.release]
 codegen-units = 1

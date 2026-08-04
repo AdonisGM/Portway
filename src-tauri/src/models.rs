@@ -61,6 +61,17 @@ impl std::fmt::Debug for Secret {
     }
 }
 
+/// The heap is the other place a secret is readable from, and dropping a
+/// `String` leaves its bytes there until something else happens to reuse the
+/// page. A password arrives on every save and is gone a moment later; wiping it
+/// on the way out costs one pass over a short buffer.
+impl Drop for Secret {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.0.zeroize();
+    }
+}
+
 /// What the form sends. `id` is absent — create assigns it, update takes it
 /// separately — so the same shape serves both.
 #[derive(Debug, Clone, Deserialize)]
@@ -117,6 +128,18 @@ impl HostInput {
         }
         if !GROUPS.contains(&self.group.as_str()) {
             return Err(Error::Invalid(format!("Unknown group '{}'", self.group)));
+        }
+        // The keychain is the only place a password is kept, so a password host
+        // with the toggle off has nowhere to read one from: it would save
+        // cleanly, wipe whatever was stored, and fail on every connection after
+        // that. Refused here rather than discovered later — and until there is
+        // an ask-at-connect prompt, this is what the toggle being off means.
+        if self.auth == "password" && !self.save_to_keychain {
+            return Err(Error::Invalid(
+                "Password auth needs somewhere to keep the password — turn \"Save to system \
+                 keychain\" on, or use a private key."
+                    .into(),
+            ));
         }
         if !AUTH_METHODS.contains(&self.auth.as_str()) {
             return Err(Error::Invalid(format!(

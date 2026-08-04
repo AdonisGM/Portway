@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import type { RemoteFile } from '@/lib/api'
+import type { Principal, Principals, RemoteFile } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Field } from '@/components/ui/Field'
+import { Select, type SelectOption } from '@/components/ui/Select'
 import { ToggleField } from '@/components/ui/Toggle'
 
 /**
@@ -155,12 +156,41 @@ function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; la
   )
 }
 
+/**
+ * The picker's options: everyone the server named, and whatever the file has
+ * now whether or not that is one of them.
+ *
+ * The current id is always present as an option. A uid that appears in no list
+ * — an NFS mapping, a container's offset user, an account deleted after the
+ * file was written — is still this file's owner, and a dropdown unable to show
+ * the current value would read as though the file had none.
+ */
+function principalOptions(
+  known: Principal[],
+  current: number,
+  currentName: string | null,
+): SelectOption[] {
+  const listed = known.map((p) => ({ value: String(p.id), label: `${p.name} · ${p.id}` }))
+  if (!Number.isInteger(current) || current < 0) return listed
+  if (known.some((p) => p.id === current)) return listed
+  return [
+    { value: String(current), label: currentName ? `${currentName} · ${current}` : `${current}` },
+    ...listed,
+  ]
+}
+
+const nameFor = (known: Principal[], id: number): string | null =>
+  known.find((p) => p.id === id)?.name ?? null
+
 export function OwnerDialog({
   file,
+  principals,
   onCancel,
   onApply,
 }: {
   file: RemoteFile
+  /** `null` while the list is still being read, or when the server refused it. */
+  principals: Principals | null
   onCancel: () => void
   onApply: (uid: number, gid: number, recursive: boolean) => void
 }) {
@@ -172,6 +202,15 @@ export function OwnerDialog({
   const gidNum = Number(gid)
   const valid =
     Number.isInteger(uidNum) && uidNum >= 0 && Number.isInteger(gidNum) && gidNum >= 0
+
+  const users = principals?.users ?? []
+  const groups = principals?.groups ?? []
+  // Nothing to pick from is its own state, and a different one from "still
+  // loading": the server has answered, and the answer was that it will not say.
+  const nothingToPick = principals !== null && users.length === 0 && groups.length === 0
+
+  const ownerName = nameFor(users, uidNum) ?? file.owner
+  const groupName = nameFor(groups, gidNum) ?? file.group
 
   return (
     <ConfirmDialog
@@ -187,12 +226,38 @@ export function OwnerDialog({
         <div className="flex flex-col gap-3">
           <span className="font-mono text-mono text-faint">{file.name}</span>
 
-          {/* Numeric, because SFTP never sends the names — the same limit the
-              Owner column carries. */}
+          {/* The pickers are the way in; the numbers below stay because they
+              are what `chown` is given, and because a host whose accounts come
+              from LDAP lists nobody here. Either can drive the other. */}
+          {users.length > 0 || groups.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                label="Owner"
+                options={principalOptions(users, uidNum, file.owner)}
+                value={String(uidNum)}
+                onChange={setUid}
+                disabled={users.length === 0}
+              />
+              <Select
+                label="Group"
+                options={principalOptions(groups, gidNum, file.group)}
+                value={String(gidNum)}
+                onChange={setGid}
+                disabled={groups.length === 0}
+              />
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-3">
             <Field label="User id" value={uid} autoFocus onChange={(e) => setUid(e.target.value)} />
             <Field label="Group id" value={gid} onChange={(e) => setGid(e.target.value)} />
           </div>
+
+          {nothingToPick ? (
+            <span className="text-meta text-faint">
+              This server did not hand over /etc/passwd — type the ids.
+            </span>
+          ) : null}
 
           {file.kind === 'dir' ? (
             <ToggleField
@@ -202,9 +267,17 @@ export function OwnerDialog({
             />
           ) : null}
 
+          {/* Numbers, because numbers are what is sent. The names ride along in
+              brackets so the line can be checked against the intent. */}
           <span className="font-mono text-cell text-fg-2">
             chown {uidNum}:{gidNum}
             {recursive ? ' -R' : ''} <span className="text-faint">{file.name}</span>
+            {ownerName || groupName ? (
+              <span className="text-faint">
+                {'  '}
+                {ownerName ?? uidNum}:{groupName ?? gidNum}
+              </span>
+            ) : null}
           </span>
         </div>
       }

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { RemoteFile } from '@/lib/api'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Principals, RemoteFile } from '@/lib/api'
 import {
   LARGE_FILE,
   message,
   sftpChmod,
   sftpChown,
   sftpList,
+  sftpPrincipals,
   sftpRemove,
   sftpRename,
 } from '@/lib/api'
@@ -13,7 +14,7 @@ import { formatMtime, formatSize } from '@/lib/bytes'
 import type { Session } from '@/data/types'
 import { Chip } from '@/components/ui/Chip'
 import { StatusDot } from '@/components/ui/primitives'
-import { DataTable, type Column } from '@/components/layout/DataTable'
+import { DataTable, type Column, type SortState } from '@/components/layout/DataTable'
 import { FileIcon } from './FileIcons'
 import { useSftpColumns, type SftpColumnId } from './columns'
 import { ColumnPicker } from './ColumnPicker'
@@ -61,6 +62,52 @@ function ownerText(file: RemoteFile): string {
   return '—'
 }
 
+/**
+ * Orders two entries by one column.
+ *
+ * On the values, never on what the cell prints: `formatSize` gives `9 KB` and
+ * `412 MB`, and sorting those as text puts the megabytes first. `owner` is the
+ * exception — it is a mix of names and numbers with no single underlying value,
+ * so the string the column shows is the thing being ordered.
+ *
+ * A missing value always sorts last, in both directions. Directories have no
+ * size and some servers report no mtime; leaving those at the end keeps the
+ * rows worth reading at the top whichever way the caret points.
+ */
+function compareFiles(a: RemoteFile, b: RemoteFile, key: string): number {
+  const text = (x: string, y: string) => x.localeCompare(y, undefined, { numeric: true })
+
+  const missingLast = (x: number | null, y: number | null): number | null => {
+    if (x === null && y === null) return 0
+    if (x === null) return 1
+    if (y === null) return -1
+    return null
+  }
+
+  switch (key) {
+    case 'size': {
+      const gap = missingLast(a.size, b.size)
+      return gap ?? (a.size! - b.size!)
+    }
+    case 'modified': {
+      const gap = missingLast(a.modified, b.modified)
+      return gap ?? (a.modified! - b.modified!)
+    }
+    case 'owner':
+      return text(ownerText(a), ownerText(b))
+    case 'mode': {
+      // The octal, as a number: `755` before `1755`, and `40` before `644`.
+      const gap = missingLast(
+        a.mode === null ? null : Number(a.mode),
+        b.mode === null ? null : Number(b.mode),
+      )
+      return gap ?? Number(a.mode) - Number(b.mode)
+    }
+    default:
+      return text(a.name, b.name)
+  }
+}
+
 interface Props {
   session: Session
   /** Live width from the divider — dynamic, so it cannot be a token. */
@@ -89,6 +136,14 @@ export function SftpPane({ session, width, resizing }: Props) {
   // Held separately from `dialog` because it is a question about a file rather
   // than a change to one: answering it opens the editor, cancelling does nothing.
   const [confirmLarge, setConfirmLarge] = useState<RemoteFile | null>(null)
+  // A view preference, so it outlives a `cd` — sorting by size and then
+  // stepping into a folder must not silently drop back to name order.
+  const [sort, setSort] = useState<SortState | null>(null)
+  // The server's accounts, read once per session rather than per dialog: it is
+  // two small files, but it is still a round trip, and the Owner dialog is the
+  // kind of thing that gets opened repeatedly while getting a tree right.
+  // `null` means "not read yet"; the dialog draws its numeric fields either way.
+  const [principals, setPrincipals] = useState<Principals | null>(null)
 
   const load = useCallback(
     async (target: string, system = false) => {
@@ -113,6 +168,45 @@ export function SftpPane({ session, width, resizing }: Props) {
     if (session.status !== 'open') return
     void load('', true)
   }, [session.status, load])
+
+  // Fetched when the Owner dialog is first wanted, not on connect: most
+  // sessions never open it, and a pane that opens is not a request for the
+  // account list. A refusal is remembered as empty lists rather than retried.
+  useEffect(() => {
+    if (dialog !== 'owner' || principals !== null) return
+    let cancelled = false
+    void sftpPrincipals(session.id)
+      .then((found) => !cancelled && setPrincipals(found))
+      .catch(() => !cancelled && setPrincipals({ users: [], groups: [] }))
+    return () => {
+      cancelled = true
+    }
+  }, [dialog, principals, session.id])
+
+  /**
+   * The rows as shown: directories first whatever the sort, the way Finder and
+   * Explorer both keep them. A folder has no size and no meaningful mtime for
+   * the thing being compared, so letting them interleave by size would scatter
+   * the structure of the folder through the file list.
+   *
+   * `sort === null` is the server order — already directories-first by name —
+   * so the default costs no sort at all.
+   */
+  const rows = useMemo(() => {
+    if (!sort) return files
+    const direction = sort.dir === 'asc' ? 1 : -1
+    return [...files].sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1
+      return direction * compareFiles(a, b, sort.key)
+    })
+  }, [files, sort])
+
+  /** asc → desc → unsorted, which is the cycle `DataTable` documents. */
+  const toggleSort = (key: string) =>
+    setSort((current) => {
+      if (current?.key !== key) return { key, dir: 'asc' }
+      return current.dir === 'asc' ? { key, dir: 'desc' } : null
+    })
 
   const segments = path.split('/').filter(Boolean)
 
@@ -201,6 +295,7 @@ export function SftpPane({ session, width, resizing }: Props) {
   const RENDERERS: Record<SftpColumnId, Column<RemoteFile>> = {
     name: {
       key: 'name',
+      sortable: true,
       header: 'Name',
       className: 'cell-ellipsis',
       render: (file) => (
@@ -221,6 +316,7 @@ export function SftpPane({ session, width, resizing }: Props) {
     },
     size: {
       key: 'size',
+      sortable: true,
       header: 'Size',
       headerClassName: 'text-right',
       className: 'text-right text-muted',
@@ -228,12 +324,14 @@ export function SftpPane({ session, width, resizing }: Props) {
     },
     modified: {
       key: 'modified',
+      sortable: true,
       header: 'Modified',
       className: 'cell-ellipsis text-meta text-faint',
       render: (file) => formatMtime(file.modified),
     },
     owner: {
       key: 'owner',
+      sortable: true,
       header: 'Owner',
       className: 'cell-ellipsis text-meta text-faint',
       // Names when the server resolved them, numbers when it did not. Titled
@@ -246,6 +344,7 @@ export function SftpPane({ session, width, resizing }: Props) {
     },
     mode: {
       key: 'mode',
+      sortable: true,
       header: 'Permissions',
       className: 'text-meta text-faint',
       // Both forms, because the octal is what you type and the letters are what
@@ -340,11 +439,13 @@ export function SftpPane({ session, width, resizing }: Props) {
         </div>
       ) : (
         <DataTable
-          rows={[PARENT, ...files]}
+          rows={[PARENT, ...rows]}
           columns={columns}
           gridTemplate={cols.gridTemplate}
           rowKey={(file) => file.name}
           density="compact"
+          sort={sort}
+          onToggleSort={toggleSort}
           onRowClick={(file) => {
             if (file.name === '..') return goUp()
             if (file.kind === 'dir') {
@@ -490,6 +591,7 @@ export function SftpPane({ session, width, resizing }: Props) {
       {dialog === 'owner' && acting ? (
         <OwnerDialog
           file={acting}
+          principals={principals}
           onCancel={() => setDialog(null)}
           onApply={(uid, gid, recursive) =>
             void act(() => sftpChown(session.id, pathOf(acting), uid, gid, recursive))

@@ -40,6 +40,105 @@ pub struct RemoteFile {
     pub mode_text: Option<String>,
 }
 
+/// An account or a group, as the server names it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Principal {
+    pub id: u32,
+    pub name: String,
+}
+
+/// Who a file can be given to.
+///
+/// Both lists may be empty, and that is not an error: a server can refuse to
+/// hand over either file, and the Owner dialog still has to work — the numbers
+/// are what `chown` takes, and they are typed by hand when there is no list to
+/// pick from.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Principals {
+    pub users: Vec<Principal>,
+    pub groups: Vec<Principal>,
+}
+
+/// The accounts and groups the server knows, read out of `/etc/passwd` and
+/// `/etc/group` over the connection that is already open.
+///
+/// Read as files rather than asked for with `getent`, because SFTP is what
+/// this pane already has: `getent` needs a second channel and a binary that
+/// may not be there, and the pane would have to grow a shell to use it.
+///
+/// The cost of that choice is local accounts only. A host that gets its users
+/// from LDAP or SSSD lists them nowhere in these two files, and there the
+/// dialog falls back to what it does today — a number, typed.
+pub async fn principals(app: &AppHandle, session_id: &str) -> Result<Principals> {
+    let (sftp, _) = open(app, session_id).await?;
+
+    // Neither file failing is fatal: a locked-down host may hand over one, the
+    // other, or neither, and an Owner dialog with half a list is better than an
+    // error where a dialog should be.
+    let users = read_table(&sftp, "/etc/passwd", 2).await;
+    let groups = read_table(&sftp, "/etc/group", 2).await;
+    logging::debug(
+        "sftp",
+        "read the server's accounts",
+        Some(&format!("users={} groups={}", users.len(), groups.len())),
+    );
+
+    Ok(Principals { users, groups })
+}
+
+/// `/etc/passwd` and `/etc/group` are the same shape: colon-separated, the name
+/// first, the id at a fixed field. `id_field` says which one.
+///
+/// Anything that does not parse is skipped rather than reported. These files
+/// carry NIS compat lines (`+@staff`), comments on some systems, and the odd
+/// blank — none of which is a reason to refuse the whole list.
+async fn read_table(sftp: &SftpSession, path: &str, id_field: usize) -> Vec<Principal> {
+    match read_small(sftp, path).await {
+        Some(text) => parse_table(&text, id_field),
+        None => Vec::new(),
+    }
+}
+
+fn parse_table(text: &str, id_field: usize) -> Vec<Principal> {
+    let mut found: Vec<Principal> = text
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split(':');
+            let name = fields.next()?.trim();
+            if name.is_empty() || name.starts_with('#') || name.starts_with('+') {
+                return None;
+            }
+            let id: u32 = fields.nth(id_field - 1)?.trim().parse().ok()?;
+            Some(Principal { id, name: name.to_string() })
+        })
+        .collect();
+
+    // By name, because that is what the picker shows and what somebody scrolls
+    // it looking for. The id is the fallback, not the index.
+    found.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    found.dedup_by(|a, b| a.name == b.name && a.id == b.id);
+    found
+}
+
+/// Reads a small text file whole, or gives up quietly.
+///
+/// Capped because this reads a path the app chose but the *server* controls the
+/// contents of: `/etc/passwd` is a few kilobytes on any real host, and a
+/// multi-megabyte file at that path is not one worth loading into a dropdown.
+async fn read_small(sftp: &SftpSession, path: &str) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+
+    const MAX: u64 = 1024 * 1024;
+
+    let file = sftp.open(path).await.ok()?;
+    let mut buffer = Vec::new();
+    file.take(MAX).read_to_end(&mut buffer).await.ok()?;
+    // Not `from_utf8`: one stray byte in a comment must not lose the file.
+    Some(String::from_utf8_lossy(&buffer).into_owned())
+}
+
 /// The permission bits, in both forms the two columns need.
 ///
 /// Masked to 0o7777 so the file-type bits in the high word never leak into a
@@ -1109,7 +1208,46 @@ async fn removing(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -
 
 #[cfg(test)]
 mod tests {
-    use super::owner_group;
+    use super::{owner_group, parse_table};
+
+    /// A real `/etc/passwd`, including the lines that are not accounts.
+    #[test]
+    fn reads_the_accounts_out_of_passwd() {
+        let passwd = "\
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+opc:x:1000:1000::/home/opc:/bin/bash
+
+# a comment some distributions leave in
++@staff::::::
+broken-line-with-no-fields
+nobody:x:65534:65534:Kernel Overflow User:/:/sbin/nologin
+";
+        let users = parse_table(passwd, 2);
+        let names: Vec<_> = users.iter().map(|u| (u.name.as_str(), u.id)).collect();
+        // Sorted by name, and the comment, the NIS compat line and the
+        // unparseable one are all gone rather than taking the file with them.
+        assert_eq!(names, vec![("bin", 1), ("nobody", 65534), ("opc", 1000), ("root", 0)]);
+    }
+
+    /// `/etc/group` puts the id one field later than `/etc/passwd` does, which
+    /// is the only reason the field number is a parameter.
+    #[test]
+    fn reads_the_groups_out_of_group() {
+        let group = "root:x:0:\nwheel:x:10:opc,deploy\nopc:x:1000:\n";
+        let groups = parse_table(group, 2);
+        let names: Vec<_> = groups.iter().map(|g| (g.name.as_str(), g.id)).collect();
+        assert_eq!(names, vec![("opc", 1000), ("root", 0), ("wheel", 10)]);
+    }
+
+    /// A server that hands over something else entirely — the read is capped
+    /// and the parse must simply find nothing, not panic or invent an id.
+    #[test]
+    fn finds_nothing_in_a_file_that_is_not_one() {
+        assert!(parse_table("", 2).is_empty());
+        assert!(parse_table("not a passwd file at all\n\n", 2).is_empty());
+        assert!(parse_table("name:x:not-a-number:0:\n", 2).is_empty());
+    }
 
     /// Captured from a real OpenSSH sftp-server, which is where the shape of
     /// this string is actually decided.

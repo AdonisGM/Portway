@@ -148,6 +148,22 @@ export interface Listing {
   files: RemoteFile[]
 }
 
+/** One account or group on the far end. */
+export interface Principal {
+  id: number
+  name: string
+}
+
+/**
+ * What the Owner dialog offers. Either list can be empty — a server may refuse
+ * `/etc/passwd`, and a host whose users come from LDAP has nobody in it — so
+ * the dialog always keeps the numeric field that works without this.
+ */
+export interface Principals {
+  users: Principal[]
+  groups: Principal[]
+}
+
 export type LogOrigin = 'user' | 'system'
 export type LogKind = 'shell' | 'exec' | 'sftp' | 'auth'
 
@@ -204,6 +220,10 @@ export const sftpChown = (
   gid: number,
   recursive: boolean,
 ) => invoke<number>('sftp_chown', { sessionId, path, uid, gid, recursive })
+
+/** Local accounts and groups, read from `/etc/passwd` and `/etc/group`. */
+export const sftpPrincipals = (sessionId: string) =>
+  invoke<Principals>('sftp_principals', { sessionId })
 
 /** Anything above this asks first — see `sftp.rs::LARGE_FILE`. */
 export const LARGE_FILE = 5 * 1024 * 1024

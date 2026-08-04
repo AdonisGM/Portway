@@ -86,6 +86,14 @@ pub async fn sftp_list(
     logged(&format!("list {path}"), sftp::list(&app, &session_id, &path, origin).await)
 }
 
+/// The accounts and groups the Owner dialog offers. Read once per session by
+/// the pane, not per dialog — it is two small files over an open connection,
+/// but it is still a round trip.
+#[tauri::command]
+pub async fn sftp_principals(app: AppHandle, session_id: String) -> Result<sftp::Principals> {
+    logged("read accounts", sftp::principals(&app, &session_id).await)
+}
+
 #[tauri::command]
 pub async fn sftp_download(
     app: AppHandle,

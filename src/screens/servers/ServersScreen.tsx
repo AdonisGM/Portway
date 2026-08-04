@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GROUP_IDS, GROUP_NAMES } from '@/data/groups'
 import type { Host } from '@/data/types'
 import { ELSEWHERE_KEY, opensElsewhere, useOpensElsewhere } from '@/lib/platform'
@@ -18,10 +18,11 @@ import {
 } from '@/components/layout/ScreenShell'
 import { useApp, useSelectedHost, type HostFilter } from '@/store/appStore'
 import { HostDrawer } from './HostDrawer'
+import { TagChips } from './TagChips'
 import { DeleteHostDialog } from './DeleteHostDialog'
 
 /** The eight tracks from README line 42. The host name gets the widest one. */
-const GRID = '12px 2.1fr 1.5fr 96px 104px 100px 68px 118px'
+const GRID = '12px 2.1fr 1.5fr 96px 104px 1.3fr 100px 68px 118px'
 
 const FILTERS: { value: HostFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -95,6 +96,23 @@ export function ServersScreen() {
   // Suggestion values come from the live list, so they only ever offer things
   // that actually exist.
   const qualifiers = useMemo(() => hostQualifiers(hosts), [hosts])
+
+  /**
+   * Clicking a tag narrows the list to it — and clicking it again, while it is
+   * the whole query, clears it. A chip that only ever adds a filter leaves the
+   * user hunting for the way back out of one.
+   *
+   * The query is replaced rather than appended to. Two tags read as "hosts with
+   * both", which is what the grammar does with two qualifiers, but nobody
+   * arrives at that by clicking twice — they arrive at it by typing.
+   */
+  const pickTag = useCallback(
+    (tag: string) => {
+      const term = `tag:${tag}`
+      setQuery(query.trim() === term ? '' : term)
+    },
+    [query, setQuery],
+  )
 
   const rows = useMemo<Host[]>(() => {
     const matches = buildHostFilter(query, qualifiers)
@@ -170,6 +188,15 @@ export function ServersScreen() {
       sortable: true,
       className: 'cell-ellipsis text-fg-2',
       render: (host) => GROUP_NAMES[host.group],
+    },
+    {
+      key: 'tags',
+      header: 'Tags',
+      // Not sortable: a row holds a list, and there is no order over lists that
+      // means anything to somebody looking at this table. Filtering is what
+      // tags are for, and that is one click on a chip.
+      className: 'cell-ellipsis',
+      render: (host) => <TagChips tags={host.tags} onPick={pickTag} />,
     },
     {
       key: 'last',

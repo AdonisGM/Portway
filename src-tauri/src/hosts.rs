@@ -9,7 +9,14 @@ use crate::tunnels;
 
 const COLUMNS: &str = "id, name, address, port, user, group_id, auth, key_path, jump_host, \
                        run_on_connect, agent_forwarding, keep_alive, save_to_keychain, \
-                       unlock_via_keychain, favorite, last_used_at, created_at, updated_at";
+                       unlock_via_keychain, favorite, last_used_at, created_at, updated_at, \
+                       tags";
+
+/// The stored column back into a list. Splitting `""` yields one empty string,
+/// which would show as a blank chip on every host that has no tags.
+fn split_tags(stored: &str) -> Vec<String> {
+    stored.split(',').map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect()
+}
 
 fn row_to_host(row: &Row) -> rusqlite::Result<Host> {
     Ok(Host {
@@ -31,6 +38,10 @@ fn row_to_host(row: &Row) -> rusqlite::Result<Host> {
         last_used_at: row.get(15)?,
         created_at: row.get(16)?,
         updated_at: row.get(17)?,
+        // Stored as one string; a list is what both ends work in. An empty
+        // column is no tags rather than one empty tag, which `split` alone
+        // would produce.
+        tags: split_tags(&row.get::<_, String>(18)?),
     })
 }
 
@@ -79,8 +90,10 @@ pub async fn create_host(db: State<'_, Db>, input: HostInput) -> Result<Host> {
         conn.execute(
         "INSERT INTO hosts (name, address, port, user, group_id, auth, key_path, jump_host,
                             run_on_connect, agent_forwarding, keep_alive, save_to_keychain,
-                            unlock_via_keychain, favorite, last_used_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15, ?15)",
+                            unlock_via_keychain, favorite, last_used_at, created_at, updated_at,
+                            tags)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15, ?15,
+                 ?16)",
         params![
             input.name,
             input.address,
@@ -97,6 +110,7 @@ pub async fn create_host(db: State<'_, Db>, input: HostInput) -> Result<Host> {
             input.unlock_via_keychain,
             input.favorite,
             now,
+            input.tags.join(","),
         ],
     )
         .map_err(|e| map_conflict(e, &input.name))?;
@@ -200,8 +214,9 @@ pub async fn update_host(db: State<'_, Db>, id: i64, input: HostInput) -> Result
         "UPDATE hosts SET name = ?1, address = ?2, port = ?3, user = ?4, group_id = ?5,
                           auth = ?6, key_path = ?7, jump_host = ?8, run_on_connect = ?9,
                           agent_forwarding = ?10, keep_alive = ?11, save_to_keychain = ?12,
-                          unlock_via_keychain = ?13, favorite = ?14, updated_at = ?15
-         WHERE id = ?16",
+                          unlock_via_keychain = ?13, favorite = ?14, updated_at = ?15,
+                          tags = ?16
+         WHERE id = ?17",
         params![
             input.name,
             input.address,
@@ -218,6 +233,7 @@ pub async fn update_host(db: State<'_, Db>, id: i64, input: HostInput) -> Result
             input.unlock_via_keychain,
             input.favorite,
             now_ms(),
+            input.tags.join(","),
             id,
         ],
     )

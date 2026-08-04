@@ -38,7 +38,7 @@ pub fn open(path: &PathBuf) -> Result<Connection> {
 }
 
 /// The version `migrate` brings a database up to. Bump it with each new step.
-const LATEST: i64 = 5;
+const LATEST: i64 = 6;
 
 /// Migrations are keyed off `PRAGMA user_version`, so each step runs exactly
 /// once. Add new steps by appending — never by editing one that has shipped.
@@ -180,6 +180,26 @@ fn migrate(conn: &Connection) -> Result<()> {
                value TEXT NOT NULL
              );
              PRAGMA user_version = 5;
+             COMMIT;",
+        )?;
+    }
+
+    if version < 6 {
+        // Free-form labels on a host, for the grouping the fixed four groups
+        // cannot express: a customer, a role, a ticket, whatever this estate
+        // is actually organised by.
+        //
+        // One comma-separated column rather than a tags table and a join.
+        // Every host is already loaded into the frontend, which is where the
+        // filtering happens, so a join would buy a query nobody makes — and a
+        // column somebody can read with `sqlite3` and understand is worth more
+        // here, the same reasoning the settings table above is built on. The
+        // price is that a comma cannot appear in a tag, which `validate`
+        // refuses by name rather than silently mangling.
+        conn.execute_batch(
+            "BEGIN;
+             ALTER TABLE hosts ADD COLUMN tags TEXT NOT NULL DEFAULT '';
+             PRAGMA user_version = 6;
              COMMIT;",
         )?;
     }

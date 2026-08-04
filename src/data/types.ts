@@ -28,6 +28,13 @@ export interface Host {
   saveToKeychain: boolean
   unlockViaKeychain: boolean
   favorite: boolean
+  /**
+   * Free-form labels, in the order they were typed. The four groups are a fixed
+   * set that every host has exactly one of; these are however many a host needs
+   * and whatever the estate is actually organised by — a customer, a role, a
+   * ticket. Stored as one comma-separated column, so a tag cannot contain one.
+   */
+  tags: string[]
   /** Epoch ms, or null when the host has never been opened. */
   lastUsedAt: number | null
   createdAt: number

@@ -29,6 +29,9 @@ pub struct Host {
     pub save_to_keychain: bool,
     pub unlock_via_keychain: bool,
     pub favorite: bool,
+    /// Free-form labels. Stored as one comma-separated column and handed to the
+    /// frontend as a list, which is the shape both ends actually work in.
+    pub tags: Vec<String>,
     /// Epoch ms, or `None` when the host has never been opened.
     pub last_used_at: Option<i64>,
     pub created_at: i64,
@@ -92,6 +95,8 @@ pub struct HostInput {
     pub unlock_via_keychain: bool,
     #[serde(default)]
     pub favorite: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// The key's passphrase, on its way to the OS keychain and nowhere else.
     ///
     /// Asymmetric on purpose: it arrives on the way in and never appears on
@@ -129,6 +134,20 @@ impl HostInput {
         if !GROUPS.contains(&self.group.as_str()) {
             return Err(Error::Invalid(format!("Unknown group '{}'", self.group)));
         }
+        // A comma is the column separator, so a tag holding one would come back
+        // as two. Refused by name rather than split silently — a tag that turns
+        // into two tags is the kind of thing nobody notices until they filter
+        // by it and the host is not there.
+        if let Some(bad) = self.tags.iter().find(|t| t.contains(',')) {
+            return Err(Error::Invalid(format!("Tag '{bad}' cannot contain a comma")));
+        }
+        if let Some(long) = self.tags.iter().find(|t| t.chars().count() > MAX_TAG) {
+            return Err(Error::Invalid(format!(
+                "Tag '{}…' is longer than {MAX_TAG} characters",
+                long.chars().take(12).collect::<String>()
+            )));
+        }
+
         // The keychain is the only place a password is kept, so a password host
         // with the toggle off has nowhere to read one from: it would save
         // cleanly, wipe whatever was stored, and fail on every connection after
@@ -161,6 +180,7 @@ impl HostInput {
         self.address = self.address.trim().to_string();
         self.user = self.user.trim().to_string();
         self.key_path = blank_to_none(self.key_path);
+        self.tags = normalize_tags(std::mem::take(&mut self.tags));
         self.jump_host = blank_to_none(self.jump_host);
         self.run_on_connect = blank_to_none(self.run_on_connect);
         // A key path is only meaningful for key auth.
@@ -169,6 +189,35 @@ impl HostInput {
         }
         self
     }
+}
+
+/// Long enough for `customer-northwind-prod`, short enough that one tag cannot
+/// take a table row on its own.
+const MAX_TAG: usize = 32;
+
+/// Trimmed, blanks dropped, and deduplicated without regard to case — `Prod`
+/// and `prod` are one tag typed twice, and a filter that finds only one of them
+/// is worse than no filter. The first spelling wins, because it is the one the
+/// user chose before the app started tidying up after them.
+///
+/// Order is kept. Tags are read as a row of chips, and re-sorting them on save
+/// would shuffle a list somebody deliberately put in an order.
+pub fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut out: Vec<String> = Vec::new();
+    for tag in tags {
+        let tag = tag.trim().to_string();
+        if tag.is_empty() {
+            continue;
+        }
+        let key = tag.to_lowercase();
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key);
+        out.push(tag);
+    }
+    out
 }
 
 fn blank_to_none(value: Option<String>) -> Option<String> {
@@ -260,5 +309,33 @@ impl TunnelInput {
             self.target_port = None;
         }
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_tags;
+
+    fn tags(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Typed order is kept — the chips are read as a row, and a save that
+    /// alphabetises them rearranges something the user arranged.
+    #[test]
+    fn keeps_what_was_typed_in_the_order_it_was_typed() {
+        assert_eq!(normalize_tags(tags(&["prod", "db", "customer-a"])), tags(&["prod", "db", "customer-a"]));
+    }
+
+    /// `Prod` and `prod` are one tag typed twice. The first spelling stays,
+    /// because it is the one chosen before the app started tidying up.
+    #[test]
+    fn folds_a_repeat_whatever_its_case() {
+        assert_eq!(normalize_tags(tags(&["Prod", "db", "PROD", "prod"])), tags(&["Prod", "db"]));
+    }
+
+    #[test]
+    fn drops_whitespace_and_blanks() {
+        assert_eq!(normalize_tags(tags(&["  db  ", "", "   ", "k8s"])), tags(&["db", "k8s"]));
     }
 }

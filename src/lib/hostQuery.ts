@@ -48,6 +48,13 @@ export function hostQualifiers(hosts: Host[]): QualifierSpec[] {
       values: unique(hosts.map((h) => String(h.port))),
     },
     {
+      key: 'tag',
+      aliases: ['tags'],
+      label: 'Tag',
+      hint: 'tag:backup',
+      values: unique(hosts.flatMap((h) => h.tags)),
+    },
+    {
       key: 'host',
       aliases: ['name'],
       label: 'Host name',
@@ -72,6 +79,10 @@ function field(host: Host, key: string): string {
       return host.auth === 'password' ? 'password pass' : host.auth
     case 'port':
       return String(host.port)
+    case 'tag':
+      // Joined with a separator no tag can contain, so `tag:db` cannot be
+      // satisfied by `web` and `data` sitting next to each other.
+      return host.tags.join(',').toLowerCase()
     case 'host':
       return host.name.toLowerCase()
     default:

@@ -1206,6 +1206,7 @@ mod tests {
             save_to_keychain: true,
             unlock_via_keychain: false,
             favorite: false,
+            tags: Vec::new(),
             last_used_at: None,
             created_at: 0,
             updated_at: 0,

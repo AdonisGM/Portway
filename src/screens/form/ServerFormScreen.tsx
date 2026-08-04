@@ -14,6 +14,7 @@ import { ToggleField } from '@/components/ui/Toggle'
 import { CommandText, SectionLabel } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
 import { KeyPicker } from './KeyPicker'
+import { TagField } from './TagField'
 
 const AUTH_METHODS: { value: AuthMethod; label: string }[] = [
   { value: 'password', label: 'Password' },
@@ -55,6 +56,13 @@ export function ServerFormScreen() {
   // a keyed remount is not needed.
   // Every other label in the database, so the form can reject a collision
   // before the write and Duplicate can pick a free number.
+  // Every tag already in use anywhere, so a second host gets offered the
+  // spelling the first one used instead of growing `backup` beside `Backups`.
+  const knownTags = useMemo(
+    () => [...new Set(hosts.flatMap((h) => h.tags))].sort((a, b) => a.localeCompare(b)),
+    [hosts],
+  )
+
   const otherNames = useMemo(
     () => new Set(hosts.filter((h) => h.id !== editing?.id).map((h) => h.name)),
     [hosts, editing],
@@ -75,6 +83,7 @@ export function ServerFormScreen() {
   const [runOnConnect, setRunOnConnect] = useState(source?.runOnConnect ?? '')
   const [agentForwarding, setAgentForwarding] = useState(source?.agentForwarding ?? true)
   const [keepAlive, setKeepAlive] = useState(source?.keepAlive ?? false)
+  const [tags, setTags] = useState<string[]>(source?.tags ?? [])
   const [saveToKeychain, setSaveToKeychain] = useState(source?.saveToKeychain ?? true)
   const [unlockViaKeychain, setUnlockViaKeychain] = useState(source?.unlockViaKeychain ?? true)
 
@@ -159,6 +168,7 @@ export function ServerFormScreen() {
       saveToKeychain,
       unlockViaKeychain,
       favorite: source?.favorite ?? false,
+      tags,
       // Only for the auth method each belongs to, and only when the user
       // actually typed one — an untouched box must not disturb a secret
       // already in the keychain.
@@ -250,6 +260,10 @@ export function ServerFormScreen() {
                 placeholder="postgres"
                 onChange={(e) => setUser(e.target.value)}
               />
+            </div>
+
+            <div className="mt-3">
+              <TagField tags={tags} onChange={setTags} suggestions={knownTags} />
             </div>
           </section>
 

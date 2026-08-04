@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { Drawer } from '@/components/ui/Drawer'
 import { CommandText, GroupDot, MetaRow, SectionLabel } from '@/components/ui/primitives'
 import { useApp } from '@/store/appStore'
+import { TagChips } from './TagChips'
 
 /**
  * The detail panel that slides over the Servers table. Transcribed from
@@ -24,7 +25,13 @@ export function HostDrawer({ host }: { host: Host }) {
   const openEditForm = useApp((s) => s.openEditForm)
   const openDuplicateForm = useApp((s) => s.openDuplicateForm)
   const requestDelete = useApp((s) => s.requestDelete)
+  const setQuery = useApp((s) => s.setQuery)
   const elsewhere = useOpensElsewhere()
+
+  const pickTag = (tag: string) => {
+    setQuery(`tag:${tag}`)
+    closeDrawer()
+  }
 
   const isKey = host.auth === 'key'
   const authLabel =
@@ -146,11 +153,13 @@ export function HostDrawer({ host }: { host: Host }) {
 
       <div className="flex-none px-4 py-3.5">
         <SectionLabel className="mb-2">Tags</SectionLabel>
-        <div className="flex flex-wrap gap-1.5">
-          <span className="rounded-chip bg-w06 px-2 py-0.75 font-mono text-mono text-fg-2">
-            {host.group}
-          </span>
-        </div>
+        {/* The design filled this row with the group name, which the meta list
+            above already gives — it was a placeholder for labels that did not
+            exist yet. These are those labels, and picking one filters the table
+            behind this panel, so the drawer closes with it: a filter applied
+            under a panel covering the result is a change with nothing to show
+            for it. */}
+        <TagChips tags={host.tags} onPick={pickTag} />
       </div>
 
       <CommandText className="mt-auto flex-none border-t border-w06 px-4 py-3 text-mono/code text-faint">

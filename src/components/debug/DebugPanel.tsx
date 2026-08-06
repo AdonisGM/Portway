@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Button } from '@/components/ui/Button'
+import { Chip } from '@/components/ui/Chip'
 import { Segmented } from '@/components/ui/Segmented'
 import { StatusDot } from '@/components/ui/primitives'
 import * as api from '@/lib/api'
@@ -40,6 +41,35 @@ const LEVEL_COLOUR: Record<AppLogLevel, string> = {
   error: 'text-danger',
 }
 
+/**
+ * The scopes that mean "this left the machine".
+ *
+ * The distinction the console is missing without it. Most of what is logged is
+ * the app talking to itself — a window opening, a setting written, a query. A
+ * handful of lines are things that *happened to somebody's server*, and on a
+ * production host those are the only ones that matter. `Server only` is that
+ * question asked in one click.
+ */
+const REMOTE: ReadonlySet<string> = new Set(['ssh', 'sftp', 'sudo', 'tunnel'])
+
+/**
+ * How a line is marked when it is more than a note to self.
+ *
+ * `exec` is a command line run on the far end, which is the most consequential
+ * thing this app does; `root` is one of those running as root. Both are drawn
+ * rather than left to be read, because on a production host the difference
+ * between "listed a directory" and "ran a command as root" is the whole point
+ * of having a log, and it should not depend on somebody parsing the sentence.
+ */
+function markOf(line: AppLogLine): { text: string; className: string } | null {
+  if (line.target === 'ssh' && line.message.startsWith('ran ')) {
+    return line.message.includes(' sudo ')
+      ? { text: 'root', className: 'bg-danger-fill text-danger' }
+      : { text: 'exec', className: 'bg-w07 text-accent' }
+  }
+  return null
+}
+
 /** `14:22:07.482` — local, because the person reading it is here. */
 function clockOf(at: number): string {
   const d = new Date(at)
@@ -59,6 +89,10 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
   const lines = useSyncExternalStore(subscribe, snapshot)
   const [view, setView] = useState<View>('all')
   const [needle, setNeedle] = useState('')
+  // `null` is every scope. Kept separate from the text filter because typing
+  // `ssh` there also matches every message with "ssh" in the words.
+  const [scope, setScope] = useState<string | null>(null)
+  const [serverOnly, setServerOnly] = useState(false)
   const [info, setInfo] = useState<DebugInfo | null>(null)
   const [verbose, setVerbose] = useState(false)
   const [follow, setFollow] = useState(true)
@@ -105,6 +139,8 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
     const query = needle.trim().toLowerCase()
     return lines.filter((line) => {
       if (RANK[line.level] < floor) return false
+      if (serverOnly && !REMOTE.has(line.target)) return false
+      if (scope && line.target !== scope) return false
       if (!query) return true
       return (
         line.message.toLowerCase().includes(query) ||
@@ -112,7 +148,30 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
         (line.detail?.toLowerCase().includes(query) ?? false)
       )
     })
-  }, [lines, view, needle])
+  }, [lines, view, needle, scope, serverOnly])
+
+  /**
+   * The scopes actually present, with how many lines each has.
+   *
+   * Built from what is there rather than from a fixed list: a scope that has
+   * logged nothing is a filter that would show an empty view, and the counts
+   * are half the value — "sftp 41, ssh 6" says where the activity is before
+   * anything is clicked.
+   *
+   * Counted against the level and Server-only filters but *not* against the
+   * scope one, so the row does not collapse to a single entry the moment a
+   * scope is picked and leave no way back to the others.
+   */
+  const scopes = useMemo(() => {
+    const floor = FLOOR[view]
+    const counts = new Map<string, number>()
+    for (const line of lines) {
+      if (RANK[line.level] < floor) continue
+      if (serverOnly && !REMOTE.has(line.target)) continue
+      counts.set(line.target, (counts.get(line.target) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [lines, view, serverOnly])
 
   const virtualizer = useVirtualizer({
     count: shown.length,
@@ -178,13 +237,16 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-base">
-      <div className="flex flex-none items-center gap-2.5 border-b border-w06 px-4.5 py-3">
+      {/* Wraps rather than clipping. The controls grew past what one row holds
+          at this window's default width, and a segmented control cut off
+          mid-word reads as a rendering bug — and hides the option it cut. */}
+      <div className="flex flex-none flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-w06 px-4.5 py-3">
         <StatusDot tone={errors > 0 ? 'warn' : 'accent'} size="sm" />
         <span className="flex-none font-mono text-meta text-faint">
           {lines.length} lines · {warnings} warnings · {errors} errors
         </span>
 
-        <span className="ml-auto flex items-center gap-2">
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <input
             ref={filterRef}
             value={needle}
@@ -200,6 +262,16 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
             className="w-44 rounded-field border border-w08 bg-field px-2.5 py-1.25 font-mono text-mono text-fg placeholder:text-faint focus:border-accent-50 focus:outline-none"
           />
           <Segmented aria-label="Level" size="xs" options={VIEWS} value={view} onChange={setView} />
+          {/* The production question, in one click: of everything this app has
+              done, which of it happened to somebody's server? */}
+          <Button
+            size="sm"
+            variant={serverOnly ? 'accent' : 'soft'}
+            onClick={() => setServerOnly((on) => !on)}
+            title="Only what left this machine — ssh, sftp, sudo, tunnel"
+          >
+            Server only
+          </Button>
           {/* Two different things, and they are not merged on purpose: the
               segmented control filters what is *shown*, this decides what the
               backend bothers to *record*. Turning it on mid-problem is the
@@ -221,6 +293,34 @@ export function DebugPanel({ onClose }: { onClose: () => void }) {
           </Button>
         </span>
       </div>
+
+      {/* Which parts of the app are talking, and how much. Doubles as the
+          filter, so the answer to "where is the noise coming from" and the way
+          to look only at it are the same control. */}
+      {scopes.length > 0 ? (
+        <div className="flex flex-none flex-wrap items-center gap-1.5 border-b border-w06 px-4.5 py-2">
+          <Chip
+            tone={scope === null ? 'strong' : 'soft'}
+            onClick={() => setScope(null)}
+            aria-pressed={scope === null}
+          >
+            all
+          </Chip>
+          {scopes.map(([name, count]) => (
+            <Chip
+              key={name}
+              tone={scope === name ? 'strong' : 'soft'}
+              onClick={() => setScope(scope === name ? null : name)}
+              aria-pressed={scope === name}
+              // The ones that reach a server read differently from the ones
+              // that do not, before anything is clicked.
+              className={REMOTE.has(name) && scope !== name ? 'text-accent' : ''}
+            >
+              {name} {count}
+            </Chip>
+          ))}
+        </div>
+      ) : null}
 
       <SystemStrip info={info} now={now} />
 
@@ -288,6 +388,8 @@ function Line({
   open: boolean
   onToggle: () => void
 }) {
+  const mark = markOf(line)
+
   return (
     <button
       type="button"
@@ -299,6 +401,16 @@ function Line({
       <span className="flex-none text-term-dim">{clockOf(line.at)}</span>
       <span className={`w-11 flex-none uppercase ${LEVEL_COLOUR[line.level]}`}>{line.level}</span>
       <span className="w-14 flex-none text-faint">{line.target}</span>
+      {/* The badge takes its column whether or not it has anything in it, so
+          the messages stay in one line down the view rather than stepping in
+          and out around the lines that have one. */}
+      <span className="w-11 flex-none">
+        {mark ? (
+          <span className={`rounded-chip px-1.25 py-0.25 text-status uppercase ${mark.className}`}>
+            {mark.text}
+          </span>
+        ) : null}
+      </span>
       <span className={`min-w-0 flex-1 ${open ? 'break-words whitespace-pre-wrap' : 'truncate'}`}>
         <span className="text-term-fg">{line.message}</span>
         {line.detail ? <span className="text-faint"> · {line.detail}</span> : null}

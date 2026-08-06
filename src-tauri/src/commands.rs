@@ -6,6 +6,7 @@ use crate::error::{Error, Result};
 use crate::logging;
 use crate::sftp::{self, Listing};
 use crate::ssh::{self, SessionInfo};
+use crate::sudo;
 use crate::hosts;
 
 /// Writes a failed command to the application log, and passes it on unchanged.
@@ -71,6 +72,27 @@ pub fn ssh_resize(app: AppHandle, session_id: String, cols: u32, rows: u32) -> R
 #[tauri::command]
 pub async fn ssh_disconnect(app: AppHandle, session_id: String) -> Result<()> {
     ssh::disconnect(&app, &session_id).await
+}
+
+/// Types `cd <path>` at the session's shell — the SFTP pane taking the terminal
+/// where it is looking.
+///
+/// Goes through the same queue as a keystroke, so `command_log` records it the
+/// way it records anything else typed there. It is typing at the user's shell,
+/// and the trail should say so rather than hide it.
+#[tauri::command]
+pub fn ssh_cd(app: AppHandle, session_id: String, path: String) -> Result<()> {
+    logged(&format!("cd {path}"), ssh::cd(&app, &session_id, &path))
+}
+
+/// The last directory this session's shell announced, or `None`.
+///
+/// Asked by the SFTP pane when it mounts, because a tab switch destroys and
+/// rebuilds it and the announcements it missed are not repeated — a shell says
+/// the same directory before every prompt, and only a change is emitted.
+#[tauri::command]
+pub fn ssh_cwd(app: AppHandle, session_id: String) -> Option<String> {
+    ssh::cwd(&app, &session_id)
 }
 
 /// The first listing after a pane opens is Portway's doing, not the user's —
@@ -166,6 +188,8 @@ pub async fn sftp_chown(
 ///
 /// `opener` is a chosen application, or `None` for whatever the OS has
 /// registered. `confirmed_large` is the user having seen the size warning.
+/// `sudo` sends every write-back through root, and is decided here rather than
+/// when a save fails — see `sftp::edit`.
 #[tauri::command]
 pub async fn sftp_edit(
     app: AppHandle,
@@ -173,8 +197,47 @@ pub async fn sftp_edit(
     remote: String,
     opener: Option<String>,
     confirmed_large: bool,
+    sudo: bool,
 ) -> Result<String> {
-    logged(&format!("edit {remote}"), sftp::edit(&app, &session_id, &remote, opener, confirmed_large).await)
+    logged(
+        &format!("edit {remote}"),
+        sftp::edit(&app, &session_id, &remote, opener, confirmed_large, sudo).await,
+    )
+}
+
+/// Re-sends the scratch copy of a file already open for editing, as root, and
+/// keeps every save after it going the same way.
+///
+/// What the pane offers when a write-back was refused: the editor has already
+/// written the file, and asking for it to be saved again is asking for
+/// something that has already happened.
+#[tauri::command]
+pub async fn sftp_elevate(app: AppHandle, session_id: String, remote: String) -> Result<u64> {
+    logged(&format!("save {remote} as root"), sftp::elevate(&app, &session_id, &remote).await)
+}
+
+/// What `sudo` would do on this session, asked without doing anything and
+/// without asking the user for anything.
+///
+/// A NOPASSWD host answers `ready` here, and never sees a password box.
+#[tauri::command]
+pub async fn sudo_check(app: AppHandle, session_id: String) -> Result<sudo::Check> {
+    logged("check sudo", sudo::check(&app, &session_id).await)
+}
+
+/// Takes the account password, checks it against the host, and keeps it in
+/// memory for the rest of the session. It is never written anywhere.
+#[tauri::command]
+pub async fn sudo_unlock(app: AppHandle, session_id: String, password: String) -> Result<()> {
+    // Deliberately not `logged`: its message would be the operation and the
+    // error, and the error here is about a password. `sudo::unlock` writes its
+    // own line, with nothing in it that came from the box.
+    //
+    // There is no command to forget one on purpose, and that is not an
+    // oversight: it is dropped when the host refuses it and when the session
+    // closes, which are the two moments it stops being the right password. A
+    // button for it would be a control over something the user cannot see.
+    sudo::unlock(&app, &session_id, password).await
 }
 
 /// Deletes a file, or a directory and everything under it. Returns how many

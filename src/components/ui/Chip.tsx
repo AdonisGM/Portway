@@ -11,7 +11,10 @@ import { tv } from '@/lib/tv'
  * 4px 10px, which is what `size="md"` is for.
  */
 const chip = tv({
-  base: 'rounded-chip transition-colors',
+  // A disabled chip has to *look* disabled, and stop reacting to a hover it
+  // will not answer — without it the two are indistinguishable until clicked,
+  // which reads as the app having ignored the click.
+  base: 'rounded-chip transition-colors disabled:pointer-events-none disabled:opacity-40',
   variants: {
     tone: {
       strong: 'bg-w07 text-fg hover:bg-w15',

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Principal, Principals, RemoteFile } from '@/lib/api'
+import { Chip } from '@/components/ui/Chip'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Field } from '@/components/ui/Field'
 import { Select, type SelectOption } from '@/components/ui/Select'
@@ -54,6 +55,161 @@ export function RenameDialog({
               ! a name cannot contain “/”
             </span>
           ) : null}
+        </div>
+      }
+    </ConfirmDialog>
+  )
+}
+
+/**
+ * The password `sudo` wants, asked for once per session.
+ *
+ * Its own dialog rather than a line in the Permissions one, because it is not a
+ * change to a file: it is the credential that makes a change possible, and it
+ * covers every file opened as root for the rest of the session.
+ *
+ * The box says where the password goes and where it does not. This app puts
+ * secrets in the OS keychain and says so in the host form; this one it
+ * deliberately does not, and a user who has been told the opposite everywhere
+ * else is owed the exception in writing.
+ */
+export function SudoDialog({
+  user,
+  host,
+  busy,
+  error,
+  onCancel,
+  onUnlock,
+}: {
+  user: string
+  host: string
+  /** True while the host is being asked — the round trip is a real wait. */
+  busy: boolean
+  /** What the host said last time, or null on the first ask. */
+  error: string | null
+  onCancel: () => void
+  onUnlock: (password: string) => void
+}) {
+  const [password, setPassword] = useState('')
+
+  return (
+    <ConfirmDialog
+      open
+      title="Unlock sudo"
+      confirmVariant="accent"
+      confirmLabel={busy ? 'Checking…' : 'Unlock'}
+      confirmDisabled={busy || password === ''}
+      busy={busy}
+      onCancel={onCancel}
+      onConfirm={() => onUnlock(password)}
+    >
+      {
+        <div className="flex flex-col gap-3">
+          <span className="text-muted">
+            Editing a file only root can write needs the password for{' '}
+            <span className="font-mono text-cell text-fg">{user}</span> on{' '}
+            <span className="font-mono text-cell text-fg">{host}</span>.
+          </span>
+
+          <Field
+            label="Password"
+            masked
+            value={password}
+            autoFocus
+            autoComplete="off"
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !busy && password !== '') onUnlock(password)
+            }}
+          />
+
+          {error ? (
+            <span className="font-mono text-mono/cmd break-words text-warn">! {error}</span>
+          ) : null}
+
+          {/* The exception to what every other secret in this app does. */}
+          <span className="text-meta text-faint">
+            Held in memory until this session closes, and never written to the
+            keychain or to disk. It is sent to sudo on a channel of its own, so it
+            never reaches the terminal or the command log.
+          </span>
+        </div>
+      }
+    </ConfirmDialog>
+  )
+}
+
+/**
+ * What to do when the pane cannot follow the terminal, because the shell has
+ * not said where it is.
+ *
+ * This exists rather than a button that just makes it work, because making it
+ * work means typing at the user's shell — and the pane cannot see whether that
+ * shell is at a prompt or halfway through `vim`. So the permanent fix, the one
+ * that costs nothing afterwards and is the user's own to make, comes first; the
+ * one-line version for the session in hand is offered second, with what it
+ * needs in order to be safe stated rather than assumed.
+ */
+export function ShellSyncDialog({
+  hook,
+  onCancel,
+  onEnable,
+}: {
+  /** The line, shown to copy and sent by Enable. One string, so the two cannot
+   *  drift apart. */
+  hook: string
+  onCancel: () => void
+  onEnable: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  return (
+    <ConfirmDialog
+      open
+      title="Follow the terminal"
+      confirmVariant="accent"
+      confirmLabel="Type it at the shell"
+      onCancel={onCancel}
+      onConfirm={onEnable}
+    >
+      {
+        <div className="flex flex-col gap-3">
+          <span className="text-muted">
+            This shell has not said which directory it is in, so there is nowhere for the
+            pane to follow it to. Shells announce it with an escape sequence — fish and
+            starship already do; bash and zsh need one line.
+          </span>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-meta text-muted">Add to ~/.bashrc or ~/.zshrc</span>
+            <div className="flex items-start gap-2">
+              <code className="min-w-0 flex-1 overflow-x-auto rounded-field border border-w08 bg-field px-2.5 py-2 font-mono text-mono/cmd break-all text-fg-2">
+                {hook}
+              </code>
+              <Chip
+                className="flex-none"
+                onClick={() => {
+                  void navigator.clipboard.writeText(hook)
+                  setCopied(true)
+                }}
+              >
+                {copied ? 'copied' : 'Copy'}
+              </Chip>
+            </div>
+            <span className="text-meta text-faint">
+              Every session on this host follows the terminal from then on, this app or
+              any other.
+            </span>
+          </div>
+
+          {/* The warning is the point of the dialog. A line typed at a shell
+              goes wherever the keyboard would, and the pane cannot see what is
+              running there. */}
+          <span className="text-meta text-warn">
+            ! Or Portway types that line once, for this session only. It goes in as
+            keystrokes, so make sure the terminal is at a shell prompt — in an editor or
+            at a password prompt it would be typed into that instead.
+          </span>
         </div>
       }
     </ConfirmDialog>

@@ -191,6 +191,47 @@ export const sshResize = (sessionId: string, cols: number, rows: number) =>
 export const sshDisconnect = (sessionId: string) =>
   invoke<void>('ssh_disconnect', { sessionId })
 
+/**
+ * Types `cd <path>` at the session's shell — the SFTP pane taking the terminal
+ * to the folder it is showing.
+ *
+ * This really is typing at the user's shell: it lands wherever the keyboard
+ * would, so it belongs behind a button pressed while looking at a prompt. The
+ * line is quoted in Rust, and a path containing a line break is refused there
+ * rather than sent.
+ */
+export const sshCd = (sessionId: string, path: string) =>
+  invoke<void>('ssh_cd', { sessionId, path })
+
+/**
+ * The last directory this session's shell announced, or `null`.
+ *
+ * Asked when the SFTP pane mounts. A tab switch destroys and rebuilds that
+ * pane, and the announcements it missed are not repeated — the backend emits
+ * only a *change*, because a shell says the same directory before every prompt.
+ */
+export const sshCwd = (sessionId: string) =>
+  invoke<string | null>('ssh_cwd', { sessionId })
+
+/**
+ * The line that makes a shell announce its directory, which is what the pane
+ * reads to follow it.
+ *
+ * OSC 7 is the convention every terminal that syncs a directory uses. fish
+ * emits it on its own, and so does starship; bash and zsh need this hook. It is
+ * offered as text to add to a shell profile — a permanent fix the user makes —
+ * and as one line the pane can type for the session in hand.
+ *
+ * The `ZSH_VERSION` test is what makes one line serve both: zsh runs
+ * `precmd_functions` before each prompt, bash runs `PROMPT_COMMAND`, and the
+ * existing value is kept rather than replaced because it is very often
+ * somebody's prompt.
+ */
+export const CWD_HOOK =
+  `_portway_cwd() { printf '\\033]7;file://%s%s\\007' "\${HOSTNAME:-}" "$PWD"; }; ` +
+  `[ -n "$ZSH_VERSION" ] && precmd_functions+=(_portway_cwd) ` +
+  `|| PROMPT_COMMAND="_portway_cwd\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`
+
 /** `system: true` marks the listing Portway fetches itself when a pane opens. */
 export const sftpList = (sessionId: string, path: string, system = false) =>
   invoke<Listing>('sftp_list', { sessionId, path, system })
@@ -232,13 +273,59 @@ export const LARGE_FILE = 5 * 1024 * 1024
  * Opens a remote file in a local application and keeps it in sync: the file is
  * downloaded to a scratch copy, handed to the app, and written back whenever
  * that app saves. Returns the local path.
+ *
+ * `sudo` sends every write-back through root — decided here, while the user is
+ * looking at the pane, rather than when a save fails in an application they
+ * have since switched away from.
  */
 export const sftpEdit = (
   sessionId: string,
   remote: string,
   opener: string | null,
   confirmedLarge = false,
-) => invoke<string>('sftp_edit', { sessionId, remote, opener, confirmedLarge })
+  sudo = false,
+) => invoke<string>('sftp_edit', { sessionId, remote, opener, confirmedLarge, sudo })
+
+/**
+ * Sends the scratch copy of a file already open for editing up again as root,
+ * and keeps every save after it going the same way. Returns the bytes written.
+ *
+ * What a refused write-back gets offered: the editor has already saved the
+ * file, so there is nothing to ask the user to do again.
+ */
+export const sftpElevate = (sessionId: string, remote: string) =>
+  invoke<number>('sftp_elevate', { sessionId, remote })
+
+/* ---------------------------------------------------------------------------
+   sudo
+--------------------------------------------------------------------------- */
+
+/**
+ * Where `sudo` stands on a session.
+ *
+ * `ready` covers a NOPASSWD host, a timestamp still warm from the user's own
+ * terminal, and a password already given here — three different reasons for the
+ * same answer, which is that nothing needs to be asked.
+ */
+export type SudoStatus = 'ready' | 'needsPassword' | 'refused'
+
+export interface SudoCheck {
+  status: SudoStatus
+  /** The server's own words, when it refused. Empty otherwise. */
+  detail: string
+}
+
+/** Asks the host what it would do, without doing anything and without asking
+ *  the user for anything. */
+export const sudoCheck = (sessionId: string) => invoke<SudoCheck>('sudo_check', { sessionId })
+
+/**
+ * Checks the account password against the host and keeps it in memory for the
+ * rest of the session. It is never written to the keychain or to disk — see
+ * `src-tauri/src/sudo.rs`.
+ */
+export const sudoUnlock = (sessionId: string, password: string) =>
+  invoke<void>('sudo_unlock', { sessionId, password })
 
 /**
  * Deletes a file, or a directory and everything under it. Returns how many

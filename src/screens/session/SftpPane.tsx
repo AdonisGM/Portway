@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Principals, RemoteFile } from '@/lib/api'
 import {
+  CWD_HOOK,
   LARGE_FILE,
   message,
   sftpChmod,
@@ -9,7 +10,12 @@ import {
   sftpPrincipals,
   sftpRemove,
   sftpRename,
+  sshCd,
+  sshWrite,
+  sudoCheck,
+  sudoUnlock,
 } from '@/lib/api'
+import { encodeText } from '@/lib/bytes'
 import { formatMtime, formatSize } from '@/lib/bytes'
 import type { Session } from '@/data/types'
 import { Chip } from '@/components/ui/Chip'
@@ -22,8 +28,15 @@ import { useDropUpload } from './useDropUpload'
 import { useTransfer } from './useTransfer'
 import { TransferFooter } from './TransferFooter'
 import { ContextMenu, MenuItem, MenuSeparator, type MenuPoint } from '@/components/ui/ContextMenu'
-import { OwnerDialog, PermissionsDialog, RenameDialog } from './FileDialogs'
+import {
+  OwnerDialog,
+  PermissionsDialog,
+  RenameDialog,
+  ShellSyncDialog,
+  SudoDialog,
+} from './FileDialogs'
 import { useEditing } from './useEditing'
+import { useShellCwd } from './useShellCwd'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatSize as size } from '@/lib/bytes'
 
@@ -135,7 +148,17 @@ export function SftpPane({ session, width, resizing }: Props) {
   const [opError, setOpError] = useState<string | null>(null)
   // Held separately from `dialog` because it is a question about a file rather
   // than a change to one: answering it opens the editor, cancelling does nothing.
-  const [confirmLarge, setConfirmLarge] = useState<RemoteFile | null>(null)
+  // `sudo` rides along so the answer opens the file the way it was asked for.
+  const [confirmLarge, setConfirmLarge] = useState<{ file: RemoteFile; sudo: boolean } | null>(
+    null,
+  )
+  // An action waiting on a sudo password. An object rather than a bare
+  // function, because `setState` given a function calls it.
+  const [pending, setPending] = useState<{ run: () => void } | null>(null)
+  const [sudoBusy, setSudoBusy] = useState(false)
+  // The host's answer to the last password, kept in the dialog rather than on
+  // the pane: a wrong password is something to correct where it was typed.
+  const [sudoError, setSudoError] = useState<string | null>(null)
   // A view preference, so it outlives a `cd` — sorting by size and then
   // stepping into a folder must not silently drop back to name order.
   const [sort, setSort] = useState<SortState | null>(null)
@@ -279,18 +302,126 @@ export function SftpPane({ session, width, resizing }: Props) {
   const editing = useEditing(session.id, () => void load(path))
 
   /**
+   * Runs something that needs root, collecting a password first if the host
+   * wants one.
+   *
+   * The check comes first so that the great many hosts with a NOPASSWD rule —
+   * or a `sudo` timestamp still warm from the user's own terminal — never see a
+   * password box they have no use for. A host that refuses outright says so
+   * here, before anything has been typed.
+   */
+  const withSudo = async (run: () => void) => {
+    try {
+      const check = await sudoCheck(session.id)
+      if (check.status === 'refused') {
+        setOpError(`sudo: ${check.detail || 'this account may not run sudo on this server'}`)
+        return
+      }
+      if (check.status === 'needsPassword') {
+        setSudoError(null)
+        setPending({ run })
+        return
+      }
+      run()
+    } catch (e) {
+      setOpError(message(e))
+    }
+  }
+
+  /** The dialog's answer: check it against the host, then do what was waiting. */
+  const unlock = async (password: string) => {
+    setSudoBusy(true)
+    setSudoError(null)
+    try {
+      await sudoUnlock(session.id, password)
+      const waiting = pending
+      setPending(null)
+      waiting?.run()
+    } catch (e) {
+      // The dialog stays open on a refusal — the password is the thing to
+      // correct, and closing would throw away the action waiting behind it.
+      setSudoError(message(e))
+    } finally {
+      setSudoBusy(false)
+    }
+  }
+
+  /**
    * Opening for edit. Files over 5MB ask first: "edit" means handing the file
    * to a text editor, and a 200MB log opened by accident freezes whichever one
    * the user has.
+   *
+   * `sudo` makes every write-back go through root. It is asked for here, while
+   * the user is looking at this pane, rather than when a save fails — by then
+   * they are in another application and have just pressed save, and a password
+   * box from a window in the background is not something to put in front of
+   * somebody who did not ask for one.
    */
-  const openFile = (file: RemoteFile, choose: boolean) => {
+  const openFile = (file: RemoteFile, choose: boolean, sudo = false) => {
     setMenu(null)
-    if ((file.size ?? 0) > LARGE_FILE && !choose) {
-      setConfirmLarge(file)
+    const start = () => {
+      if ((file.size ?? 0) > LARGE_FILE && !choose) {
+        setConfirmLarge({ file, sudo })
+        return
+      }
+      void editing.edit(file, pathOf(file), choose, sudo)
+    }
+    if (!sudo) return start()
+    void withSudo(start)
+  }
+
+  /** The other half: a save that was refused, sent again as root. */
+  const saveAsRoot = (remote: string) => void withSudo(() => void editing.elevate(remote))
+
+  /* ---------------------------------------------------------------------
+     The two panes, kept in step.
+
+     Deliberately asymmetric, because the two directions are not the same
+     kind of act. Sending `cd` is typing at a shell the user is looking at,
+     when they have just asked for it. Learning where that shell *is* cannot
+     be done by asking without typing into whatever program happens to be
+     running — so that direction listens, and offers a way to make the shell
+     speak when it is silent.
+  --------------------------------------------------------------------- */
+
+  const shellCwd = useShellCwd(session.id)
+  const [askingSync, setAskingSync] = useState(false)
+
+  /** Takes the terminal to the folder this pane is showing. */
+  const sendCd = () => {
+    if (!path) return
+    setOpError(null)
+    void sshCd(session.id, path).catch((e) => setOpError(message(e)))
+  }
+
+  /**
+   * Goes to the folder the terminal is in — or, when the shell has never said
+   * where that is, explains how to make it say.
+   */
+  const followShell = () => {
+    if (shellCwd === null) {
+      setAskingSync(true)
       return
     }
-    void editing.edit(file, pathOf(file), choose)
+    if (shellCwd !== path) void load(shellCwd)
   }
+
+  /** The user's decision, in the dialog: type the hook at the shell once. */
+  const enableSync = () => {
+    setAskingSync(false)
+    void sshWrite(session.id, encodeText(`${CWD_HOOK}\n`)).catch((e) => setOpError(message(e)))
+  }
+
+  // One line for every kind of failure that leaves the listing standing. The
+  // others come first because they are things the user has just done and is
+  // waiting on, where a refused write-back arrives on its own schedule.
+  //
+  // Resolved together rather than separately, because only one of them brings a
+  // button: a `Save as root` beside somebody else's message would be offering
+  // to fix the wrong thing.
+  const immediate = drop.error ?? opError ?? editing.error ?? null
+  const refusedSave = immediate === null ? editing.failed : null
+  const complaint = immediate ?? refusedSave?.error ?? null
 
   const RENDERERS: Record<SftpColumnId, Column<RemoteFile>> = {
     name: {
@@ -408,25 +539,65 @@ export function SftpPane({ session, width, resizing }: Props) {
             </span>
           ))}
         </span>
-        <Chip className="ml-auto flex-none" onClick={() => void load(path)}>
-          Refresh
-        </Chip>
+        {/* The two directions, then Refresh. `flex-none` on all three so a
+            narrow pane eats the breadcrumb — which already scrolls out of its
+            own overflow — rather than the controls. */}
+        <span className="ml-auto flex flex-none items-center gap-1.5">
+          <Chip
+            className="flex-none"
+            disabled={session.status !== 'open' || !path}
+            title={path ? `Type "cd ${path}" at the terminal` : 'No folder yet'}
+            onClick={sendCd}
+          >
+            cd here
+          </Chip>
+          {/* Enabled either way. With a directory known it goes there; without
+              one it says why it cannot, which is the more useful answer than a
+              control that is greyed out with no explanation. */}
+          <Chip
+            className="flex-none"
+            disabled={session.status !== 'open' || shellCwd === path}
+            title={
+              shellCwd === null
+                ? 'The shell has not said where it is — how to make it'
+                : `Go to the terminal's folder, ${shellCwd}`
+            }
+            onClick={followShell}
+          >
+            follow
+          </Chip>
+          <Chip className="flex-none" onClick={() => void load(path)}>
+            Refresh
+          </Chip>
+        </span>
       </div>
 
       {/* Upload and file-operation failures share one dismissible line: both
-          are things that went wrong *to* the listing, not instead of it. */}
-      {drop.error ?? opError ?? editing.error ? (
-        <button
-          type="button"
-          onClick={() => {
-            drop.clearError()
-            setOpError(null)
-            editing.clearError()
-          }}
-          className="flex-none border-b border-w06 px-3 py-2 text-left font-mono text-mono/cmd break-words text-warn"
-        >
-          ! {drop.error ?? opError ?? editing.error}
-        </button>
+          are things that went wrong *to* the listing, not instead of it.
+
+          A refused write-back is the one failure with an answer attached, so it
+          brings a button. The editor has already written the file — what is on
+          the scratch copy is what the user saved — so the fix is to send that
+          again as root, not to ask them to save a second time. */}
+      {complaint ? (
+        <div className="flex flex-none items-start gap-2 border-b border-w06 px-3 py-2">
+          <button
+            type="button"
+            onClick={() => {
+              drop.clearError()
+              setOpError(null)
+              editing.clearError()
+            }}
+            className="min-w-0 flex-1 text-left font-mono text-mono/cmd break-words text-warn"
+          >
+            ! {complaint}
+          </button>
+          {refusedSave ? (
+            <Chip className="flex-none" onClick={() => saveAsRoot(refusedSave.remote)}>
+              Save as root
+            </Chip>
+          ) : null}
+        </div>
       ) : null}
 
       {session.status !== 'open' ? (
@@ -468,11 +639,18 @@ export function SftpPane({ session, width, resizing }: Props) {
           three lines is the whole of it. */}
       {transfer ? <TransferFooter transfer={transfer} /> : null}
 
-      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 270 : 190}>
+      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 300 : 190}>
         {menu?.file.kind === 'file' ? (
           <>
             <MenuItem onClick={() => menu && openFile(menu.file, false)}>Open</MenuItem>
             <MenuItem onClick={() => menu && openFile(menu.file, true)}>Open with…</MenuItem>
+            {/* The whole point of the entry: a config file that reads fine and
+                refuses to be written. Saying "as root" rather than "with sudo"
+                because what changes is who writes the file, and `sudo` is only
+                how. */}
+            <MenuItem onClick={() => menu && openFile(menu.file, false, true)}>
+              Open as root…
+            </MenuItem>
             <MenuSeparator />
           </>
         ) : null}
@@ -502,11 +680,19 @@ export function SftpPane({ session, width, resizing }: Props) {
           {editing.saved ? (
             <span className="text-accent">
               saved {editing.saved.remote.split('/').pop()} · {size(editing.saved.bytes)}
+              {editing.saved.elevated ? ' · as root' : ''}
             </span>
           ) : (
             <>
               editing {editing.open.length}{' '}
               {editing.open.length === 1 ? 'file' : 'files'} · saves upload
+              {/* Which of them go up as root, because that is the fact worth
+                  knowing before pressing save in another window. */}
+              {editing.elevated.length > 0
+                ? editing.elevated.length === editing.open.length
+                  ? ' as root'
+                  : ` · ${editing.elevated.length} as root`
+                : ''}
             </>
           )}
         </div>
@@ -520,15 +706,15 @@ export function SftpPane({ session, width, resizing }: Props) {
           confirmLabel="Open anyway"
           onCancel={() => setConfirmLarge(null)}
           onConfirm={() => {
-            const file = confirmLarge
+            const { file, sudo } = confirmLarge
             setConfirmLarge(null)
-            void editing.edit(file, pathOf(file), false)
+            void editing.edit(file, pathOf(file), false, sudo)
           }}
         >
           <div className="flex flex-col gap-2">
             <span>
-              <span className="font-mono text-cell text-fg">{confirmLarge.name}</span> is{' '}
-              {size(confirmLarge.size)} — over the 5 MB edit limit.
+              <span className="font-mono text-cell text-fg">{confirmLarge.file.name}</span> is{' '}
+              {size(confirmLarge.file.size)} — over the 5 MB edit limit.
             </span>
             <span className="text-muted">
               It is downloaded in full and handed to a local application, which may take a
@@ -536,6 +722,29 @@ export function SftpPane({ session, width, resizing }: Props) {
             </span>
           </div>
         </ConfirmDialog>
+      ) : null}
+
+      {askingSync ? (
+        <ShellSyncDialog
+          hook={CWD_HOOK}
+          onCancel={() => setAskingSync(false)}
+          onEnable={enableSync}
+        />
+      ) : null}
+
+      {/* Asked once per session, and only where the host says it wants one. */}
+      {pending ? (
+        <SudoDialog
+          user={session.info?.user ?? 'this account'}
+          host={session.name}
+          busy={sudoBusy}
+          error={sudoError}
+          onCancel={() => {
+            setPending(null)
+            setSudoError(null)
+          }}
+          onUnlock={(password) => void unlock(password)}
+        />
       ) : null}
 
       {dialog === 'rename' && acting ? (

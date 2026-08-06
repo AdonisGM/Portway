@@ -11,6 +11,7 @@ mod models;
 mod settings;
 mod sftp;
 mod ssh;
+mod sudo;
 mod tunnels;
 
 use std::sync::Mutex;
@@ -55,6 +56,9 @@ pub fn run() {
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(ssh::Sessions::default());
             app.manage(sftp::Editing::default());
+            // In memory and nowhere else — see `sudo.rs`. Dropped per session
+            // on disconnect, and with the process either way.
+            app.manage(sudo::Passwords::default());
             app.manage(tunnels::Tunnels::default());
             app.manage(tunnels::TunnelStates::default());
 
@@ -102,6 +106,8 @@ pub fn run() {
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::ssh_cd,
+            commands::ssh_cwd,
             commands::sftp_list,
             commands::sftp_download,
             commands::sftp_upload,
@@ -112,6 +118,9 @@ pub fn run() {
             commands::sftp_principals,
             commands::sftp_remove,
             commands::sftp_edit,
+            commands::sftp_elevate,
+            commands::sudo_check,
+            commands::sudo_unlock,
             commands::open_session_window,
             commands::open_debug_window,
             commands::host_log,

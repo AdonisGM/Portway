@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { open as pickFile } from '@tauri-apps/plugin-dialog'
-import { LARGE_FILE, message, sftpEdit, type RemoteFile } from '@/lib/api'
+import { LARGE_FILE, message, sftpEdit, sftpElevate, type RemoteFile } from '@/lib/api'
 import { isMac } from '@/lib/platform'
 
 /**
@@ -17,37 +17,65 @@ import { isMac } from '@/lib/platform'
 export interface EditState {
   /** Remote paths currently open, in the order they were opened. */
   open: string[]
+  /** Which of them write back through root. A subset of `open`. */
+  elevated: string[]
   /** Last write-back, briefly, so a save is acknowledged. */
-  saved: { remote: string; bytes: number } | null
+  saved: { remote: string; bytes: number; elevated: boolean } | null
+  /**
+   * The last write-back that did not land, with the file it was about.
+   *
+   * Separate from `error` because the pane can *do* something about this one:
+   * a save refused for want of permission is one button away from being a save
+   * that lands, and the button needs to know which file.
+   */
+  failed: { remote: string; error: string } | null
   error: string | null
 }
 
 export function useEditing(sessionId: string, onSaved: () => void) {
-  const [state, setState] = useState<EditState>({ open: [], saved: null, error: null })
+  const [state, setState] = useState<EditState>({
+    open: [],
+    elevated: [],
+    saved: null,
+    failed: null,
+    error: null,
+  })
   const timer = useRef<number | undefined>(undefined)
   const refresh = useRef(onSaved)
   refresh.current = onSaved
 
   useEffect(() => {
     const unsubs: Array<Promise<() => void>> = [
-      listen<{ sessionId: string; remote: string; bytes: number }>('sftp://saved', (e) => {
-        if (e.payload.sessionId !== sessionId) return
-        setState((s) => ({ ...s, saved: { remote: e.payload.remote, bytes: e.payload.bytes } }))
-        refresh.current()
-        // The acknowledgement is transient on purpose — it reports an event,
-        // not a state, and a permanent "saved" would go stale the moment the
-        // next edit happens.
-        window.clearTimeout(timer.current)
-        timer.current = window.setTimeout(
-          () => setState((s) => ({ ...s, saved: null })),
-          3000,
-        )
-      }),
+      listen<{ sessionId: string; remote: string; bytes: number; elevated: boolean }>(
+        'sftp://saved',
+        (e) => {
+          if (e.payload.sessionId !== sessionId) return
+          const { remote, bytes, elevated } = e.payload
+          setState((s) => ({
+            ...s,
+            saved: { remote, bytes, elevated },
+            // A save that landed clears the failure it landed after — the file
+            // is on the server, and an old complaint about it is now a lie.
+            failed: s.failed?.remote === remote ? null : s.failed,
+            elevated:
+              elevated && !s.elevated.includes(remote) ? [...s.elevated, remote] : s.elevated,
+          }))
+          refresh.current()
+          // The acknowledgement is transient on purpose — it reports an event,
+          // not a state, and a permanent "saved" would go stale the moment the
+          // next edit happens.
+          window.clearTimeout(timer.current)
+          timer.current = window.setTimeout(
+            () => setState((s) => ({ ...s, saved: null })),
+            3000,
+          )
+        },
+      ),
       listen<{ sessionId: string; remote: string; error: string }>(
         'sftp://save-failed',
         (e) => {
           if (e.payload.sessionId !== sessionId) return
-          setState((s) => ({ ...s, error: `${e.payload.remote}: ${e.payload.error}` }))
+          setState((s) => ({ ...s, failed: { remote: e.payload.remote, error: e.payload.error } }))
         },
       ),
     ]
@@ -64,9 +92,12 @@ export function useEditing(sessionId: string, onSaved: () => void) {
    * /Applications, a Windows one is an `.exe` under Program Files. Pointing the
    * panel at a directory that does not exist is worse than not pointing it
    * anywhere, so this only sets a default where it knows one.
+   *
+   * `sudo` is the caller's to establish — the pane checks the host and collects
+   * a password if one is wanted before ever getting here.
    */
   const edit = useCallback(
-    async (file: RemoteFile, remote: string, choose: boolean) => {
+    async (file: RemoteFile, remote: string, choose: boolean, sudo = false) => {
       try {
         let opener: string | null = null
         if (choose) {
@@ -81,12 +112,36 @@ export function useEditing(sessionId: string, onSaved: () => void) {
           if (typeof picked !== 'string') return // dismissed
           opener = picked
         }
-        await sftpEdit(sessionId, remote, opener, (file.size ?? 0) > LARGE_FILE)
-        setState((s) =>
-          s.open.includes(remote) ? s : { ...s, open: [...s.open, remote], error: null },
-        )
+        await sftpEdit(sessionId, remote, opener, (file.size ?? 0) > LARGE_FILE, sudo)
+        setState((s) => ({
+          ...s,
+          open: s.open.includes(remote) ? s.open : [...s.open, remote],
+          // Once raised, a file stays raised: opening it plainly again is not a
+          // request to go back to a write that cannot land.
+          elevated: sudo && !s.elevated.includes(remote) ? [...s.elevated, remote] : s.elevated,
+          error: null,
+        }))
       } catch (e) {
         setState((s) => ({ ...s, error: message(e) }))
+      }
+    },
+    [sessionId],
+  )
+
+  /**
+   * Sends a file whose save was refused up again, as root.
+   *
+   * Like `edit`, this expects the pane to have dealt with the password first.
+   */
+  const elevate = useCallback(
+    async (remote: string) => {
+      try {
+        await sftpElevate(sessionId, remote)
+        // The `sftp://saved` event does the rest — it clears the failure,
+        // marks the file raised and refreshes the listing, exactly as it does
+        // for a save that came from the editor.
+      } catch (e) {
+        setState((s) => ({ ...s, failed: { remote, error: message(e) } }))
       }
     },
     [sessionId],
@@ -95,6 +150,7 @@ export function useEditing(sessionId: string, onSaved: () => void) {
   return {
     ...state,
     edit,
-    clearError: () => setState((s) => ({ ...s, error: null })),
+    elevate,
+    clearError: () => setState((s) => ({ ...s, error: null, failed: null })),
   }
 }

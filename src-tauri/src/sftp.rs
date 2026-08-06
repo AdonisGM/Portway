@@ -1,11 +1,11 @@
-use std::collections::HashSet;
-use std::sync::atomic::AtomicUsize;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use russh_sftp::client::error::Error as RawError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::{RawSftpSession, SftpSession};
-use russh_sftp::protocol::StatusCode;
+use russh_sftp::protocol::{OpenFlags, StatusCode};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -14,6 +14,7 @@ use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::logging::{self, Level, Span};
 use crate::ssh;
+use crate::sudo;
 
 /// One entry in a remote directory.
 #[derive(Debug, Clone, Serialize)]
@@ -573,7 +574,102 @@ pub async fn upload(
     log(app, host_id, session_id, Origin::User, &format!("sftp put {remote}"));
     // No progress: the only caller is the editor writing a file back after a
     // save, and a footer that flashes on every ⌘S is noise, not information.
-    put_file(&sftp, std::path::Path::new(local), remote, None).await
+    put_file(&sftp, std::path::Path::new(local), remote, Create::Overwrite, None).await
+}
+
+/// Writes a local file back to a path the account cannot write, as root.
+///
+/// SFTP has no notion of privilege — the subsystem the server starts runs as
+/// whoever logged in, and nothing in the protocol asks for more. So the bytes
+/// go up the ordinary way, into a staging copy in the account's own home, and
+/// one command as root moves them the last few inches.
+///
+/// `cp` onto a file that already exists opens it and truncates it: the target
+/// keeps its inode, its owner and its mode, which is exactly what writing a
+/// file back should do. `--preserve` would do the opposite and stamp the
+/// staging copy's ownership onto a system file. `mv` and `install` would
+/// replace the inode, taking the target's hard links and ACLs with it. `--`
+/// because a filename that starts with a dash is still a filename.
+///
+/// Not `tee`, and not `sh -c 'cat > …'`, tempting as both look: `sudo -S` reads
+/// the password from standard input, so standard input is spoken for, and there
+/// is nothing left to pipe the file in on.
+async fn upload_as_root(
+    app: &AppHandle,
+    session_id: &str,
+    local: &std::path::Path,
+    remote: &str,
+) -> Result<u64> {
+    let (sftp, host_id) = open(app, session_id).await?;
+    // Before the attempt, as every other operation in this file logs: the audit
+    // trail is what was done *to this server*, and a write as root that failed
+    // is still something that was tried.
+    log(app, host_id, session_id, Origin::User, &format!("sftp put (sudo) {remote}"));
+
+    let name = staging_name(session_id);
+    // The account's own home first. `/tmp` is a shared namespace: another
+    // account on the same machine can plant a symlink at a name it guesses, and
+    // the `cp` below — running as root — would follow it and write there
+    // instead. Home is the account's own directory, and `/tmp` is reached only
+    // where there is no home to write in at all — with `EXCLUDE` when it is.
+    let home = sftp.canonicalize(".").await.unwrap_or_default();
+    let mut staging = join_remote("/tmp", &name);
+    let mut sent = None;
+    let mut refused = None;
+    if !home.is_empty() {
+        let at_home = join_remote(&home, &name);
+        match put_file(&sftp, local, &at_home, Create::Private, None).await {
+            Ok(bytes) => {
+                staging = at_home;
+                sent = Some(bytes);
+            }
+            // Worth trying `/tmp` for rather than giving up on — but a home
+            // directory that will not take a file is the real problem, so this
+            // is the failure reported if both of them refuse.
+            Err(e) => refused = Some(e),
+        }
+    }
+    let sent = match sent {
+        Some(bytes) => bytes,
+        None => put_file(&sftp, local, &staging, Create::PrivateInTmp, None)
+            .await
+            .map_err(|e| refused.unwrap_or(e))?,
+    };
+
+    let outcome = sudo::run(
+        app,
+        session_id,
+        &format!("cp -- {} {}", ssh::quoted(&staging), ssh::quoted(remote)),
+        0,
+    )
+    .await;
+
+    // On every way out of here, the failure included: the staging copy holds
+    // the user's file, and leaving it behind is both a mess in their home
+    // directory and a copy of something they were editing under sudo.
+    let _ = sftp.remove_file(staging).await;
+    outcome?;
+
+    Ok(sent)
+}
+
+/// A name for the staging copy that no two saves can collide on.
+///
+/// The session and a clock reading, because two files open in one session can
+/// be saved in the same second and a fixed name would have one overwrite the
+/// other halfway through a `cp`. Leading dot so it does not clutter a home
+/// directory in the moment it exists.
+fn staging_name(session_id: &str) -> String {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_nanos())
+        .unwrap_or(0);
+    let session: String = session_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
+    format!(".portway-{session}-{stamp}")
 }
 
 /// Uploads whatever was dropped: a file, or a directory and everything under it.
@@ -646,7 +742,7 @@ pub async fn upload_path(
 
     let mut total = 0u64;
     for (from, to) in sending {
-        match put_file(&sftp, &from, &to, Some(&mut progress)).await {
+        match put_file(&sftp, &from, &to, Create::Overwrite, Some(&mut progress)).await {
             Ok(sent) => total += sent,
             Err(e) => {
                 span.failed(&format!("{to} — {e}"));
@@ -717,11 +813,38 @@ fn join_remote(dir: &str, name: &str) -> String {
     }
 }
 
-/// One file's bytes, shared by `upload` and the directory walk.
+/// How a file is asked for on the far end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Create {
+    /// Overwrite whatever is there, and leave the mode to the server and the
+    /// account's umask. What an upload is: the result should look like a file
+    /// that account wrote, because it is one.
+    Overwrite,
+    /// Mode `0600`, for a staging copy whose contents are on their way to a
+    /// file only root can write. The mode goes in the open request rather than
+    /// a `chmod` after it — between a create and a second round trip is a
+    /// window in which the file exists, already has the contents in it, and is
+    /// readable by whatever the umask allowed.
+    Private,
+    /// The same, and `EXCLUDE` as well: a path that already exists is then a
+    /// failure rather than something to write through, which is what refuses a
+    /// symlink planted at a guessed name.
+    ///
+    /// Only where it buys something, which is `/tmp` — a namespace every
+    /// account on the machine can write to. `EXCLUDE` is a far less travelled
+    /// flag than the three every other upload sends, and a server that
+    /// mishandles the combination would break every elevated save; in the
+    /// account's own home the unique name is already the defence.
+    PrivateInTmp,
+}
+
+/// One file's bytes, shared by `upload`, the directory walk, and the staging
+/// copy an elevated save puts up before moving it into place.
 async fn put_file(
     sftp: &russh_sftp::client::SftpSession,
     local: &std::path::Path,
     remote: &str,
+    create: Create,
     mut progress: Option<&mut Progress>,
 ) -> Result<u64> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -735,8 +858,23 @@ async fn put_file(
         p.start(name, size);
     }
 
+    // What `SftpSession::create` does, plus the flags and attributes it has
+    // nowhere to put. `Overwrite` sends byte for byte the request `create`
+    // sends: `only` leaves every field `None`, so no attribute is asked for.
+    let flags = match create {
+        // No `TRUNCATE` beside `EXCLUDE`: there is nothing there to truncate,
+        // and asking for both invites a server to decide which one was meant.
+        Create::PrivateInTmp => OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
+        _ => OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
+    };
     let mut target = sftp
-        .create(remote)
+        .open_with_flags_and_attributes(
+            remote,
+            flags,
+            only(|m| {
+                m.permissions = (create != Create::Overwrite).then_some(0o600);
+            }),
+        )
         .await
         .map_err(|e| Error::Ssh(format!("could not write {remote}: {}", tidy(e))))?;
 
@@ -864,10 +1002,27 @@ pub async fn chown(
     Ok(changed)
 }
 
+/// A file open in a local editor.
+pub struct Open {
+    /// The scratch copy that editor is writing to.
+    ///
+    /// Kept, because a write-back that was refused is not a save that has to be
+    /// made again: what is on disk here is already what the user pressed save
+    /// on, and `elevate` sends exactly that.
+    pub local: std::path::PathBuf,
+    /// Whether the next write-back goes through `sudo`.
+    ///
+    /// Shared with the watcher, and atomic rather than plain, because it is set
+    /// from a command while the watcher is asleep between polls. "Save this one
+    /// as root" has to change where the *next* save goes — not start a second
+    /// watch against the same copy, which would race two uploads.
+    pub elevated: Arc<AtomicBool>,
+}
+
 /// Files opened for editing, so re-opening one does not start a second watcher
 /// against the same copy.
 #[derive(Default)]
-pub struct Editing(pub Mutex<HashSet<String>>);
+pub struct Editing(pub Mutex<HashMap<String, Open>>);
 
 /// A file the user is editing has been saved and pushed back up.
 #[derive(Clone, Serialize)]
@@ -876,6 +1031,10 @@ struct SavedEvent {
     session_id: String,
     remote: String,
     bytes: u64,
+    /// Whether it took root to land. Shown, because "saved" and "saved as root"
+    /// are different enough facts that a pane reporting only the first would be
+    /// hiding the more consequential one.
+    elevated: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -898,21 +1057,33 @@ pub const LARGE_FILE: u64 = 5 * 1024 * 1024;
 /// they like, with their own keybindings and language support, and a few
 /// megabytes of bundled editor would still be the wrong one. The cost is that
 /// "save" has to be noticed rather than handled, which is what the watcher does.
+///
+/// `sudo` is decided here, at the moment the user is looking at the pane, and
+/// not at the moment a save fails. By then they are in another application and
+/// have just pressed ⌘S; a password box from a background window is not
+/// something to put in front of somebody who did not ask for it. What a failed
+/// save gets instead is `elevate`, which the pane offers as a button.
 pub async fn edit(
     app: &AppHandle,
     session_id: &str,
     remote: &str,
     opener: Option<String>,
     confirmed_large: bool,
+    sudo: bool,
 ) -> Result<String> {
     let (sftp, host_id) = open(app, session_id).await?;
 
-    let size = sftp
-        .metadata(remote)
-        .await
-        .map_err(|e| Error::Ssh(format!("no such file {remote}: {}", tidy(e))))?
-        .size
-        .unwrap_or(0);
+    let size = match sftp.metadata(remote).await {
+        Ok(meta) => meta.size.unwrap_or(0),
+        // Without sudo there is nothing else to try — the file cannot be
+        // reached at all, and the message says which one.
+        Err(e) if !sudo => {
+            return Err(Error::Ssh(format!("no such file {remote}: {}", tidy(e))));
+        }
+        // With it, a refused `stat` is not the end: the read below goes through
+        // sudo too, and it is capped, so an unknown size is not an unbounded one.
+        Err(_) => 0,
+    };
     // Enforced here rather than only in the dialog: the dialog is a courtesy,
     // this is what stops a mis-click reading a gigabyte over the wire.
     if size > LARGE_FILE && !confirmed_large {
@@ -926,13 +1097,23 @@ pub async fn edit(
     tokio::fs::create_dir_all(&dir).await?;
     let local = dir.join(name);
 
-    let bytes = get_file(&sftp, remote, &local).await?;
+    // Plain SFTP first even when root was asked for. Most files opened this way
+    // are the 644 configuration files that read perfectly well and only refuse
+    // to be written — and that path streams, where the sudo one does not.
+    let bytes = match get_file(&sftp, remote, &local).await {
+        Ok(bytes) => bytes,
+        Err(_) if sudo => get_file_as_root(app, session_id, remote, &local).await?,
+        Err(e) => return Err(e),
+    };
     log(
         app,
         host_id,
         session_id,
         Origin::User,
-        &format!("sftp edit {remote} ({bytes} bytes)"),
+        &format!(
+            "sftp edit{} {remote} ({bytes} bytes)",
+            if sudo { " (sudo)" } else { "" }
+        ),
     );
 
     launch(&local, opener.as_deref())?;
@@ -940,16 +1121,115 @@ pub async fn edit(
     // One watcher per remote path. Opening the same file twice should hand it
     // back to the editor already holding it, not race two uploads.
     let key = format!("{session_id}\u{0}{remote}");
-    {
+    let elevated = {
         let editing = app.state::<Editing>();
-        let mut open_files = editing.0.lock().unwrap();
-        if !open_files.insert(key.clone()) {
-            return Ok(local.to_string_lossy().into_owned());
+        let mut files = editing.0.lock().unwrap();
+        match files.get(&key) {
+            // Already watched. Re-opening as root raises the file that is
+            // already open; re-opening it plainly leaves it where it is, because
+            // "Open" is not a request to drop back to a write that cannot land.
+            Some(open) => {
+                if sudo {
+                    open.elevated.store(true, Ordering::Relaxed);
+                }
+                None
+            }
+            None => {
+                let flag = Arc::new(AtomicBool::new(sudo));
+                files.insert(
+                    key.clone(),
+                    Open { local: local.clone(), elevated: Arc::clone(&flag) },
+                );
+                Some(flag)
+            }
         }
-    }
-    watch(app.clone(), session_id.to_string(), remote.to_string(), local.clone(), key);
+    };
+    let Some(elevated) = elevated else {
+        return Ok(local.to_string_lossy().into_owned());
+    };
+    watch(
+        app.clone(),
+        session_id.to_string(),
+        remote.to_string(),
+        local.clone(),
+        key,
+        elevated,
+    );
 
     Ok(local.to_string_lossy().into_owned())
+}
+
+/// Reads a file the account cannot open, as root.
+///
+/// `cat` rather than a copy the account could then fetch over SFTP: a copy
+/// would need a second command to hand it over and a third to remove it, and it
+/// would put the contents of a root-only file — a private key, `/etc/shadow` —
+/// on disk somewhere the account, and anything running as it, could read. The
+/// bytes come back over the channel and go straight to the scratch copy.
+///
+/// Capped at the ordinary edit limit, and this one is not negotiable: the
+/// contents arrive in memory whole, where the SFTP path streams. "Open it
+/// anyway" is for a file SFTP can read by itself.
+async fn get_file_as_root(
+    app: &AppHandle,
+    session_id: &str,
+    remote: &str,
+    local: &std::path::Path,
+) -> Result<u64> {
+    let out = sudo::run(
+        app,
+        session_id,
+        &format!("cat -- {}", ssh::quoted(remote)),
+        // One byte over the limit, which is how "it did not fit" is told apart
+        // from "it fits exactly".
+        LARGE_FILE as usize + 1,
+    )
+    .await?;
+
+    if out.stdout.len() as u64 > LARGE_FILE {
+        return Err(Error::Invalid(format!(
+            "{remote} is larger than the {LARGE_FILE} byte limit for reading a file as root"
+        )));
+    }
+    tokio::fs::write(local, &out.stdout).await?;
+    Ok(out.stdout.len() as u64)
+}
+
+/// Sends a scratch copy up again as root, and makes every save after this one
+/// go the same way.
+///
+/// The other half of a write-back that was refused. The editor has already
+/// written the file and moved on — quite possibly it has been closed — so
+/// telling the user to press save again is asking them to redo something they
+/// have already done. What is on disk here *is* what they saved.
+pub async fn elevate(app: &AppHandle, session_id: &str, remote: &str) -> Result<u64> {
+    let key = format!("{session_id}\u{0}{remote}");
+    let local = {
+        let editing = app.state::<Editing>();
+        let files = editing.0.lock().unwrap();
+        let open = files.get(&key).ok_or_else(|| {
+            Error::Invalid(format!("{remote} is not open for editing in this session"))
+        })?;
+        open.elevated.store(true, Ordering::Relaxed);
+        open.local.clone()
+    };
+
+    let bytes = upload_as_root(app, session_id, &local, remote).await?;
+    logging::info(
+        "sftp",
+        &format!("wrote back {remote} as root"),
+        Some(&format!("{bytes} bytes, after a save the server refused")),
+    );
+    let _ = app.emit(
+        "sftp://saved",
+        SavedEvent {
+            session_id: session_id.to_string(),
+            remote: remote.to_string(),
+            bytes,
+            elevated: true,
+        },
+    );
+    Ok(bytes)
 }
 
 /// Hands the scratch copy to a local application.
@@ -1007,7 +1287,14 @@ fn launch(local: &std::path::Path, opener: Option<&str>) -> Result<()> {
 /// and a rename fires events a naive watcher misses while a stat does not care
 /// which happened. One second is under the threshold where a save feels
 /// unacknowledged.
-fn watch(app: AppHandle, session_id: String, remote: String, local: std::path::PathBuf, key: String) {
+fn watch(
+    app: AppHandle,
+    session_id: String,
+    remote: String,
+    local: std::path::PathBuf,
+    key: String,
+    elevated: Arc<AtomicBool>,
+) {
     tokio::spawn(async move {
         let mut last = tokio::fs::metadata(&local).await.ok().and_then(|m| m.modified().ok());
 
@@ -1026,16 +1313,31 @@ fn watch(app: AppHandle, session_id: String, remote: String, local: std::path::P
             }
             last = Some(modified);
 
-            match upload(&app, &session_id, &local.to_string_lossy(), &remote).await {
+            // Read once per save rather than captured: `elevate` can raise a
+            // file between two polls, and the point of that is the very next
+            // save.
+            let as_root = elevated.load(Ordering::Relaxed);
+            let written = if as_root {
+                upload_as_root(&app, &session_id, &local, &remote).await
+            } else {
+                upload(&app, &session_id, &local.to_string_lossy(), &remote).await
+            };
+
+            match written {
                 Ok(bytes) => {
                     logging::info(
                         "sftp",
-                        &format!("wrote back {remote}"),
+                        &format!("wrote back {remote}{}", if as_root { " as root" } else { "" }),
                         Some(&format!("{bytes} bytes, after a save in the local editor")),
                     );
                     let _ = app.emit(
                         "sftp://saved",
-                        SavedEvent { session_id: session_id.clone(), remote: remote.clone(), bytes },
+                        SavedEvent {
+                            session_id: session_id.clone(),
+                            remote: remote.clone(),
+                            bytes,
+                            elevated: as_root,
+                        },
                     );
                 }
                 Err(e) => {
@@ -1246,7 +1548,23 @@ async fn removing(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -
 
 #[cfg(test)]
 mod tests {
-    use super::{owner_group, parse_table, scratch_name};
+    use super::{owner_group, parse_table, scratch_name, staging_name};
+
+    /// The staging copy is named by us and read back by a `sudo cp`, so two
+    /// things about the name are load-bearing: it is one ordinary path
+    /// component, and no two saves in a session can land on the same one.
+    #[test]
+    fn names_a_staging_copy_that_cannot_collide() {
+        let first = staging_name("d7f3-9a1c-session");
+        let second = staging_name("d7f3-9a1c-session");
+        assert_ne!(first, second);
+
+        for name in [first, staging_name(""), staging_name("../../etc/passwd")] {
+            assert!(name.starts_with(".portway-"), "{name}");
+            assert!(!name.contains(['/', '\\', ':', '\0']), "{name}");
+            assert!(!name.contains(".."), "{name}");
+        }
+    }
 
     #[test]
     fn keeps_an_ordinary_name() {

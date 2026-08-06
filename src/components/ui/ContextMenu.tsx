@@ -87,21 +87,39 @@ interface ItemProps {
   children: ReactNode
   /** Destructive actions read in the danger colour, as they do in the drawer. */
   danger?: boolean
+  /** Runs on the server as root: warn colour, and a marker at the end of the row. */
+  root?: boolean
   disabled?: boolean
 }
 
-export function MenuItem({ onClick, children, danger, disabled }: ItemProps) {
+export function MenuItem({ onClick, children, danger, root, disabled }: ItemProps) {
+  // Three tones, and `root` is not `danger`. Red in this app means "this cannot
+  // be undone"; running as root is not that — it is ordinary work with the
+  // safety rail removed. It needs to be impossible to hit by accident while
+  // reaching for the item above it, which is what the colour and the marker
+  // are for, but it must not borrow the weight that Delete has earned.
+  const tone = danger
+    ? 'text-danger hover:bg-danger-fill'
+    : root
+      ? 'text-warn hover:bg-w07'
+      : 'text-fg-2 hover:bg-w07 hover:text-fg'
+
   return (
     <button
       type="button"
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-body transition-colors disabled:opacity-40 ${
-        danger ? 'text-danger hover:bg-danger-fill' : 'text-fg-2 hover:bg-w07 hover:text-fg'
-      }`}
+      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-body transition-colors disabled:opacity-40 ${tone}`}
     >
       {children}
+      {/* Sits at the end of the row rather than in the label, so the eye finds
+          every root item in one pass down the menu instead of reading each. */}
+      {root ? (
+        <span className="ml-auto rounded-chip bg-w07 px-1.25 py-0.25 font-mono text-status uppercase">
+          root
+        </span>
+      ) : null}
     </button>
   )
 }

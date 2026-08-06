@@ -62,6 +62,87 @@ export function RenameDialog({
 }
 
 /**
+ * What running as root will do, before it does it.
+ *
+ * Every path to root goes through here, including the ones where sudo is
+ * already unlocked and nothing else would have been asked. That is the point:
+ * once a session is unlocked, `Open as root` is one click away from writing to
+ * `/etc` on a production machine, and a control that is a click away from that
+ * needs a step that cannot be taken by reflex.
+ *
+ * It shows the command rather than describing it. "Saves as root" is a promise;
+ * `sudo cp -- <copy> '/etc/nginx/nginx.conf'` is what will actually happen, and
+ * on somebody's production host those should be the same thing and the user
+ * should be the one who checks.
+ *
+ * A write is confirmed by holding, not clicking — the gesture `ConfirmDialog`
+ * already reserves for what cannot be undone. A read is an ordinary confirm: it
+ * needs to be deliberate, but it changes nothing.
+ */
+export function RootActionDialog({
+  action,
+  host,
+  path,
+  command,
+  writes,
+  onCancel,
+  onConfirm,
+}: {
+  /** What this is, in the words the menu used: `Open as root`, `Save as root`. */
+  action: string
+  host: string
+  path: string
+  /** The command, as the server will see it. Kept in step with the Rust that
+   *  builds it — see `sftp.rs::upload_as_root` and `get_file_as_root`. */
+  command: string
+  /** True when it changes something on the far end. */
+  writes: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <ConfirmDialog
+      open
+      title={action}
+      confirmVariant={writes ? 'dangerSolid' : 'accent'}
+      // No "Hold to" here even for the held variant: `HoldButton` puts that in
+      // front of whatever it is given, and both together read "Hold to hold to".
+      confirmLabel="Run as root"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      {
+        <div className="flex flex-col gap-3">
+          <span className="text-muted">
+            {writes ? 'This changes a file on' : 'This reads a file on'}{' '}
+            <span className="font-mono text-cell text-fg">{host}</span> with root's
+            permissions, not your account's.
+          </span>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-meta text-muted">Path</span>
+            <span className="font-mono text-cell break-all text-fg">{path}</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-meta text-muted">Runs on the server</span>
+            <code className="overflow-x-auto rounded-field border border-w08 bg-field px-2.5 py-2 font-mono text-mono/cmd break-all text-warn">
+              {command}
+            </code>
+          </div>
+
+          <span className="text-meta text-faint">
+            The full command, its exit status and this host's name go to the log and to
+            this host's command trail. Your password is sent to sudo on standard input,
+            so it appears in neither.
+          </span>
+        </div>
+      }
+    </ConfirmDialog>
+  )
+}
+
+/**
  * The password `sudo` wants, asked for once per session.
  *
  * Its own dialog rather than a line in the Permissions one, because it is not a

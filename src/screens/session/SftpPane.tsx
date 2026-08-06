@@ -32,6 +32,7 @@ import {
   OwnerDialog,
   PermissionsDialog,
   RenameDialog,
+  RootActionDialog,
   ShellSyncDialog,
   SudoDialog,
 } from './FileDialogs'
@@ -302,6 +303,27 @@ export function SftpPane({ session, width, resizing }: Props) {
   const editing = useEditing(session.id, () => void load(path))
 
   /**
+   * Everything that runs as root, held at one gate.
+   *
+   * Confirmed *before* the password rather than after, and before it even
+   * matters whether one is needed: the question "should this run as root at
+   * all" is the user's, and on a session that is already unlocked — or a
+   * NOPASSWD host — nothing else would ever have stopped to ask it.
+   */
+  const [rootAction, setRootAction] = useState<{
+    action: string
+    path: string
+    command: string
+    writes: boolean
+    run: () => void
+  } | null>(null)
+
+  const confirmRoot = (ask: NonNullable<typeof rootAction>) => {
+    setMenu(null)
+    setRootAction(ask)
+  }
+
+  /**
    * Runs something that needs root, collecting a password first if the host
    * wants one.
    *
@@ -367,11 +389,29 @@ export function SftpPane({ session, width, resizing }: Props) {
       void editing.edit(file, pathOf(file), choose, sudo)
     }
     if (!sudo) return start()
-    void withSudo(start)
+
+    const remote = pathOf(file)
+    confirmRoot({
+      action: 'Open as root',
+      path: remote,
+      // Both halves, because opening as root is both: the read only happens if
+      // the ordinary one is refused, and the write happens on every save from
+      // then on. Saying only the first would understate what is being agreed to.
+      command: `sudo cat -- '${remote}'   ·   every save: sudo cp -- <copy> '${remote}'`,
+      writes: true,
+      run: () => void withSudo(start),
+    })
   }
 
   /** The other half: a save that was refused, sent again as root. */
-  const saveAsRoot = (remote: string) => void withSudo(() => void editing.elevate(remote))
+  const saveAsRoot = (remote: string) =>
+    confirmRoot({
+      action: 'Save as root',
+      path: remote,
+      command: `sudo cp -- <copy in your home> '${remote}'`,
+      writes: true,
+      run: () => void withSudo(() => void editing.elevate(remote)),
+    })
 
   /* ---------------------------------------------------------------------
      The two panes, kept in step.
@@ -648,7 +688,7 @@ export function SftpPane({ session, width, resizing }: Props) {
                 refuses to be written. Saying "as root" rather than "with sudo"
                 because what changes is who writes the file, and `sudo` is only
                 how. */}
-            <MenuItem onClick={() => menu && openFile(menu.file, false, true)}>
+            <MenuItem root onClick={() => menu && openFile(menu.file, false, true)}>
               Open as root…
             </MenuItem>
             <MenuSeparator />
@@ -729,6 +769,24 @@ export function SftpPane({ session, width, resizing }: Props) {
           hook={CWD_HOOK}
           onCancel={() => setAskingSync(false)}
           onEnable={enableSync}
+        />
+      ) : null}
+
+      {/* Every path to root passes through here first — including the ones
+          where sudo is already unlocked and nothing else would have asked. */}
+      {rootAction ? (
+        <RootActionDialog
+          action={rootAction.action}
+          host={session.name}
+          path={rootAction.path}
+          command={rootAction.command}
+          writes={rootAction.writes}
+          onCancel={() => setRootAction(null)}
+          onConfirm={() => {
+            const ask = rootAction
+            setRootAction(null)
+            ask.run()
+          }}
         />
       ) : null}
 

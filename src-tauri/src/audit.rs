@@ -38,6 +38,14 @@ pub enum Kind {
     Sftp,
     /// Connection lifecycle: host key decisions, auth, disconnect.
     Auth,
+    /// A port forward opened, tested or closed through this host.
+    ///
+    /// Its own kind rather than folded into `Auth`, because a forward is not a
+    /// connection to the host — it is the host being *used* to reach somewhere
+    /// else, and reading the trail to find out where this machine has been a
+    /// bridge to is a different question from reading it to find out who
+    /// logged in.
+    Tunnel,
 }
 
 impl Kind {
@@ -47,6 +55,7 @@ impl Kind {
             Kind::Exec => "exec",
             Kind::Sftp => "sftp",
             Kind::Auth => "auth",
+            Kind::Tunnel => "tunnel",
         }
     }
 }
@@ -68,6 +77,12 @@ pub struct LogEntry {
 /// Appends one entry. Deliberately infallible from the caller's point of view
 /// — auditing must never be the reason an operation fails — so callers use
 /// `record` and ignore the result.
+///
+/// `exit_code` is `None` for everything that cannot report one, which is most
+/// of what reaches a host: a keystroke typed into a PTY has no status, and an
+/// SFTP operation either returned or raised. A command on its own channel does
+/// have one, and the column has been there — and empty — since the table was
+/// written.
 pub fn record(
     conn: &Connection,
     host_id: i64,
@@ -76,10 +91,12 @@ pub fn record(
     kind: Kind,
     command: &str,
     detail: Option<&str>,
+    exit_code: Option<i32>,
 ) {
     let _ = conn.execute(
-        "INSERT INTO command_log (host_id, session_id, origin, kind, command, detail, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO command_log
+           (host_id, session_id, origin, kind, command, detail, exit_code, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             host_id,
             session_id,
@@ -87,6 +104,7 @@ pub fn record(
             kind.as_str(),
             command,
             detail,
+            exit_code,
             now_ms(),
         ],
     );

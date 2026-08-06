@@ -38,6 +38,15 @@ pub struct Session {
     pub resize: mpsc::UnboundedSender<(u32, u32)>,
     pub started_at: i64,
     pub server_key: String,
+    /// The host, spelled the way a log line needs it: the name the user gave it
+    /// and the address it actually reached.
+    ///
+    /// Carried on the session rather than looked up per line. Every log line
+    /// about this connection has to name the server or it cannot be told from
+    /// the other four a person has open — and `session=63151` names nothing a
+    /// human recognises. A database read per line, on a path that logs every
+    /// keystroke, is not the way to get it.
+    pub label: String,
     /// The last directory the shell announced, or `None` if it never has.
     ///
     /// Held on the session rather than in the pump task that fills it, because
@@ -250,6 +259,7 @@ pub async fn dial(
             Kind::Auth,
             &format!("connect {}@{}", host.user, addr),
             Some(&format!("auth={}", host.auth)),
+            None,
         );
     }
 
@@ -297,6 +307,7 @@ pub async fn dial(
                 Kind::Auth,
                 "verify host key",
                 Some(&decision),
+                None,
             );
             let level = if decision.starts_with("REFUSED") { Level::Error } else { Level::Debug };
             logging::record(level, "ssh", "host key", Some(&decision));
@@ -346,6 +357,7 @@ pub async fn dial(
                 Kind::Auth,
                 "authenticated",
                 Some(&format!("method={method}")),
+                None,
             );
         }
         Err(e) => {
@@ -422,6 +434,7 @@ pub async fn connect(
             Kind::Auth,
             "open shell",
             Some(&format!("pty=xterm-256color hostkey={negotiated}")),
+            None,
         );
     }
 
@@ -459,6 +472,7 @@ pub async fn connect(
                     Kind::Shell,
                     command,
                     Some("run on connect"),
+                    None,
                 );
             }
             let _ = channel.data(format!("{command}\n").as_bytes()).await;
@@ -473,7 +487,7 @@ pub async fn connect(
                         let conn = db.0.lock().unwrap();
                         audit::record(
                             &conn, host_id, Some(&pump_session),
-                            Origin::User, Kind::Shell, &line, None,
+                            Origin::User, Kind::Shell, &line, None, None,
                         );
                     }
                     if channel.data(bytes.as_slice()).await.is_err() {
@@ -536,7 +550,7 @@ pub async fn connect(
             let conn = db.0.lock().unwrap();
             audit::record(
                 &conn, host_id, Some(&pump_session),
-                Origin::System, Kind::Auth, "shell closed", None,
+                Origin::System, Kind::Auth, "shell closed", None, None,
             );
         }
         logging::info(
@@ -562,6 +576,7 @@ pub async fn connect(
         resize: resize_tx,
         started_at,
         server_key: negotiated.clone(),
+        label: format!("{} {}@{}:{}", host.name, host.user, host.address, host.port),
         cwd,
     });
 
@@ -1081,6 +1096,18 @@ pub fn cd(app: &AppHandle, session_id: &str, path: &str) -> Result<()> {
     Ok(())
 }
 
+/// How a log line names this session's server.
+///
+/// Falls back to the id rather than to nothing: a line about a session that has
+/// just gone is still a line about *something*, and an empty space where the
+/// host should be reads as a bug in the logging.
+pub fn label_of(app: &AppHandle, session_id: &str) -> String {
+    match session(app, session_id) {
+        Ok(session) => format!("host={}", session.label),
+        Err(_) => format!("host=? session={session_id}"),
+    }
+}
+
 /// The last directory this session's shell announced, for a pane that has just
 /// been built and missed everything before it.
 ///
@@ -1317,6 +1344,81 @@ pub async fn run(
     command: &str,
     stdin: Option<&[u8]>,
     limit: usize,
+    origin: Origin,
+) -> Result<Output> {
+    let outcome = running(app, session_id, command, stdin, limit).await;
+    // Whichever way it went. A command that failed is the one somebody comes
+    // looking for later, and a trail that only records the successes is not a
+    // trail — it is a highlight reel.
+    audited(app, session_id, origin, command, &outcome);
+    outcome
+}
+
+/// Writes one exec to both places a record of it belongs.
+///
+/// The audit row answers *what was done to this server*, kept as long as the
+/// host exists; the log line answers *what this program did just now*, which is
+/// what the log window shows. Neither is optional here: running a command on
+/// somebody's machine is the most consequential thing this app does, and it is
+/// the one thing that must never happen without a trace.
+///
+/// At `info` rather than the `debug` an SFTP operation gets. A listing is a
+/// read of one directory over a protocol that can do nothing else; this is an
+/// arbitrary command line, very often as root, and it belongs in the ordinary
+/// narrative rather than behind a level that is off by default.
+///
+/// **The command is written down and the input never is.** A password reaches
+/// `sudo` on stdin precisely so that it is in no command string — see
+/// `sudo::with_password` — which is what makes this line safe to write and
+/// keeps the promise at the top of `logging.rs` intact.
+fn audited(app: &AppHandle, session_id: &str, origin: Origin, command: &str, outcome: &Result<Output>) {
+    let (detail, exit) = match outcome {
+        Ok(out) if out.status == 0 => (None, Some(0)),
+        // The server's own words for why, which is the whole value of the row.
+        Ok(out) => (Some(out.stderr.clone()), Some(out.status as i32)),
+        // No status at all: it never got far enough to have one.
+        Err(e) => (Some(e.to_string()), None),
+    };
+
+    let outcome_text = match exit {
+        Some(0) => "ok".to_string(),
+        Some(status) => format!("exit={status}"),
+        None => "did not run".to_string(),
+    };
+    let note = match &detail {
+        Some(text) if !text.is_empty() => format!("{outcome_text} · {text}"),
+        _ => outcome_text,
+    };
+    logging::record(
+        if matches!(exit, Some(0)) { Level::Info } else { Level::Warn },
+        "ssh",
+        &format!("ran {command}"),
+        Some(&format!("{} session={session_id} {note}", label_of(app, session_id))),
+    );
+
+    // A session that has gone means there is no host to file this against. The
+    // log line above still went out, so the fact is not lost.
+    let Ok(session) = session(app, session_id) else { return };
+    let db = app.state::<Db>();
+    let conn = db.0.lock().unwrap();
+    audit::record(
+        &conn,
+        session.host_id,
+        Some(session_id),
+        origin,
+        Kind::Exec,
+        command,
+        detail.as_deref(),
+        exit,
+    );
+}
+
+async fn running(
+    app: &AppHandle,
+    session_id: &str,
+    command: &str,
+    stdin: Option<&[u8]>,
+    limit: usize,
 ) -> Result<Output> {
     let session = session(app, session_id)?;
     let mut channel = session
@@ -1416,6 +1518,7 @@ pub async fn disconnect(app: &AppHandle, id: &str) -> Result<()> {
                 Origin::User,
                 Kind::Auth,
                 "disconnect",
+                None,
                 None,
             );
         }

@@ -22,10 +22,16 @@ use crate::hosts;
 /// and leaves no trace anywhere. The pane is dismissed; the log is what is
 /// still there afterwards.
 fn logged<T>(operation: &str, outcome: Result<T>) -> Result<T> {
-    if let Err(error) = &outcome {
-        logging::error("cmd", operation, Some(&error.to_string()));
-    }
-    outcome
+    logging::call(operation, None, outcome)
+}
+
+/// The same, for anything aimed at a session — which is to say at a server.
+///
+/// The host goes in the detail because the failure line is where it matters
+/// most: "could not read /etc — permission denied" is half an answer until you
+/// know which of the four open machines said it.
+fn on<T>(app: &AppHandle, session_id: &str, operation: &str, outcome: Result<T>) -> Result<T> {
+    logging::call(operation, Some(&ssh::label_of(app, session_id)), outcome)
 }
 
 /// Opens a connection and an interactive shell. `sessionId` is chosen by the
@@ -45,7 +51,12 @@ pub async fn ssh_connect(
         let db = app.state::<Db>();
         hosts::get(&db, host_id)?
     };
-    let info = ssh::connect(app.clone(), host, session_id, window.label().to_string()).await?;
+    let named = format!("connect {} ({}@{}:{})", host.name, host.user, host.address, host.port);
+    let info = logging::call(
+        &named,
+        None,
+        ssh::connect(app.clone(), host, session_id, window.label().to_string()).await,
+    )?;
 
     // "Autostart: on session" means exactly this moment. Tunnels hold their own
     // connections, so this only decides *when* one comes up, not what it rides.
@@ -71,7 +82,8 @@ pub fn ssh_resize(app: AppHandle, session_id: String, cols: u32, rows: u32) -> R
 
 #[tauri::command]
 pub async fn ssh_disconnect(app: AppHandle, session_id: String) -> Result<()> {
-    ssh::disconnect(&app, &session_id).await
+    let named = format!("disconnect {}", ssh::label_of(&app, &session_id));
+    logging::call(&named, None, ssh::disconnect(&app, &session_id).await)
 }
 
 /// Types `cd <path>` at the session's shell — the SFTP pane taking the terminal
@@ -82,7 +94,7 @@ pub async fn ssh_disconnect(app: AppHandle, session_id: String) -> Result<()> {
 /// and the trail should say so rather than hide it.
 #[tauri::command]
 pub fn ssh_cd(app: AppHandle, session_id: String, path: String) -> Result<()> {
-    logged(&format!("cd {path}"), ssh::cd(&app, &session_id, &path))
+    on(&app, &session_id, &format!("cd {path}"), ssh::cd(&app, &session_id, &path))
 }
 
 /// The last directory this session's shell announced, or `None`.
@@ -92,7 +104,17 @@ pub fn ssh_cd(app: AppHandle, session_id: String, path: String) -> Result<()> {
 /// the same directory before every prompt, and only a change is emitted.
 #[tauri::command]
 pub fn ssh_cwd(app: AppHandle, session_id: String) -> Option<String> {
-    ssh::cwd(&app, &session_id)
+    let found = ssh::cwd(&app, &session_id);
+    logging::debug(
+        "cmd",
+        "read the shell's directory",
+        Some(&format!(
+            "{} · {}",
+            ssh::label_of(&app, &session_id),
+            found.as_deref().unwrap_or("not announced")
+        )),
+    );
+    found
 }
 
 /// The first listing after a pane opens is Portway's doing, not the user's —
@@ -105,7 +127,7 @@ pub async fn sftp_list(
     system: Option<bool>,
 ) -> Result<Listing> {
     let origin = if system.unwrap_or(false) { Origin::System } else { Origin::User };
-    logged(&format!("list {path}"), sftp::list(&app, &session_id, &path, origin).await)
+    on(&app, &session_id, &format!("list {path}"), sftp::list(&app, &session_id, &path, origin).await)
 }
 
 /// The accounts and groups the Owner dialog offers. Read once per session by
@@ -113,7 +135,7 @@ pub async fn sftp_list(
 /// but it is still a round trip.
 #[tauri::command]
 pub async fn sftp_principals(app: AppHandle, session_id: String) -> Result<sftp::Principals> {
-    logged("read accounts", sftp::principals(&app, &session_id).await)
+    on(&app, &session_id, "read accounts", sftp::principals(&app, &session_id).await)
 }
 
 #[tauri::command]
@@ -123,7 +145,7 @@ pub async fn sftp_download(
     remote: String,
     local: String,
 ) -> Result<u64> {
-    logged(&format!("download {remote}"), sftp::download(&app, &session_id, &remote, &local).await)
+    on(&app, &session_id, &format!("download {remote}"), sftp::download(&app, &session_id, &remote, &local).await)
 }
 
 #[tauri::command]
@@ -133,7 +155,7 @@ pub async fn sftp_upload(
     local: String,
     remote: String,
 ) -> Result<u64> {
-    logged(&format!("upload {remote}"), sftp::upload(&app, &session_id, &local, &remote).await)
+    on(&app, &session_id, &format!("upload {remote}"), sftp::upload(&app, &session_id, &local, &remote).await)
 }
 
 /// A dropped path — one file, or a directory and everything under it — into the
@@ -145,7 +167,11 @@ pub async fn sftp_upload_path(
     local: String,
     remote_dir: String,
 ) -> Result<u64> {
-    sftp::upload_path(&app, &session_id, &local, &remote_dir).await
+    logging::call(
+        &format!("upload {local} into {remote_dir}"),
+        Some(&ssh::label_of(&app, &session_id)),
+        sftp::upload_path(&app, &session_id, &local, &remote_dir).await,
+    )
 }
 
 /// Rename, which on a remote filesystem is also move.
@@ -156,7 +182,7 @@ pub async fn sftp_rename(
     from: String,
     to: String,
 ) -> Result<()> {
-    logged(&format!("rename {from} to {to}"), sftp::rename(&app, &session_id, &from, &to).await)
+    on(&app, &session_id, &format!("rename {from} to {to}"), sftp::rename(&app, &session_id, &from, &to).await)
 }
 
 #[tauri::command]
@@ -166,7 +192,7 @@ pub async fn sftp_chmod(
     path: String,
     mode: u32,
 ) -> Result<()> {
-    logged(&format!("chmod {mode:o} {path}"), sftp::chmod(&app, &session_id, &path, mode).await)
+    on(&app, &session_id, &format!("chmod {mode:o} {path}"), sftp::chmod(&app, &session_id, &path, mode).await)
 }
 
 /// Returns how many entries were changed, which is the only way the UI can say
@@ -180,7 +206,7 @@ pub async fn sftp_chown(
     gid: u32,
     recursive: bool,
 ) -> Result<u64> {
-    logged(&format!("chown {uid}:{gid} {path}"), sftp::chown(&app, &session_id, &path, uid, gid, recursive).await)
+    on(&app, &session_id, &format!("chown {uid}:{gid} {path}"), sftp::chown(&app, &session_id, &path, uid, gid, recursive).await)
 }
 
 /// Downloads a file to a scratch copy, opens it in a local application and
@@ -199,7 +225,9 @@ pub async fn sftp_edit(
     confirmed_large: bool,
     sudo: bool,
 ) -> Result<String> {
-    logged(
+    on(
+        &app,
+        &session_id,
         &format!("edit {remote}"),
         sftp::edit(&app, &session_id, &remote, opener, confirmed_large, sudo).await,
     )
@@ -213,7 +241,7 @@ pub async fn sftp_edit(
 /// something that has already happened.
 #[tauri::command]
 pub async fn sftp_elevate(app: AppHandle, session_id: String, remote: String) -> Result<u64> {
-    logged(&format!("save {remote} as root"), sftp::elevate(&app, &session_id, &remote).await)
+    on(&app, &session_id, &format!("save {remote} as root"), sftp::elevate(&app, &session_id, &remote).await)
 }
 
 /// What `sudo` would do on this session, asked without doing anything and
@@ -222,7 +250,7 @@ pub async fn sftp_elevate(app: AppHandle, session_id: String, remote: String) ->
 /// A NOPASSWD host answers `ready` here, and never sees a password box.
 #[tauri::command]
 pub async fn sudo_check(app: AppHandle, session_id: String) -> Result<sudo::Check> {
-    logged("check sudo", sudo::check(&app, &session_id).await)
+    on(&app, &session_id, "check sudo", sudo::check(&app, &session_id).await)
 }
 
 /// Takes the account password, checks it against the host, and keeps it in
@@ -237,7 +265,11 @@ pub async fn sudo_unlock(app: AppHandle, session_id: String, password: String) -
     // oversight: it is dropped when the host refuses it and when the session
     // closes, which are the two moments it stops being the right password. A
     // button for it would be a control over something the user cannot see.
-    sudo::unlock(&app, &session_id, password).await
+    logging::call(
+        &format!("unlock sudo on {}", ssh::label_of(&app, &session_id)),
+        None,
+        sudo::unlock(&app, &session_id, password).await,
+    )
 }
 
 /// Deletes a file, or a directory and everything under it. Returns how many
@@ -250,7 +282,11 @@ pub async fn sftp_remove(
     path: String,
     is_dir: bool,
 ) -> Result<u64> {
-    sftp::remove(&app, &session_id, &path, is_dir).await
+    logging::call(
+        &format!("delete {path}"),
+        Some(&ssh::label_of(&app, &session_id)),
+        sftp::remove(&app, &session_id, &path, is_dir).await,
+    )
 }
 
 /// Hands a link to the browser.

@@ -5,6 +5,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use zeroize::Zeroizing;
 
+use crate::audit::Origin;
 use crate::error::{Error, Result};
 use crate::logging;
 use crate::ssh;
@@ -88,7 +89,10 @@ pub async fn check(app: &AppHandle, session_id: &str) -> Result<Check> {
         return Ok(Check { status: Status::Ready, detail: String::new() });
     }
 
-    let out = ssh::run(app, session_id, &plain(VALIDATE), None, OUTPUT_LIMIT).await?;
+    // `System`: this is Portway deciding whether to offer a control, not
+    // something the person at the keyboard asked for by name.
+    let out = ssh::run(app, session_id, &plain(VALIDATE), None, OUTPUT_LIMIT, Origin::System)
+        .await?;
     if out.status == 0 {
         return Ok(Check { status: Status::Ready, detail: String::new() });
     }
@@ -111,7 +115,8 @@ pub async fn check(app: &AppHandle, session_id: &str) -> Result<Check> {
 /// session if it holds.
 pub async fn unlock(app: &AppHandle, session_id: &str, password: String) -> Result<()> {
     let password = Zeroizing::new(password);
-    let out = with_password(app, session_id, VALIDATE, &password, OUTPUT_LIMIT).await?;
+    let out =
+        with_password(app, session_id, VALIDATE, &password, OUTPUT_LIMIT, Origin::User).await?;
     if out.status != 0 {
         return Err(refusal(&out.stderr));
     }
@@ -140,6 +145,7 @@ pub async fn run(
     session_id: &str,
     command: &str,
     limit: usize,
+    origin: Origin,
 ) -> Result<ssh::Output> {
     // Cloned out of the map rather than held across the await: this lock is
     // taken by every save, and a `.await` inside it would serialise them behind
@@ -154,8 +160,8 @@ pub async fn run(
 
     let args = format!("-- {command}");
     let out = match &password {
-        Some(secret) => with_password(app, session_id, &args, secret, limit).await?,
-        None => ssh::run(app, session_id, &plain(&args), None, limit).await?,
+        Some(secret) => with_password(app, session_id, &args, secret, limit, origin).await?,
+        None => ssh::run(app, session_id, &plain(&args), None, limit, origin).await?,
     };
     if out.status == 0 {
         return Ok(out);
@@ -222,6 +228,7 @@ async fn with_password(
     args: &str,
     password: &str,
     limit: usize,
+    origin: Origin,
 ) -> Result<ssh::Output> {
     let line = format!("{LOCALE} sudo -S -p '' {args}");
 
@@ -229,7 +236,9 @@ async fn with_password(
     stdin.push_str(password);
     stdin.push('\n');
 
-    ssh::run(app, session_id, &line, Some(stdin.as_bytes()), limit).await
+    // The password goes in `stdin` and never in `line`, which is what makes
+    // the audit row `ssh::run` writes safe to write at all.
+    ssh::run(app, session_id, &line, Some(stdin.as_bytes()), limit, origin).await
 }
 
 /// sudo puts the useful sentence last — a wrong password is three attempts and

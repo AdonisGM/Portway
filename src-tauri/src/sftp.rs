@@ -73,7 +73,15 @@ pub struct Principals {
 /// from LDAP or SSSD lists them nowhere in these two files, and there the
 /// dialog falls back to what it does today — a number, typed.
 pub async fn principals(app: &AppHandle, session_id: &str) -> Result<Principals> {
-    let (sftp, _) = open(app, session_id).await?;
+    let (sftp, host_id) = open(app, session_id).await?;
+
+    // Two files on somebody's server, read by name. That is exactly what the
+    // audit trail exists to record, and it went unrecorded here for as long as
+    // this function existed — a read is still a reach onto the host, and a
+    // trail that covers only writes is not one.
+    for path in ["/etc/passwd", "/etc/group"] {
+        log(app, host_id, session_id, Origin::System, &format!("sftp get {path}"));
+    }
 
     // Neither file failing is fatal: a locked-down host may hand over one, the
     // other, or neither, and an Owner dialog with half a list is better than an
@@ -282,10 +290,18 @@ async fn open_raw(app: &AppHandle, session_id: &str) -> Result<(RawSftpSession, 
 /// is what makes the trail complete — every operation already comes through
 /// this function.
 fn log(app: &AppHandle, host_id: i64, session_id: &str, origin: Origin, command: &str) {
-    logging::debug("sftp", command, Some(&format!("session={session_id}")));
+    // The server by name, not just the session id: a person with four hosts
+    // open cannot tell `session=63151` from `session=63152`, and an SFTP line
+    // that does not say which machine it touched is a line they have to go
+    // looking elsewhere to understand.
+    logging::debug(
+        "sftp",
+        command,
+        Some(&format!("{} session={session_id}", ssh::label_of(app, session_id))),
+    );
     let db = app.state::<Db>();
     let conn = db.0.lock().unwrap();
-    audit::record(&conn, host_id, Some(session_id), origin, Kind::Sftp, command, None);
+    audit::record(&conn, host_id, Some(session_id), origin, Kind::Sftp, command, None, None);
 }
 
 /// Lists a directory. `path` may be empty, meaning "wherever login lands".
@@ -641,6 +657,7 @@ async fn upload_as_root(
         session_id,
         &format!("cp -- {} {}", ssh::quoted(&staging), ssh::quoted(remote)),
         0,
+        Origin::User,
     )
     .await;
 
@@ -1183,6 +1200,7 @@ async fn get_file_as_root(
         // One byte over the limit, which is how "it did not fit" is told apart
         // from "it fits exactly".
         LARGE_FILE as usize + 1,
+        Origin::User,
     )
     .await?;
 

@@ -8,6 +8,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
 
+use crate::audit::{self, Kind, Origin};
 use crate::db::{now_ms, Db};
 use crate::error::{Error, Result};
 use crate::hosts;
@@ -439,7 +440,56 @@ pub fn stop(app: &AppHandle, id: i64) {
         running.cancel.cancel();
         set_state(app, id, "idle", None);
         logging::info("tunnel", "stopped", Some(&format!("tunnel={id}")));
+        // The trail should close what it opened. A forward that appears in it
+        // with no matching close reads as one that is still up.
+        let db = app.state::<Db>();
+        let conn = db.0.lock().unwrap();
+        if let Ok(tunnel) = fetch(&conn, id) {
+            audit::record(
+                &conn,
+                tunnel.host_id,
+                None,
+                Origin::User,
+                Kind::Tunnel,
+                &describe(&tunnel),
+                Some("stopped"),
+                None,
+            );
+        }
     }
+}
+
+/// One forward, in the words `ssh` would use for it.
+///
+/// Written the way the flags read rather than as a sentence, so a row in the
+/// trail can be checked against what somebody meant to set up: `-L`, `-R` and
+/// `-D` are the three things this does, and they are what a reader already
+/// knows.
+fn describe(tunnel: &Tunnel) -> String {
+    let flag = match tunnel.kind.as_str() {
+        "remote" => "-R",
+        "dynamic" => "-D",
+        _ => "-L",
+    };
+    let bind = format!("{}:{}", tunnel.bind_address, tunnel.bind_port);
+    match (tunnel.kind.as_str(), &tunnel.target_host, tunnel.target_port) {
+        // A dynamic forward is told its destination by each client that
+        // connects, so there is none to name here.
+        ("dynamic", _, _) => format!("tunnel {flag} {bind}"),
+        (_, Some(host), Some(port)) => format!("tunnel {flag} {bind}:{host}:{port}"),
+        _ => format!("tunnel {flag} {bind}"),
+    }
+}
+
+/// One row about a forward, against the host it goes through.
+///
+/// `session_id` is `None` and that is not an omission: a tunnel opens its own
+/// SSH connection rather than borrowing a session's, which is the whole reason
+/// it survives the terminal being closed.
+fn audited(app: &AppHandle, tunnel: &Tunnel, origin: Origin, command: &str, detail: Option<&str>) {
+    let db = app.state::<Db>();
+    let conn = db.0.lock().unwrap();
+    audit::record(&conn, tunnel.host_id, None, origin, Kind::Tunnel, command, detail, None);
 }
 
 pub async fn start(app: &AppHandle, id: i64) -> Result<()> {
@@ -464,10 +514,22 @@ pub async fn start(app: &AppHandle, id: i64) -> Result<()> {
     // Failures are reported through the state as well as returned. The button
     // that started this gets the error; so does a start nobody clicked, which
     // is the whole point of the `error` state.
+    // Written before the attempt, as every other operation that reaches a host
+    // is: a forward that failed to open is still something that was tried
+    // against this server, and the outcome goes in the detail below.
+    audited(
+        app,
+        &tunnel,
+        Origin::User,
+        &describe(&tunnel),
+        Some("starting"),
+    );
+
     match open(app, &tunnel, &host).await {
         Ok(running) => {
             app.state::<Tunnels>().0.lock().unwrap().insert(id, running);
             set_state(app, id, "active", None);
+            audited(app, &tunnel, Origin::System, &describe(&tunnel), Some("active"));
             span.done(
                 Level::Info,
                 Some(&format!(
@@ -480,6 +542,7 @@ pub async fn start(app: &AppHandle, id: i64) -> Result<()> {
         Err(e) => {
             set_state(app, id, "error", Some(e.to_string()));
             span.failed(&e.to_string());
+            audited(app, &tunnel, Origin::System, &describe(&tunnel), Some(&e.to_string()));
             Err(e)
         }
     }
@@ -626,6 +689,17 @@ async fn forward(
     host: &str,
     port: u16,
 ) -> Result<()> {
+    // Every connection that crosses the server is written down — here, in the
+    // app log, and not in the audit trail. A forward carrying a browser makes
+    // hundreds of these a minute, and a database row apiece would bury the
+    // trail's own subject: what a person did to this host. `debug` for the same
+    // reason, so the ordinary narrative stays readable and the detail is one
+    // setting away when somebody needs to know where a tunnel has been.
+    logging::debug(
+        "tunnel",
+        &format!("forwarding {peer} to {host}:{port}"),
+        Some("local"),
+    );
     let channel = handle
         .channel_open_direct_tcpip(host, port as u32, peer.ip().to_string(), peer.port() as u32)
         .await
@@ -715,6 +789,14 @@ async fn socks5(
     stream.read_exact(&mut port).await?;
     let port = u16::from_be_bytes(port);
 
+    // Worth a line even more than the local case: a dynamic forward is told
+    // where to go by each client, so this is the only place that records where
+    // the tunnel has actually been.
+    logging::debug(
+        "tunnel",
+        &format!("forwarding {peer} to {host}:{port}"),
+        Some("dynamic"),
+    );
     let channel = match handle
         .channel_open_direct_tcpip(
             host.clone(),

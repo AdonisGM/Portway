@@ -386,6 +386,38 @@ fn clip(text: &str, max: usize) -> String {
     out
 }
 
+/// Wraps one command from the webview: a line for every call, whichever way it
+/// went.
+///
+/// The rule this exists to enforce is that **nothing the frontend asks the
+/// backend to do happens without a line saying so**. Before this, a command
+/// that succeeded left no trace at all, so the log answered "what went wrong"
+/// and could not answer "what did it do" — and the second question is the one
+/// somebody has when the app did something they did not expect.
+///
+/// `debug` on success rather than `info`, and that is not the level being
+/// timid. Every keystroke and every window resize comes through a command; at
+/// `info` the ordinary narrative would be buried under them within seconds,
+/// which is how a log stops being read at all. The console's Verbose button is
+/// the way in, and it is one click.
+///
+/// A failure is `error` regardless: those are rare, and every one of them is
+/// something a person may need to see without having known to turn anything on
+/// first.
+pub fn call<T>(command: &str, detail: Option<&str>, outcome: crate::error::Result<T>) -> crate::error::Result<T> {
+    match &outcome {
+        Ok(_) => debug("cmd", command, detail),
+        Err(e) => {
+            let note = match detail {
+                Some(text) => format!("{text} · {e}"),
+                None => e.to_string(),
+            };
+            error("cmd", command, Some(&note));
+        }
+    }
+    outcome
+}
+
 pub fn debug(target: &str, message: &str, detail: Option<&str>) {
     record(Level::Debug, target, message, detail)
 }

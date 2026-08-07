@@ -127,3 +127,116 @@ export function MenuItem({ onClick, children, danger, root, disabled }: ItemProp
 export function MenuSeparator() {
   return <div className="my-1 h-px bg-w06" role="separator" />
 }
+
+/**
+ * A row that opens a menu of its own beside it.
+ *
+ * Here so that a group of related actions can be one line in the parent rather
+ * than six. A context menu that runs past a dozen entries stops being scanned
+ * and starts being hunted through, and the entry somebody wants is found by
+ * position — which is exactly how the wrong one gets clicked.
+ *
+ * It also puts a step in front of whatever is inside it, and for the root
+ * actions that is the point rather than a side effect: they cannot be reached
+ * by a pointer sliding down the parent.
+ *
+ * Rendered through a portal because the parent menu clips its own corners with
+ * `overflow-hidden`, which would take the child with them.
+ */
+export function MenuSub({
+  label,
+  root,
+  children,
+  estimatedHeight = 200,
+}: {
+  label: ReactNode
+  /** Same tone and marker as a root item — the group is what it contains. */
+  root?: boolean
+  children: ReactNode
+  estimatedHeight?: number
+}) {
+  const [open, setOpen] = useState(false)
+  const [style, setStyle] = useState<React.CSSProperties>({})
+  const trigger = useRef<HTMLButtonElement>(null)
+  const closing = useRef<number | undefined>(undefined)
+
+  const show = () => {
+    window.clearTimeout(closing.current)
+    const box = trigger.current?.getBoundingClientRect()
+    if (!box) return
+    // To the right, and to the left where that would leave the screen. Same
+    // rule the parent uses: flipped still points at what opened it.
+    const flipLeft = box.right + WIDTH > window.innerWidth - 8
+    setStyle({
+      position: 'fixed',
+      // Aligned with the row, then lifted if the panel would run off the
+      // bottom — a submenu whose last item is off-screen is a submenu with a
+      // hidden action in it.
+      top: Math.max(8, Math.min(box.top - 4, window.innerHeight - 8 - estimatedHeight)),
+      left: flipLeft ? undefined : box.right + GAP,
+      right: flipLeft ? window.innerWidth - box.left + GAP : undefined,
+      width: WIDTH,
+    })
+    setOpen(true)
+  }
+
+  const hide = () => {
+    window.clearTimeout(closing.current)
+    // Not immediately: the diagonal from this label to the first item of the
+    // panel crosses the gap between the two, and closing there makes the
+    // submenu unreachable by the movement everybody uses to reach it.
+    closing.current = window.setTimeout(() => setOpen(false), 140)
+  }
+
+  useEffect(() => () => window.clearTimeout(closing.current), [])
+
+  const tone = root
+    ? 'text-warn hover:bg-w07'
+    : 'text-fg-2 hover:bg-w07 hover:text-fg'
+
+  return (
+    <>
+      <button
+        ref={trigger}
+        type="button"
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onPointerEnter={show}
+        onPointerLeave={hide}
+        // Opens, never toggles. The pointer has already entered the row by the
+        // time it can be clicked, so the panel is open and a toggle would read
+        // as the click having closed it — which is what it did.
+        onClick={show}
+        className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-body transition-colors ${tone} ${
+          open ? 'bg-w07' : ''
+        }`}
+      >
+        {label}
+        <span className="ml-auto flex items-center gap-1.5">
+          {root ? (
+            <span className="rounded-chip bg-w07 px-1.25 py-0.25 font-mono text-status uppercase">
+              root
+            </span>
+          ) : null}
+          <span aria-hidden>›</span>
+        </span>
+      </button>
+
+      {open
+        ? createPortal(
+            <div
+              role="menu"
+              style={style}
+              onPointerEnter={() => window.clearTimeout(closing.current)}
+              onPointerLeave={hide}
+              className="z-70 overflow-hidden rounded-field border border-w10 bg-drawer py-1 shadow-drawer"
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  )
+}

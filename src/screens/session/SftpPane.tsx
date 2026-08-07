@@ -27,7 +27,13 @@ import { ColumnPicker } from './ColumnPicker'
 import { useDropUpload } from './useDropUpload'
 import { useTransfer } from './useTransfer'
 import { TransferFooter } from './TransferFooter'
-import { ContextMenu, MenuItem, MenuSeparator, type MenuPoint } from '@/components/ui/ContextMenu'
+import {
+  ContextMenu,
+  MenuItem,
+  MenuSeparator,
+  MenuSub,
+  type MenuPoint,
+} from '@/components/ui/ContextMenu'
 import {
   OwnerDialog,
   PermissionsDialog,
@@ -679,18 +685,11 @@ export function SftpPane({ session, width, resizing }: Props) {
           three lines is the whole of it. */}
       {transfer ? <TransferFooter transfer={transfer} /> : null}
 
-      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 300 : 190}>
+      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 300 : 240}>
         {menu?.file.kind === 'file' ? (
           <>
             <MenuItem onClick={() => menu && openFile(menu.file, false)}>Open</MenuItem>
             <MenuItem onClick={() => menu && openFile(menu.file, true)}>Open with…</MenuItem>
-            {/* The whole point of the entry: a config file that reads fine and
-                refuses to be written. Saying "as root" rather than "with sudo"
-                because what changes is who writes the file, and `sudo` is only
-                how. */}
-            <MenuItem root onClick={() => menu && openFile(menu.file, false, true)}>
-              Open as root…
-            </MenuItem>
             <MenuSeparator />
           </>
         ) : null}
@@ -706,6 +705,25 @@ export function SftpPane({ session, width, resizing }: Props) {
         >
           Copy path
         </MenuItem>
+        <MenuSeparator />
+        {/* Every root action behind one row rather than scattered through the
+            menu beside its ordinary twin. Two things at once: the menu stays
+            short enough to scan, and nothing that runs as root can be reached
+            by a pointer sliding down the list. */}
+        <MenuSub label="As root" root estimatedHeight={110}>
+          {menu?.file.kind === 'file' ? (
+            // The case this whole feature exists for: a config file that reads
+            // fine and refuses to be written. Named "as root" rather than "with
+            // sudo" because what changes is who writes the file; sudo is only how.
+            <MenuItem root onClick={() => menu && openFile(menu.file, false, true)}>
+              Open as root…
+            </MenuItem>
+          ) : (
+            <MenuItem disabled onClick={() => {}}>
+              Nothing yet for folders
+            </MenuItem>
+          )}
+        </MenuSub>
         <MenuSeparator />
         <MenuItem danger onClick={() => openDialog('delete')}>
           Delete…

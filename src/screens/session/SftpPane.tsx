@@ -128,6 +128,41 @@ function compareFiles(a: RemoteFile, b: RemoteFile, key: string): number {
   }
 }
 
+/**
+ * True once `active` has been true for `after` milliseconds without a break.
+ *
+ * Two thresholds hang off this, and the first one is the reason it exists. A
+ * folder on a fast link answers in twenty milliseconds, and a bar that appeared
+ * for twenty milliseconds is a flash of noise on every single click — worse
+ * than no bar, because the eye is drawn to it and there is nothing to see. The
+ * bar therefore waits long enough to be sure it is needed.
+ */
+function useAfter(active: boolean, after: number): boolean {
+  const [reached, setReached] = useState(false)
+
+  useEffect(() => {
+    if (!active) {
+      setReached(false)
+      return
+    }
+    const timer = window.setTimeout(() => setReached(true), after)
+    return () => window.clearTimeout(timer)
+  }, [active, after])
+
+  return reached
+}
+
+/** Long enough that a fast answer never draws a bar at all. */
+const BAR_AFTER = 200
+
+/**
+ * Long enough that the bar alone has stopped being an answer.
+ *
+ * At a second the question changes from "is it doing something" to "what is it
+ * doing, and is it stuck" — so the words arrive, and they name the path.
+ */
+const WORDS_AFTER = 1000
+
 interface Props {
   session: Session
   /** Live width from the divider — dynamic, so it cannot be a token. */
@@ -140,7 +175,11 @@ export function SftpPane({ session, width, resizing }: Props) {
   const [path, setPath] = useState('')
   const [files, setFiles] = useState<RemoteFile[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  // What the pane is waiting on, or `null` when it is waiting on nothing. A
+  // string rather than a flag because the bar below says *what* — after a
+  // second of silence "reading /var/log" is the difference between a slow
+  // server and an app that has hung.
+  const [busy, setBusy] = useState<string | null>(null)
   const cols = useSftpColumns()
   const paneRef = useRef<HTMLDivElement>(null)
   // One piece of state for the whole right-click flow: which row was hit, where
@@ -185,7 +224,7 @@ export function SftpPane({ session, width, resizing }: Props) {
 
   const load = useCallback(
     async (target: string, system = false, sudo = false) => {
-      setBusy(true)
+      setBusy(`reading ${target || '/'}`)
       setError(null)
       try {
         const listing = await sftpList(session.id, target, system, sudo)
@@ -199,7 +238,7 @@ export function SftpPane({ session, width, resizing }: Props) {
         // refusal — a path that does not exist will not start existing.
         setRefused(message(e).toLowerCase().includes('permission denied') ? target : null)
       } finally {
-        setBusy(false)
+        setBusy(null)
       }
     },
     [session.id],
@@ -303,6 +342,10 @@ export function SftpPane({ session, width, resizing }: Props) {
     setActing(null)
     setOpError(null)
     if (reports) setWorking('running')
+    // The same bar as a listing. A rename over a slow link is the same silence
+    // as a folder over a slow link, and it was reported the same way: not at
+    // all until it either happened or failed.
+    setBusy('working on the server')
     try {
       await run()
       await load(path)
@@ -310,6 +353,8 @@ export function SftpPane({ session, width, resizing }: Props) {
     } catch (e) {
       if (reports) setWorking('idle')
       setOpError(message(e))
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -321,6 +366,9 @@ export function SftpPane({ session, width, resizing }: Props) {
   }
 
   const editing = useEditing(session.id, () => void load(path))
+
+  const showBar = useAfter(busy !== null, BAR_AFTER)
+  const showWords = useAfter(busy !== null, WORDS_AFTER)
 
   /**
    * Everything that runs as root, held at one gate.
@@ -690,6 +738,22 @@ export function SftpPane({ session, width, resizing }: Props) {
               Save as root
             </Chip>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* Across the top of the listing: where the change was asked for, the
+          width of the thing being waited on, and it costs the rows under it no
+          space — so the folder you were looking at stays put. Blanking it for a
+          spinner would lose your place and show you nothing in return. */}
+      <div className="relative h-1 flex-none overflow-hidden">
+        {showBar ? <div className="sftp-working absolute inset-0" /> : null}
+      </div>
+
+      {/* After a second the bar has stopped being an answer: the question is no
+          longer "is it doing something" but "what, and is it stuck". */}
+      {showWords && busy ? (
+        <div className="flex-none border-b border-w06 px-3 py-1.5 font-mono text-mono text-faint">
+          {busy}…
         </div>
       ) : null}
 

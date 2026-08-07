@@ -173,3 +173,46 @@
     opacity: 0.35;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   A remote operation is in flight
+   ---------------------------------------------------------------------------
+   The SFTP pane used to report this by changing one word in the corner of its
+   header from `remote` to `loading…` — eleven grey pixels, in the place a
+   person is least likely to be looking, at the moment they have just clicked
+   something on the other side of the pane. On a fast link nobody needed it; on
+   a slow one it read as an app that had ignored the click.
+
+   A bar across the top of the listing instead: it is where the change happened,
+   it is the width of the thing being waited on, and it costs the listing under
+   it no space at all. The listing stays put rather than being replaced by a
+   spinner — the folder you were looking at is still the truth until the new one
+   arrives, and blanking it loses your place for no gain. */
+@keyframes sftp-working {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+.sftp-working::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 25%;
+  background: var(--color-accent);
+  animation: sftp-working 1.1s ease-in-out infinite;
+}
+
+/* Standing still it has to mean the same thing, so the bar stays — filled, and
+   dim enough not to read as a completed progress bar. */
+@media (prefers-reduced-motion: reduce) {
+  .sftp-working::after {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
+}

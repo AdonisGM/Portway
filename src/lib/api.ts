@@ -146,6 +146,14 @@ export interface Listing {
   /** Canonical path, so the breadcrumb shows where we really are. */
   path: string
   files: RemoteFile[]
+  /**
+   * The account could not read this directory and root did.
+   *
+   * Shown in the pane. A listing that arrived only because the app quietly
+   * asked root for it is not the same fact as one the account could see, and a
+   * pane that draws them identically has stopped saying what it did.
+   */
+  elevated: boolean
 }
 
 /** One account or group on the far end. */
@@ -165,7 +173,7 @@ export interface Principals {
 }
 
 export type LogOrigin = 'user' | 'system'
-export type LogKind = 'shell' | 'exec' | 'sftp' | 'auth'
+export type LogKind = 'shell' | 'exec' | 'sftp' | 'auth' | 'tunnel'
 
 export interface LogEntry {
   id: number
@@ -233,11 +241,11 @@ export const CWD_HOOK =
   `|| PROMPT_COMMAND="_portway_cwd\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`
 
 /** `system: true` marks the listing Portway fetches itself when a pane opens. */
-export const sftpList = (sessionId: string, path: string, system = false) =>
-  invoke<Listing>('sftp_list', { sessionId, path, system })
+export const sftpList = (sessionId: string, path: string, system = false, sudo = false) =>
+  invoke<Listing>('sftp_list', { sessionId, path, system, sudo })
 
-export const sftpDownload = (sessionId: string, remote: string, local: string) =>
-  invoke<number>('sftp_download', { sessionId, remote, local })
+export const sftpDownload = (sessionId: string, remote: string, local: string, sudo = false) =>
+  invoke<number>('sftp_download', { sessionId, remote, local, sudo })
 
 export const sftpUpload = (sessionId: string, local: string, remote: string) =>
   invoke<number>('sftp_upload', { sessionId, local, remote })
@@ -246,12 +254,12 @@ export const sftpUpload = (sessionId: string, local: string, remote: string) =>
 export const sftpUploadPath = (sessionId: string, local: string, remoteDir: string) =>
   invoke<number>('sftp_upload_path', { sessionId, local, remoteDir })
 
-export const sftpRename = (sessionId: string, from: string, to: string) =>
-  invoke<void>('sftp_rename', { sessionId, from, to })
+export const sftpRename = (sessionId: string, from: string, to: string, sudo = false) =>
+  invoke<void>('sftp_rename', { sessionId, from, to, sudo })
 
 /** `mode` is permission bits only — file-type bits are the server's business. */
-export const sftpChmod = (sessionId: string, path: string, mode: number) =>
-  invoke<void>('sftp_chmod', { sessionId, path, mode })
+export const sftpChmod = (sessionId: string, path: string, mode: number, sudo = false) =>
+  invoke<void>('sftp_chmod', { sessionId, path, mode, sudo })
 
 /** Returns how many entries changed, so a recursive run can say what it did. */
 export const sftpChown = (
@@ -260,7 +268,8 @@ export const sftpChown = (
   uid: number,
   gid: number,
   recursive: boolean,
-) => invoke<number>('sftp_chown', { sessionId, path, uid, gid, recursive })
+  sudo = false,
+) => invoke<number>('sftp_chown', { sessionId, path, uid, gid, recursive, sudo })
 
 /** Local accounts and groups, read from `/etc/passwd` and `/etc/group`. */
 export const sftpPrincipals = (sessionId: string) =>
@@ -331,8 +340,8 @@ export const sudoUnlock = (sessionId: string, password: string) =>
  * Deletes a file, or a directory and everything under it. Returns how many
  * entries went. There is no undo on the far end.
  */
-export const sftpRemove = (sessionId: string, path: string, isDir: boolean) =>
-  invoke<number>('sftp_remove', { sessionId, path, isDir })
+export const sftpRemove = (sessionId: string, path: string, isDir: boolean, sudo = false) =>
+  invoke<number>('sftp_remove', { sessionId, path, isDir, sudo })
 
 /** Opens a session for this host in a window of its own. */
 export const openSessionWindow = (host: Host) =>

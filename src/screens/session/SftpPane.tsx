@@ -174,17 +174,30 @@ export function SftpPane({ session, width, resizing }: Props) {
   // kind of thing that gets opened repeatedly while getting a tree right.
   // `null` means "not read yet"; the dialog draws its numeric fields either way.
   const [principals, setPrincipals] = useState<Principals | null>(null)
+  // This listing came back only because root read it. Drawn, not hidden.
+  const [elevated, setElevated] = useState(false)
+  // The directory a listing was refused for, so `Browse as root` knows which.
+  const [refused, setRefused] = useState<string | null>(null)
+  // Whether the dialog now open is the root version of itself. The dialogs are
+  // the same either way — what changes is the command underneath and the
+  // confirm in front of it.
+  const [asRoot, setAsRoot] = useState(false)
 
   const load = useCallback(
-    async (target: string, system = false) => {
+    async (target: string, system = false, sudo = false) => {
       setBusy(true)
       setError(null)
       try {
-        const listing = await sftpList(session.id, target, system)
+        const listing = await sftpList(session.id, target, system, sudo)
         setPath(listing.path)
         setFiles(listing.files)
+        setElevated(listing.elevated)
+        setRefused(null)
       } catch (e) {
         setError(message(e))
+        // Kept so the pane can offer to try again as root, and *only* for a
+        // refusal — a path that does not exist will not start existing.
+        setRefused(message(e).toLowerCase().includes('permission denied') ? target : null)
       } finally {
         setBusy(false)
       }
@@ -300,8 +313,9 @@ export function SftpPane({ session, width, resizing }: Props) {
     }
   }
 
-  const openDialog = (kind: 'rename' | 'mode' | 'owner' | 'delete') => {
+  const openDialog = (kind: 'rename' | 'mode' | 'owner' | 'delete', sudo = false) => {
     setActing(menu?.file ?? null)
+    setAsRoot(sudo)
     setDialog(kind)
     setMenu(null)
   }
@@ -406,6 +420,31 @@ export function SftpPane({ session, width, resizing }: Props) {
       command: `sudo cat -- '${remote}'   ·   every save: sudo cp -- <copy> '${remote}'`,
       writes: true,
       run: () => void withSudo(start),
+    })
+  }
+
+  /**
+   * One remote change, confirmed first when it runs as root.
+   *
+   * The ordinary path is unchanged: a chmod as the account is a chmod. The
+   * elevated one goes through the same gate every other root action does, so
+   * there is exactly one place where "this will run as root" is stated and
+   * agreed to.
+   */
+  const apply = (
+    action: string,
+    command: string,
+    target: string,
+    run: () => Promise<unknown>,
+    reports = false,
+  ) => {
+    if (!asRoot) return void act(run, reports)
+    confirmRoot({
+      action,
+      path: target,
+      command,
+      writes: true,
+      run: () => void withSudo(() => void act(run, reports)),
     })
   }
 
@@ -588,6 +627,14 @@ export function SftpPane({ session, width, resizing }: Props) {
         {/* The two directions, then Refresh. `flex-none` on all three so a
             narrow pane eats the breadcrumb — which already scrolls out of its
             own overflow — rather than the controls. */}
+        {/* This listing exists only because root read it. Said plainly, in the
+            place the listing is: a pane that draws an elevated listing exactly
+            like an ordinary one has stopped reporting what it did. */}
+        {elevated ? (
+          <span className="flex-none rounded-chip bg-w07 px-1.5 py-0.25 font-mono text-status uppercase text-warn">
+            as root
+          </span>
+        ) : null}
         <span className="ml-auto flex flex-none items-center gap-1.5">
           <Chip
             className="flex-none"
@@ -643,6 +690,32 @@ export function SftpPane({ session, width, resizing }: Props) {
               Save as root
             </Chip>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* A folder the account cannot read, with the way in. The listing is not
+          retried behind the user's back where a password would be wanted —
+          clicking a folder must not raise a credentials prompt — so it is
+          offered here instead. */}
+      {refused ? (
+        <div className="flex flex-none items-center gap-2 border-b border-w06 px-3 py-2">
+          <span className="min-w-0 flex-1 font-mono text-mono text-faint">
+            this account cannot read {refused}
+          </span>
+          <Chip
+            className="flex-none text-warn"
+            onClick={() =>
+              confirmRoot({
+                action: 'Browse as root',
+                path: refused,
+                command: `sudo find '${refused}' -maxdepth 1 -mindepth 1 -printf …`,
+                writes: false,
+                run: () => void withSudo(() => void load(refused, false, true)),
+              })
+            }
+          >
+            Browse as root
+          </Chip>
         </div>
       ) : null}
 
@@ -710,7 +783,7 @@ export function SftpPane({ session, width, resizing }: Props) {
             menu beside its ordinary twin. Two things at once: the menu stays
             short enough to scan, and nothing that runs as root can be reached
             by a pointer sliding down the list. */}
-        <MenuSub label="As root" root estimatedHeight={110}>
+        <MenuSub label="As root" root estimatedHeight={210}>
           {menu?.file.kind === 'file' ? (
             // The case this whole feature exists for: a config file that reads
             // fine and refuses to be written. Named "as root" rather than "with
@@ -718,11 +791,20 @@ export function SftpPane({ session, width, resizing }: Props) {
             <MenuItem root onClick={() => menu && openFile(menu.file, false, true)}>
               Open as root…
             </MenuItem>
-          ) : (
-            <MenuItem disabled onClick={() => {}}>
-              Nothing yet for folders
-            </MenuItem>
-          )}
+          ) : null}
+          <MenuItem root onClick={() => openDialog('rename', true)}>
+            Rename as root…
+          </MenuItem>
+          <MenuItem root onClick={() => openDialog('mode', true)}>
+            Permissions as root…
+          </MenuItem>
+          <MenuItem root onClick={() => openDialog('owner', true)}>
+            Owner as root…
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem danger onClick={() => openDialog('delete', true)}>
+            Delete as root…
+          </MenuItem>
         </MenuSub>
         <MenuSeparator />
         <MenuItem danger onClick={() => openDialog('delete')}>
@@ -827,15 +909,15 @@ export function SftpPane({ session, width, resizing }: Props) {
         <RenameDialog
           file={acting}
           onCancel={() => setDialog(null)}
-          onRename={(name) =>
-            void act(() =>
-              sftpRename(
-                session.id,
-                pathOf(acting),
-                path.endsWith('/') ? `${path}${name}` : `${path}/${name}`,
-              ),
+          onRename={(name) => {
+            const to = path.endsWith('/') ? `${path}${name}` : `${path}/${name}`
+            apply(
+              'Rename as root',
+              `sudo mv -n -- '${pathOf(acting)}' '${to}'`,
+              pathOf(acting),
+              () => sftpRename(session.id, pathOf(acting), to, asRoot),
             )
-          }
+          }}
         />
       ) : null}
 
@@ -843,7 +925,14 @@ export function SftpPane({ session, width, resizing }: Props) {
         <PermissionsDialog
           file={acting}
           onCancel={() => setDialog(null)}
-          onApply={(mode) => void act(() => sftpChmod(session.id, pathOf(acting), mode))}
+          onApply={(mode) =>
+            apply(
+              'Permissions as root',
+              `sudo chmod ${(mode & 0o777).toString(8).padStart(4, '0')} -- '${pathOf(acting)}'`,
+              pathOf(acting),
+              () => sftpChmod(session.id, pathOf(acting), mode, asRoot),
+            )
+          }
         />
       ) : null}
 
@@ -854,7 +943,13 @@ export function SftpPane({ session, width, resizing }: Props) {
           confirmLabel="Delete"
           onCancel={() => setDialog(null)}
           onConfirm={() =>
-            void act(() => sftpRemove(session.id, pathOf(acting), acting.kind === 'dir'), true)
+            apply(
+              'Delete as root',
+              `sudo rm -f${acting.kind === 'dir' ? 'r' : ''} -- '${pathOf(acting)}'`,
+              pathOf(acting),
+              () => sftpRemove(session.id, pathOf(acting), acting.kind === 'dir', asRoot),
+              true,
+            )
           }
         >
           <div className="flex flex-col gap-2">
@@ -879,7 +974,12 @@ export function SftpPane({ session, width, resizing }: Props) {
           principals={principals}
           onCancel={() => setDialog(null)}
           onApply={(uid, gid, recursive) =>
-            void act(() => sftpChown(session.id, pathOf(acting), uid, gid, recursive))
+            apply(
+              'Owner as root',
+              `sudo chown ${recursive ? '-R ' : ''}${uid}:${gid} -- '${pathOf(acting)}'`,
+              pathOf(acting),
+              () => sftpChown(session.id, pathOf(acting), uid, gid, recursive, asRoot),
+            )
           }
         />
       ) : null}

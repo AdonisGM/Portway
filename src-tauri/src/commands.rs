@@ -9,23 +9,12 @@ use crate::ssh::{self, SessionInfo};
 use crate::sudo;
 use crate::hosts;
 
-/// Writes a failed command to the application log, and passes it on unchanged.
+/// Wraps one command aimed at a session — which is to say at a server.
 ///
-/// The rule: **a command either times itself or is wrapped in this.** The long
+/// **Every command either times itself or comes through here.** The long
 /// operations — connect, upload a folder, delete a tree, start a tunnel — open
-/// a span of their own, and that span already reports its own failure with the
-/// time it took to get there. Everything else is one round trip, and this is
-/// where its failure is recorded.
-///
-/// Without it, the commonest kind of failure there is — a listing refused, a
-/// rename onto a name that exists — reaches the user as a message in the pane
-/// and leaves no trace anywhere. The pane is dismissed; the log is what is
-/// still there afterwards.
-fn logged<T>(operation: &str, outcome: Result<T>) -> Result<T> {
-    logging::call(operation, None, outcome)
-}
-
-/// The same, for anything aimed at a session — which is to say at a server.
+/// a span of their own that reports its own timing and failure; everything else
+/// is one round trip, and this is where it is written down.
 ///
 /// The host goes in the detail because the failure line is where it matters
 /// most: "could not read /etc — permission denied" is half an answer until you
@@ -125,9 +114,16 @@ pub async fn sftp_list(
     session_id: String,
     path: String,
     system: Option<bool>,
+    sudo: Option<bool>,
 ) -> Result<Listing> {
     let origin = if system.unwrap_or(false) { Origin::System } else { Origin::User };
-    on(&app, &session_id, &format!("list {path}"), sftp::list(&app, &session_id, &path, origin).await)
+    let sudo = sudo.unwrap_or(false);
+    on(
+        &app,
+        &session_id,
+        &format!("list{} {path}", if sudo { " as root" } else { "" }),
+        sftp::list(&app, &session_id, &path, origin, sudo).await,
+    )
 }
 
 /// The accounts and groups the Owner dialog offers. Read once per session by
@@ -144,8 +140,14 @@ pub async fn sftp_download(
     session_id: String,
     remote: String,
     local: String,
+    sudo: bool,
 ) -> Result<u64> {
-    on(&app, &session_id, &format!("download {remote}"), sftp::download(&app, &session_id, &remote, &local).await)
+    on(
+        &app,
+        &session_id,
+        &format!("download{} {remote}", if sudo { " as root" } else { "" }),
+        sftp::download(&app, &session_id, &remote, &local, sudo).await,
+    )
 }
 
 #[tauri::command]
@@ -181,8 +183,14 @@ pub async fn sftp_rename(
     session_id: String,
     from: String,
     to: String,
+    sudo: bool,
 ) -> Result<()> {
-    on(&app, &session_id, &format!("rename {from} to {to}"), sftp::rename(&app, &session_id, &from, &to).await)
+    on(
+        &app,
+        &session_id,
+        &format!("rename{} {from} to {to}", if sudo { " as root" } else { "" }),
+        sftp::rename(&app, &session_id, &from, &to, sudo).await,
+    )
 }
 
 #[tauri::command]
@@ -191,8 +199,14 @@ pub async fn sftp_chmod(
     session_id: String,
     path: String,
     mode: u32,
+    sudo: bool,
 ) -> Result<()> {
-    on(&app, &session_id, &format!("chmod {mode:o} {path}"), sftp::chmod(&app, &session_id, &path, mode).await)
+    on(
+        &app,
+        &session_id,
+        &format!("chmod{} {mode:o} {path}", if sudo { " as root" } else { "" }),
+        sftp::chmod(&app, &session_id, &path, mode, sudo).await,
+    )
 }
 
 /// Returns how many entries were changed, which is the only way the UI can say
@@ -205,8 +219,14 @@ pub async fn sftp_chown(
     uid: u32,
     gid: u32,
     recursive: bool,
+    sudo: bool,
 ) -> Result<u64> {
-    on(&app, &session_id, &format!("chown {uid}:{gid} {path}"), sftp::chown(&app, &session_id, &path, uid, gid, recursive).await)
+    on(
+        &app,
+        &session_id,
+        &format!("chown{} {uid}:{gid} {path}", if sudo { " as root" } else { "" }),
+        sftp::chown(&app, &session_id, &path, uid, gid, recursive, sudo).await,
+    )
 }
 
 /// Downloads a file to a scratch copy, opens it in a local application and
@@ -281,11 +301,12 @@ pub async fn sftp_remove(
     session_id: String,
     path: String,
     is_dir: bool,
+    sudo: bool,
 ) -> Result<u64> {
     logging::call(
-        &format!("delete {path}"),
+        &format!("delete{} {path}", if sudo { " as root" } else { "" }),
         Some(&ssh::label_of(&app, &session_id)),
-        sftp::remove(&app, &session_id, &path, is_dir).await,
+        sftp::remove(&app, &session_id, &path, is_dir, sudo).await,
     )
 }
 

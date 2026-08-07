@@ -236,6 +236,11 @@ pub struct Listing {
     /// The canonical path, so the breadcrumb shows where we really are.
     pub path: String,
     pub files: Vec<RemoteFile>,
+    /// True when the account could not read this directory and root did.
+    ///
+    /// Shown, because a pane that quietly starts answering questions it was
+    /// refused a moment ago has stopped saying what it is doing.
+    pub elevated: bool,
 }
 
 /// Opens an SFTP subsystem on the session's existing connection.
@@ -314,6 +319,7 @@ pub async fn list(
     session_id: &str,
     path: &str,
     origin: Origin,
+    sudo: bool,
 ) -> Result<Listing> {
     // The one operation that goes through the raw protocol rather than the
     // convenience layer. `SftpSession::read_dir` keeps `(filename, attrs)` and
@@ -323,22 +329,85 @@ pub async fn list(
     let (sftp, host_id) = open_raw(app, session_id).await?;
 
     let target = if path.trim().is_empty() { ".".to_string() } else { path.to_string() };
-    let canonical = sftp
-        .realpath(&target)
-        .await
-        .map_err(|e| Error::Ssh(format!("no such directory {target}: {}", tidy(e))))?
-        .files
-        .first()
-        .map(|f| f.filename.clone())
-        .ok_or_else(|| Error::Ssh(format!("no such directory {target}")))?;
+    // `realpath` resolves a path, which needs execute on the directories along
+    // it but not read on the one at the end — so it usually answers even where
+    // the listing below is refused. Where it does not, the path as asked for is
+    // the honest fallback: a breadcrumb one symlink from canonical beats no
+    // listing at all.
+    let canonical = match sftp.realpath(&target).await {
+        Ok(name) => name
+            .files
+            .first()
+            .map(|f| f.filename.clone())
+            .ok_or_else(|| Error::Ssh(format!("no such directory {target}")))?,
+        // `.` means nothing without the server to resolve it, so there is
+        // nothing here to fall back to.
+        Err(e) if target == "." => {
+            return Err(Error::Ssh(format!("no such directory {target}: {}", tidy(e))));
+        }
+        Err(_) => target.clone(),
+    };
 
-    log(app, host_id, session_id, origin, &format!("sftp ls {canonical}"));
+    match read_entries(&sftp, &canonical).await {
+        Ok(files) => {
+            log(app, host_id, session_id, origin, &format!("sftp ls {canonical}"));
+            Ok(Listing { path: canonical, files: sorted(files), elevated: false })
+        }
+        Err(e) => {
+            // Asked for by name, or offered quietly where it costs the user
+            // nothing. `sudo_ready` is what keeps clicking a folder from
+            // raising a password box: navigation must not turn into a
+            // credentials prompt, so a host that would want one gets a chip in
+            // the pane instead — see `SftpPane`.
+            let retry = sudo || (denied(&e) && sudo_ready(app, session_id).await);
+            if !retry {
+                return Err(Error::Ssh(format!("could not read {canonical}: {}", tidy(e))));
+            }
+            log(app, host_id, session_id, origin, &format!("sftp ls (sudo) {canonical}"));
+            let files = list_as_root(app, session_id, &canonical).await?;
+            Ok(Listing { path: canonical, files: sorted(files), elevated: true })
+        }
+    }
+}
 
-    let handle = sftp
-        .opendir(canonical.clone())
-        .await
-        .map_err(|e| Error::Ssh(format!("could not read {canonical}: {}", tidy(e))))?
-        .handle;
+/// Directories first, then by name — the order the design's mock implies.
+fn sorted(mut files: Vec<RemoteFile>) -> Vec<RemoteFile> {
+    files.sort_by(|a, b| match (a.kind.as_str(), b.kind.as_str()) {
+        ("dir", "file") => std::cmp::Ordering::Less,
+        ("file", "dir") => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+    files
+}
+
+/// Whether a refusal is the kind `sudo` could get past.
+///
+/// Only a permission refusal is worth a second attempt: a path that does not
+/// exist does not start existing because root asked, and spending a round trip
+/// on `sudo -n -v` to find that out would make every typo slower. Servers are
+/// not unanimous about which status they send for EACCES, so the wording counts
+/// as well as the code.
+fn denied(e: &RawError) -> bool {
+    if matches!(e, RawError::Status(s) if s.status_code == StatusCode::PermissionDenied) {
+        return true;
+    }
+    e.to_string().to_ascii_lowercase().contains("permission denied")
+}
+
+/// Whether `sudo` would run right now with nothing asked of the user.
+async fn sudo_ready(app: &AppHandle, session_id: &str) -> bool {
+    matches!(
+        sudo::check(app, session_id).await,
+        Ok(check) if check.status == sudo::Status::Ready
+    )
+}
+
+/// One directory, read over SFTP.
+async fn read_entries(
+    sftp: &RawSftpSession,
+    dir: &str,
+) -> std::result::Result<Vec<RemoteFile>, RawError> {
+    let handle = sftp.opendir(dir.to_string()).await?.handle;
 
     // A directory arrives over as many replies as the server feels like using,
     // ending in an EOF status. Reading one and stopping looks right on every
@@ -350,13 +419,13 @@ pub async fn list(
             Err(RawError::Status(status)) if status.status_code == StatusCode::Eof => break,
             Err(e) => {
                 let _ = sftp.close(handle).await;
-                return Err(Error::Ssh(format!("could not read {canonical}: {}", tidy(e))));
+                return Err(e);
             }
         }
     }
     let _ = sftp.close(handle).await;
 
-    let mut files: Vec<RemoteFile> = entries
+    Ok(entries
         .into_iter()
         .map(|entry| {
             let meta = entry.attrs;
@@ -386,16 +455,122 @@ pub async fn list(
             }
         })
         .filter(|f| f.name != "." && f.name != "..")
-        .collect();
+        .collect())
+}
 
-    // Directories first, then by name — the order the design's mock implies.
-    files.sort_by(|a, b| match (a.kind.as_str(), b.kind.as_str()) {
-        ("dir", "file") => std::cmp::Ordering::Less,
-        ("file", "dir") => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
+/// The nine fields `find` is asked for, in order, NUL after every one.
+///
+/// `find` with an explicit format rather than `ls -l` parsed back. `ls` pads its
+/// columns instead of aligning them, prints `?` where it has no link count, and
+/// puts the name last — where a space in it is indistinguishable from a
+/// separator. `-printf` names the fields and NUL separates them, and NUL is the
+/// one byte a filename cannot contain, so a name with a space, a tab or a
+/// newline in it survives. That is the whole reason this is not `ls`.
+const FIND_FORMAT: &str = r"%y\0%s\0%T@\0%m\0%U\0%G\0%u\0%g\0%f\0";
 
-    Ok(Listing { path: canonical, files })
+/// How many fields each entry has. Anything not a multiple of this did not come
+/// back in the format that was asked for.
+const FIND_FIELDS: usize = 9;
+
+/// A listing bigger than this means something is wrong. `/usr/bin` is a few
+/// thousand entries at some sixty bytes each; this is two orders above it.
+const MAX_LISTING: usize = 8 * 1024 * 1024;
+
+/// One directory, listed by root.
+///
+/// GNU findutils only. BSD's `find` has no `-printf` at all, and there is no
+/// second parser here for it: `ls -lAn` would be another portability class with
+/// the same gap and a worse way of failing. A host without it is told so by
+/// name rather than shown an empty directory.
+async fn list_as_root(app: &AppHandle, session_id: &str, dir: &str) -> Result<Vec<RemoteFile>> {
+    let out = sudo::run(
+        app,
+        session_id,
+        &format!("find {} -maxdepth 1 -mindepth 1 -printf '{FIND_FORMAT}'", ssh::quoted(dir)),
+        // One over the cap, so a listing that reached it can be told from one
+        // that exactly fits — a silent truncation here reads as a directory
+        // with fewer files in it than it has.
+        MAX_LISTING + 1,
+        Origin::User,
+    )
+    .await
+    .map_err(|e| {
+        let text = e.to_string();
+        if text.contains("-printf") || text.to_ascii_lowercase().contains("unknown primary") {
+            Error::Ssh(format!(
+                "{dir} needs root to list, and this server's `find` does not understand \
+                 `-printf` — that is GNU findutils, which the BSDs and busybox do not have. \
+                 ({text})"
+            ))
+        } else {
+            e
+        }
+    })?;
+
+    if out.stdout.len() > MAX_LISTING {
+        return Err(Error::Invalid(format!(
+            "{dir} has more entries than this pane will read at once"
+        )));
+    }
+
+    // A parse that fails must not look like an empty directory. Somebody
+    // looking at an empty `/root` concludes it is empty, which is worse than
+    // any error message.
+    parse_find(&out.stdout).ok_or_else(|| {
+        Error::Ssh(format!(
+            "the listing {dir} came back with is not the format it was asked for — \
+             {} bytes that do not divide into {FIND_FIELDS} fields per entry",
+            out.stdout.len()
+        ))
+    })
+}
+
+/// `find`'s output back into rows, or `None` if it is not that shape at all.
+fn parse_find(out: &[u8]) -> Option<Vec<RemoteFile>> {
+    let mut parts: Vec<&[u8]> = out.split(|&b| b == 0).collect();
+    // The format ends with a separator, so the split leaves an empty tail — and
+    // an empty directory leaves nothing but tail. Every one of them goes: `%f`
+    // is the last field and a filename is never empty, so an empty part at the
+    // end is punctuation rather than data.
+    while parts.last().is_some_and(|last| last.is_empty()) {
+        parts.pop();
+    }
+    if parts.len() % FIND_FIELDS != 0 {
+        return None;
+    }
+
+    let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    Some(
+        parts
+            .chunks(FIND_FIELDS)
+            .map(|row| {
+                let is_dir = row[0] == b"d";
+                let (mode, mode_text) = match u32::from_str_radix(&text(row[3]), 8) {
+                    Ok(bits) => {
+                        let (o, t) = permissions(bits);
+                        (Some(o), Some(t))
+                    }
+                    Err(_) => (None, None),
+                };
+                RemoteFile {
+                    name: text(row[8]),
+                    size: if is_dir { None } else { text(row[1]).parse().ok() },
+                    // `%T@` is a float: seconds, then a fraction nobody here
+                    // has a use for.
+                    modified: text(row[2]).split('.').next().and_then(|s| s.parse().ok()),
+                    kind: if is_dir { "dir".into() } else { "file".into() },
+                    uid: text(row[4]).parse().ok(),
+                    gid: text(row[5]).parse().ok(),
+                    // `find` prints the number where it has no name, which is
+                    // exactly what the numeric columns would have shown anyway.
+                    owner: Some(text(row[6])),
+                    group: Some(text(row[7])),
+                    mode,
+                    mode_text,
+                }
+            })
+            .collect(),
+    )
 }
 
 /// Downloads a remote file to a local path, reporting progress as it goes.
@@ -404,11 +579,23 @@ pub async fn download(
     session_id: &str,
     remote: &str,
     local: &str,
+    sudo: bool,
 ) -> Result<u64> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let (sftp, host_id) = open(app, session_id).await?;
-    log(app, host_id, session_id, Origin::User, &format!("sftp get {remote}"));
+    log(
+        app,
+        host_id,
+        session_id,
+        Origin::User,
+        &format!("sftp get{} {remote}", if sudo { " (sudo)" } else { "" }),
+    );
+
+    if sudo {
+        return read_as_root(app, session_id, remote, std::path::Path::new(local), MAX_ROOT_READ)
+            .await;
+    }
 
     let mut source = sftp
         .open(remote)
@@ -946,9 +1133,38 @@ fn only(f: impl FnOnce(&mut Metadata)) -> Metadata {
 }
 
 /// Rename, which on a remote filesystem is also "move".
-pub async fn rename(app: &AppHandle, session_id: &str, from: &str, to: &str) -> Result<()> {
+///
+/// `mv -n` as root rather than `mv`: SFTP's rename refuses when the
+/// destination exists, and the elevated path has to mean the same thing. `-n`
+/// is that refusal. Without it, running as root would quietly overwrite where
+/// running as the account would have stopped — the same button doing a
+/// different, worse thing because it had more permission.
+pub async fn rename(
+    app: &AppHandle,
+    session_id: &str,
+    from: &str,
+    to: &str,
+    sudo: bool,
+) -> Result<()> {
     let (sftp, host_id) = open(app, session_id).await?;
-    log(app, host_id, session_id, Origin::User, &format!("sftp rename {from} -> {to}"));
+    log(
+        app,
+        host_id,
+        session_id,
+        Origin::User,
+        &format!("sftp rename{} {from} -> {to}", if sudo { " (sudo)" } else { "" }),
+    );
+    if sudo {
+        sudo::run(
+            app,
+            session_id,
+            &format!("mv -n -- {} {}", ssh::quoted(from), ssh::quoted(to)),
+            0,
+            Origin::User,
+        )
+        .await?;
+        return Ok(());
+    }
     sftp.rename(from, to)
         .await
         .map_err(|e| Error::Ssh(format!("could not rename {from}: {}", tidy(e))))
@@ -956,10 +1172,36 @@ pub async fn rename(app: &AppHandle, session_id: &str, from: &str, to: &str) -> 
 
 /// `chmod`. `mode` is the permission bits alone; the file-type bits are the
 /// server's business and must not be sent back.
-pub async fn chmod(app: &AppHandle, session_id: &str, path: &str, mode: u32) -> Result<()> {
+pub async fn chmod(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    mode: u32,
+    sudo: bool,
+) -> Result<()> {
     let (sftp, host_id) = open(app, session_id).await?;
     let mode = mode & 0o7777;
-    log(app, host_id, session_id, Origin::User, &format!("sftp chmod {mode:o} {path}"));
+    log(
+        app,
+        host_id,
+        session_id,
+        Origin::User,
+        &format!("sftp chmod{} {mode:o} {path}", if sudo { " (sudo)" } else { "" }),
+    );
+    if sudo {
+        // The mode is four octal digits this side built from switches, so it
+        // needs no quoting — but the path came out of a listing the server
+        // controls, and it does.
+        sudo::run(
+            app,
+            session_id,
+            &format!("chmod {mode:04o} -- {}", ssh::quoted(path)),
+            0,
+            Origin::User,
+        )
+        .await?;
+        return Ok(());
+    }
     sftp.set_metadata(path, only(|m| m.permissions = Some(mode)))
         .await
         .map_err(|e| Error::Ssh(format!("could not chmod {path}: {}", tidy(e))))
@@ -977,6 +1219,7 @@ pub async fn chown(
     uid: u32,
     gid: u32,
     recursive: bool,
+    sudo: bool,
 ) -> Result<u64> {
     let (sftp, host_id) = open(app, session_id).await?;
     log(
@@ -984,8 +1227,33 @@ pub async fn chown(
         host_id,
         session_id,
         Origin::User,
-        &format!("sftp chown {uid}:{gid}{} {path}", if recursive { " -R" } else { "" }),
+        &format!(
+            "sftp chown{} {uid}:{gid}{} {path}",
+            if sudo { " (sudo)" } else { "" },
+            if recursive { " -R" } else { "" }
+        ),
     );
+
+    if sudo {
+        // One command for the whole tree rather than a walk: `chown -R` is what
+        // the account would have run, it is atomic per entry either way, and it
+        // does in one round trip what the loop below does in thousands. The
+        // count is the price — `chown` reports nothing — so this says how many
+        // it changed only in the sense of "it did".
+        sudo::run(
+            app,
+            session_id,
+            &format!(
+                "chown {}{uid}:{gid} -- {}",
+                if recursive { "-R " } else { "" },
+                ssh::quoted(path)
+            ),
+            0,
+            Origin::User,
+        )
+        .await?;
+        return Ok(0);
+    }
 
     let meta = || only(|m| {
         m.uid = Some(uid);
@@ -1119,7 +1387,7 @@ pub async fn edit(
     // to be written — and that path streams, where the sudo one does not.
     let bytes = match get_file(&sftp, remote, &local).await {
         Ok(bytes) => bytes,
-        Err(_) if sudo => get_file_as_root(app, session_id, remote, &local).await?,
+        Err(_) if sudo => read_as_root(app, session_id, remote, &local, LARGE_FILE).await?,
         Err(e) => return Err(e),
     };
     log(
@@ -1176,37 +1444,92 @@ pub async fn edit(
     Ok(local.to_string_lossy().into_owned())
 }
 
+/// Deleting as root, which is the one command here that earns its own guard.
+///
+/// `rm -rf` under root, on a path built from a listing the *server* controls,
+/// is the most destructive thing this app can be made to do. The quoting is
+/// tested and holds, so injection is not the risk left — the degenerate path
+/// is. `/`, a relative path, and anything with a `..` in it are refused
+/// outright. One check, and it is the difference between a bug and a wiped
+/// host.
+///
+/// `rm -rf` removes a symlink rather than following it, and does not descend
+/// through one, so that class needs nothing further.
+///
+/// One command rather than the walk the unelevated path does. SFTP has no
+/// recursive delete and has to empty a tree from the leaves; `rm` does not, and
+/// a tree of six thousand entries is one round trip instead of six thousand.
+/// The price is the count: `rm` reports nothing, and returning `0` after a
+/// delete that worked would read as "removed nothing". `1` is what this can
+/// honestly say — one thing removed, at the level the caller asked at.
+async fn remove_as_root(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    is_dir: bool,
+) -> Result<u64> {
+    let named: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+    if !path.starts_with('/') || named.is_empty() || named.iter().any(|part| *part == "..") {
+        return Err(Error::Invalid(format!(
+            "refusing to delete {path} as root: a delete as root has to name an absolute path \
+             to something inside the filesystem, and this one does not."
+        )));
+    }
+
+    sudo::run(
+        app,
+        session_id,
+        &format!(
+            "rm -f{} -- {}",
+            if is_dir { "r" } else { "" },
+            ssh::quoted(path)
+        ),
+        0,
+        Origin::User,
+    )
+    .await?;
+    Ok(1)
+}
+
+/// The most a read-as-root will pull into memory at once.
+///
+/// The elevated read has no stream behind it: `sudo cat` hands its bytes back
+/// over the channel and they are held whole before they reach the disk, where
+/// the SFTP path streams. So there is a ceiling, and it is stated rather than
+/// discovered — a root-owned log of a few hundred megabytes is refused by name
+/// and with a suggestion, which is a better answer than a client that swells to
+/// eat it.
+const MAX_ROOT_READ: u64 = 64 * 1024 * 1024;
+
 /// Reads a file the account cannot open, as root.
 ///
 /// `cat` rather than a copy the account could then fetch over SFTP: a copy
 /// would need a second command to hand it over and a third to remove it, and it
 /// would put the contents of a root-only file — a private key, `/etc/shadow` —
 /// on disk somewhere the account, and anything running as it, could read. The
-/// bytes come back over the channel and go straight to the scratch copy.
-///
-/// Capped at the ordinary edit limit, and this one is not negotiable: the
-/// contents arrive in memory whole, where the SFTP path streams. "Open it
-/// anyway" is for a file SFTP can read by itself.
-async fn get_file_as_root(
+/// bytes come back over the channel and go straight to the local file.
+async fn read_as_root(
     app: &AppHandle,
     session_id: &str,
     remote: &str,
     local: &std::path::Path,
+    cap: u64,
 ) -> Result<u64> {
     let out = sudo::run(
         app,
         session_id,
         &format!("cat -- {}", ssh::quoted(remote)),
-        // One byte over the limit, which is how "it did not fit" is told apart
-        // from "it fits exactly".
-        LARGE_FILE as usize + 1,
+        // One byte over, which is how "it did not fit" is told apart from
+        // "it fits exactly".
+        cap as usize + 1,
         Origin::User,
     )
     .await?;
 
-    if out.stdout.len() as u64 > LARGE_FILE {
+    if out.stdout.len() as u64 > cap {
         return Err(Error::Invalid(format!(
-            "{remote} is larger than the {LARGE_FILE} byte limit for reading a file as root"
+            "{remote} is larger than the {cap} bytes this can read as root in one piece — \
+             copy it with `sudo cp` in the terminal and fetch the copy instead."
         )));
     }
     tokio::fs::write(local, &out.stdout).await?;
@@ -1419,12 +1742,18 @@ async fn get_file(
 /// uses and the only one the protocol permits.
 ///
 /// There is no undo on the far end. The caller is expected to have asked.
-pub async fn remove(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -> Result<u64> {
+pub async fn remove(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    is_dir: bool,
+    sudo: bool,
+) -> Result<u64> {
     // A wrapper purely so the timing survives every `?` inside. A delete over a
     // slow link is the operation most likely to leave somebody wondering
     // whether anything is happening, and "6314 entries in 71.2s" is the answer.
     let span = Span::start("sftp", format!("delete {path}"));
-    match removing(app, session_id, path, is_dir).await {
+    match removing(app, session_id, path, is_dir, sudo).await {
         Ok(count) => {
             span.done(Level::Info, Some(&format!("{count} entries")));
             Ok(count)
@@ -1436,15 +1765,29 @@ pub async fn remove(app: &AppHandle, session_id: &str, path: &str, is_dir: bool)
     }
 }
 
-async fn removing(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -> Result<u64> {
+async fn removing(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    is_dir: bool,
+    sudo: bool,
+) -> Result<u64> {
     let (sftp, host_id) = open(app, session_id).await?;
     log(
         app,
         host_id,
         session_id,
         Origin::User,
-        &format!("sftp rm{} {path}", if is_dir { " -r" } else { "" }),
+        &format!(
+            "sftp rm{}{} {path}",
+            if sudo { " (sudo)" } else { "" },
+            if is_dir { " -r" } else { "" }
+        ),
     );
+
+    if sudo {
+        return remove_as_root(app, session_id, path, is_dir).await;
+    }
 
     let window = ssh::session(app, session_id)?.window.clone();
 
@@ -1566,7 +1909,63 @@ async fn removing(app: &AppHandle, session_id: &str, path: &str, is_dir: bool) -
 
 #[cfg(test)]
 mod tests {
-    use super::{owner_group, parse_table, scratch_name, staging_name};
+    use super::{owner_group, parse_find, parse_table, scratch_name, staging_name, FIND_FIELDS};
+
+    /// Captured from GNU findutils 4.9.0 on a real Debian server, listing a
+    /// directory only root can read. The name with spaces in it is the reason
+    /// the fields are NUL-separated rather than printed like `ls`.
+    #[test]
+    fn reads_what_find_actually_sends() {
+        let row = |kind: &str, size: &str, name: &str| {
+            format!("{kind}\0{size}\01786033099.0000000000\0644\0000\0000\0root\0root\0{name}\0")
+        };
+        let text = format!("{}{}", row("f", "13", "api.key"), row("f", "6", "a file with spaces.txt"));
+
+        let files = parse_find(text.as_bytes()).expect("parses");
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].name, "api.key");
+        assert_eq!(files[0].size, Some(13));
+        assert_eq!(files[0].owner.as_deref(), Some("root"));
+        assert_eq!(files[0].mode.as_deref(), Some("644"));
+        assert_eq!(files[0].mode_text.as_deref(), Some("rw-r--r--"));
+        // `%T@` is a float; the fraction is not a timestamp anybody wants.
+        assert_eq!(files[0].modified, Some(1786033099));
+        assert_eq!(files[1].name, "a file with spaces.txt");
+    }
+
+    /// A directory has no size, the way the SFTP path reports it — so the two
+    /// sources cannot disagree about what the Size column means.
+    #[test]
+    fn a_directory_from_find_has_no_size() {
+        let text = "d\0004096\0011786033099.5\0700\0000\0000\0root\0root\0secrets\0";
+        let files = parse_find(text.as_bytes()).expect("parses");
+        assert_eq!(files[0].kind, "dir");
+        assert_eq!(files[0].size, None);
+        assert_eq!(files[0].mode.as_deref(), Some("700"));
+    }
+
+    /// Empty is empty, and unparseable is *not* empty. A directory shown as
+    /// having nothing in it is a conclusion somebody acts on.
+    #[test]
+    fn tells_an_empty_directory_from_a_broken_answer() {
+        assert_eq!(parse_find(b"").map(|f| f.len()), Some(0));
+        assert_eq!(parse_find(b"\0").map(|f| f.len()), Some(0));
+
+        // A short row, and a whole answer that is not this format at all.
+        assert!(parse_find(b"f\0013\0644\0").is_none());
+        assert!(parse_find(b"total 8\nfoo bar\n").is_none());
+    }
+
+    /// A name with a newline in it is legal on Linux and would end any
+    /// line-based parser. NUL is the one byte it cannot contain.
+    #[test]
+    fn survives_a_newline_in_a_filename() {
+        let text = "f\0001\0011786033099.0\0644\0000\0000\0root\0root\0two\nlines.txt\0";
+        let files = parse_find(text.as_bytes()).expect("parses");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "two\nlines.txt");
+        assert_eq!(FIND_FIELDS, 9);
+    }
 
     /// The staging copy is named by us and read back by a `sudo cp`, so two
     /// things about the name are load-bearing: it is one ordinary path

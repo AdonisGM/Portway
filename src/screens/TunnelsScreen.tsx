@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Tunnel } from '@/lib/api'
 import { message } from '@/lib/api'
+import { formatSize } from '@/lib/bytes'
 import { tunnelForward } from '@/lib/command'
 import { Button } from '@/components/ui/Button'
 import { Chip } from '@/components/ui/Chip'
@@ -52,6 +53,21 @@ export function TunnelsScreen() {
     void loadTunnels()
   }, [loadTunnels])
 
+  // The traffic counters are polled rather than pushed. They move with every
+  // byte, and a `tunnel://state` event per kilobyte would be a re-render per
+  // kilobyte across every window — so the backend keeps them and this screen,
+  // the only one that shows them, asks while it is open.
+  //
+  // Only while something is actually carrying: a page of idle forwards has
+  // nothing to poll for, and a timer that runs anyway is a timer that runs all
+  // night on a laptop.
+  const carrying = tunnels.some((t) => states[t.id]?.state === 'active')
+  useEffect(() => {
+    if (!carrying) return
+    const timer = window.setInterval(() => void loadTunnels(), 1000)
+    return () => window.clearInterval(timer)
+  }, [carrying, loadTunnels])
+
   const stateOf = (t: Tunnel) => states[t.id]?.state ?? 'idle'
   const active = tunnels.filter((t) => stateOf(t) === 'active').length
 
@@ -87,6 +103,33 @@ export function TunnelsScreen() {
       header: 'Autostart',
       className: 'text-cell text-muted',
       render: (t) => AUTOSTART_LABEL[t.autostart] ?? t.autostart,
+    },
+    {
+      key: 'traffic',
+      header: 'Traffic',
+      className: 'font-mono text-meta text-faint',
+      // Bytes each way, and how many connections are open. This is the only
+      // measurement a tunnel can honestly offer — everything inside is TLS the
+      // app holds no key for — and it answers the question a green dot cannot:
+      // not "is the port open" but "is anything going through it".
+      render: (t) => {
+        const live = states[t.id]
+        if (!live || live.state !== 'active') return '—'
+        if (live.served === 0) return <span className="text-faint">nothing yet</span>
+        return (
+          <span className="flex items-center gap-2">
+            <span title="sent to the server">↑ {formatSize(live.up)}</span>
+            <span title="received back">↓ {formatSize(live.down)}</span>
+            {live.open > 0 ? (
+              <span className="text-accent" title="connections open right now">
+                {live.open} open
+              </span>
+            ) : (
+              <span title="connections carried since it started">{live.served} served</span>
+            )}
+          </span>
+        )
+      },
     },
     {
       key: 'state',

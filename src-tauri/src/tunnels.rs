@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, Row};
@@ -96,6 +97,58 @@ pub struct TunnelState {
     /// last real connection through the forward did — plus whatever the Test
     /// button did, which is the user asking.
     pub reachable: Option<bool>,
+    /// Bytes carried each way since this forward came up, and how many
+    /// connections it is holding now against how many it has served.
+    ///
+    /// Filled in by `tunnel_states` from the live counters rather than carried
+    /// on the published event: these move constantly, and a state event per
+    /// kilobyte would be a re-render per kilobyte. The screen that wants them
+    /// asks for them.
+    pub up: u64,
+    pub down: u64,
+    pub open: u64,
+    pub served: u64,
+}
+
+/// What has crossed one forward since it came up.
+///
+/// The numbers were already being computed and thrown away:
+/// `copy_bidirectional` returns the bytes it moved each way, and both call
+/// sites discarded them with `let _ =`. Keeping them is the difference between
+/// a row that says a tunnel is `active` and a row that says it is *doing
+/// something* — which is the question somebody actually has, because a forward
+/// that is listening and carrying nothing looks exactly like one that works.
+///
+/// Atomics rather than a lock: every connection updates these, they are read by
+/// a poll on another thread, and none of it is worth serialising.
+#[derive(Default)]
+pub struct Traffic {
+    /// Bytes from this machine towards the server.
+    up: AtomicU64,
+    /// And back.
+    down: AtomicU64,
+    /// Connections open right now.
+    open: AtomicU64,
+    /// Connections carried since this forward started.
+    served: AtomicU64,
+}
+
+impl TunnelState {
+    /// The counters at zero, for the three places that publish a lifecycle
+    /// change and have no traffic to report — `tunnel_states` fills them in
+    /// from the live figures when somebody asks.
+    fn empty(id: i64) -> Self {
+        Self {
+            id,
+            state: String::new(),
+            error: None,
+            reachable: None,
+            up: 0,
+            down: 0,
+            open: 0,
+            served: 0,
+        }
+    }
 }
 
 pub struct Running {
@@ -111,6 +164,8 @@ pub struct Running {
     /// Where that far leg goes. `None` for a dynamic forward, which is told by
     /// each client and so has no one destination to test.
     target: Option<(String, u16)>,
+    /// Shared with every connection this forward carries.
+    traffic: Arc<Traffic>,
 }
 
 #[derive(Default)]
@@ -153,6 +208,7 @@ fn report_reachable(app: &AppHandle, id: i64) {
             state: "active".into(),
             error: None,
             reachable: Some(true),
+            ..TunnelState::empty(id)
         },
     );
     logging::info("tunnel", "the far leg is carrying traffic", Some(&format!("tunnel={id}")));
@@ -179,6 +235,7 @@ fn report_unreachable(app: &AppHandle, id: i64, reason: String) {
             state: "active".into(),
             error: Some(reason.clone()),
             reachable: Some(false),
+            ..TunnelState::empty(id)
         },
     );
     if !repeat {
@@ -203,6 +260,7 @@ fn set_state(app: &AppHandle, id: i64, state: &str, error: Option<String>) {
             state: state.into(),
             error,
             reachable: None,
+            ..TunnelState::empty(id)
         },
     );
 }
@@ -234,12 +292,29 @@ pub fn list_tunnels(db: State<'_, Db>) -> Result<Vec<Tunnel>> {
 /// events. Anything absent from the map has never run and is idle.
 #[tauri::command]
 pub fn tunnel_states(app: AppHandle) -> Vec<TunnelState> {
+    // The live counters are read here rather than pushed with every state
+    // event: they move with every byte, and a re-render per kilobyte is not a
+    // status display, it is a load. The screen showing them polls; nothing else
+    // pays for them.
+    let running = app.state::<Tunnels>();
+    let live = running.0.lock().unwrap();
+
     app.state::<TunnelStates>()
         .0
         .lock()
         .unwrap()
         .values()
         .cloned()
+        .map(|mut state| {
+            if let Some(carrying) = live.get(&state.id) {
+                let count = |n: &std::sync::atomic::AtomicU64| n.load(Ordering::Relaxed);
+                state.up = count(&carrying.traffic.up);
+                state.down = count(&carrying.traffic.down);
+                state.open = count(&carrying.traffic.open);
+                state.served = count(&carrying.traffic.served);
+            }
+            state
+        })
         .collect()
 }
 
@@ -612,7 +687,15 @@ async fn open(
 
             // No handle kept: a remote forward's far leg starts here, so
             // testing it is an ordinary local connect and needs no channel.
-            return Ok(Running { cancel, handle: None, target: destination });
+            // A remote forward has no accept loop on this side — the server
+            // listens and the handler places what arrives — so nothing here
+            // counts its bytes. The counters stay at zero rather than lying.
+            return Ok(Running {
+                cancel,
+                handle: None,
+                target: destination,
+                traffic: Arc::new(Traffic::default()),
+            });
         }
 
         // We listen; every connection becomes a channel to the far end.
@@ -638,6 +721,8 @@ async fn open(
             let cancelled = cancel.clone();
             let reporter = app.clone();
             let id = tunnel.id;
+            let traffic = Arc::new(Traffic::default());
+            let counting = Arc::clone(&traffic);
             tokio::spawn(async move {
                 loop {
                     let accepted = tokio::select! {
@@ -649,11 +734,12 @@ async fn open(
                     let handle = Arc::clone(&handle);
                     let target = target.clone();
                     let reporter = reporter.clone();
+                    let counting = Arc::clone(&counting);
                     tokio::spawn(async move {
                         let outcome = if dynamic {
-                            socks5(handle, stream, peer).await
+                            socks5(handle, stream, peer, counting).await
                         } else {
-                            forward(handle, stream, peer, &target.0, target.1).await
+                            forward(handle, stream, peer, &target.0, target.1, counting).await
                         };
                         // The tunnel stays up — this is one connection, and the
                         // next may well work. But a forward that is listening
@@ -676,6 +762,7 @@ async fn open(
                 cancel,
                 handle: Some(kept),
                 target: destination,
+                traffic,
             });
         }
     }
@@ -688,6 +775,7 @@ async fn forward(
     peer: std::net::SocketAddr,
     host: &str,
     port: u16,
+    traffic: Arc<Traffic>,
 ) -> Result<()> {
     // Every connection that crosses the server is written down — here, in the
     // app log, and not in the audit trail. A forward carrying a browser makes
@@ -706,8 +794,55 @@ async fn forward(
         .map_err(|e| Error::Ssh(format!("the server refused a channel to {host}:{port} — {e}")))?;
 
     let mut remote = channel.into_stream();
-    let _ = tokio::io::copy_bidirectional(&mut stream, &mut remote).await;
+    relay(&mut stream, &mut remote, &traffic, peer, host, port).await;
     Ok(())
+}
+
+/// Moves the bytes, counts them, and says what it moved when it is over.
+///
+/// `copy_bidirectional` has always returned this pair and both callers threw it
+/// away. It is the only measurement of a tunnel there is — everything inside is
+/// TLS this app holds no key for — and it answers the question that matters:
+/// not "is the port open" but "is anything going through it, and to where".
+///
+/// The line lands when the connection *closes*, because that is when the total
+/// is known. It names the destination, which for a dynamic forward is the only
+/// record of where the tunnel has actually been.
+async fn relay(
+    stream: &mut TcpStream,
+    remote: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
+    traffic: &Traffic,
+    peer: std::net::SocketAddr,
+    host: &str,
+    port: u16,
+) {
+    traffic.open.fetch_add(1, Ordering::Relaxed);
+    traffic.served.fetch_add(1, Ordering::Relaxed);
+    let started = std::time::Instant::now();
+
+    let moved = tokio::io::copy_bidirectional(stream, remote).await;
+
+    traffic.open.fetch_sub(1, Ordering::Relaxed);
+    let seconds = started.elapsed().as_secs_f64();
+    match moved {
+        Ok((up, down)) => {
+            traffic.up.fetch_add(up, Ordering::Relaxed);
+            traffic.down.fetch_add(down, Ordering::Relaxed);
+            logging::debug(
+                "tunnel",
+                &format!("carried {peer} to {host}:{port}"),
+                Some(&format!("up={up}B down={down}B in {seconds:.1}s")),
+            );
+        }
+        // A connection cut mid-flight is ordinary — a browser tab closing does
+        // it — so this is not a warning. What was moved before the cut is lost
+        // to the counters, which `copy_bidirectional` gives no way to recover.
+        Err(e) => logging::debug(
+            "tunnel",
+            &format!("cut {peer} to {host}:{port}"),
+            Some(&format!("after {seconds:.1}s · {e}")),
+        ),
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -740,6 +875,7 @@ async fn socks5(
     handle: Arc<russh::client::Handle<ssh::ClientHandler>>,
     mut stream: TcpStream,
     peer: std::net::SocketAddr,
+    traffic: Arc<Traffic>,
 ) -> Result<()> {
     // Greeting: version, how many methods follow, then that many bytes.
     let mut head = [0u8; 2];
@@ -821,7 +957,7 @@ async fn socks5(
 
     reply(&mut stream, REPLY_OK).await?;
     let mut remote = channel.into_stream();
-    let _ = tokio::io::copy_bidirectional(&mut stream, &mut remote).await;
+    relay(&mut stream, &mut remote, &traffic, peer, &host, port).await;
     Ok(())
 }
 

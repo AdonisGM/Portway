@@ -398,6 +398,18 @@ export interface TunnelState {
    * line. It is what the last real connection did, or what Test found.
    */
   reachable: boolean | null
+  /**
+   * Bytes carried each way since this forward came up, how many connections it
+   * is holding now, and how many it has served in total.
+   *
+   * Filled in only by `tunnelStates()` — the `tunnel://state` event carries
+   * zeroes, because these move with every byte and an event per kilobyte would
+   * be a re-render per kilobyte. The screen that shows them polls for them.
+   */
+  up: number
+  down: number
+  open: number
+  served: number
 }
 
 export const listTunnels = () => invoke<Tunnel[]>('list_tunnels')

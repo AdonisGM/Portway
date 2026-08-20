@@ -44,6 +44,7 @@ import {
 } from './FileDialogs'
 import { useEditing } from './useEditing'
 import { useShellCwd } from './useShellCwd'
+import { placeOf, remember } from '@/lib/sftpPlace'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatSize as size } from '@/lib/bytes'
 
@@ -163,6 +164,15 @@ const BAR_AFTER = 200
  */
 const WORDS_AFTER = 1000
 
+/**
+ * How a listing ended, for the one caller that has a fallback in mind.
+ *
+ * `refused` is split out from `failed` because the two want opposite answers:
+ * a folder that is not there should be left for one that is, and a folder this
+ * account cannot read should be stayed on, where the pane can offer root.
+ */
+type Loaded = 'ok' | 'refused' | 'failed'
+
 interface Props {
   session: Session
   /** Live width from the divider — dynamic, so it cannot be a token. */
@@ -223,7 +233,7 @@ export function SftpPane({ session, width, resizing }: Props) {
   const [asRoot, setAsRoot] = useState(false)
 
   const load = useCallback(
-    async (target: string, system = false, sudo = false) => {
+    async (target: string, system = false, sudo = false): Promise<Loaded> => {
       setBusy(`reading ${target || '/'}`)
       setError(null)
       try {
@@ -232,11 +242,18 @@ export function SftpPane({ session, width, resizing }: Props) {
         setFiles(listing.files)
         setElevated(listing.elevated)
         setRefused(null)
+        // Canonical, not what was asked for: `.` and a path one symlink off
+        // both come back resolved, and the folder to return to is the one the
+        // breadcrumb is drawing.
+        remember(session.id, listing.path)
+        return 'ok'
       } catch (e) {
         setError(message(e))
         // Kept so the pane can offer to try again as root, and *only* for a
         // refusal — a path that does not exist will not start existing.
-        setRefused(message(e).toLowerCase().includes('permission denied') ? target : null)
+        const denied = message(e).toLowerCase().includes('permission denied')
+        setRefused(denied ? target : null)
+        return denied ? 'refused' : 'failed'
       } finally {
         setBusy(null)
       }
@@ -246,10 +263,30 @@ export function SftpPane({ session, width, resizing }: Props) {
 
   // The first listing is Portway's own doing, so it is logged as `system`;
   // every navigation after this is the user's and logged as `user`.
+  //
+  // Where that listing goes is the folder this session was last showing —
+  // switching tabs unmounts this pane, and without the memory every switch
+  // back landed at the home directory rather than where the user was working.
+  // See `lib/sftpPlace`.
   useEffect(() => {
     if (session.status !== 'open') return
-    void load('', true)
-  }, [session.status, load])
+    let cancelled = false
+    const start = placeOf(session.id)
+    void load(start, true).then((outcome) => {
+      // A remembered folder can stop existing — deleted from this very pane
+      // before the tab was switched away — and `setPath` never ran, so the
+      // breadcrumb is blank, `↑` is disabled and Refresh only retries the same
+      // dead path. Login's own directory is the way out of that.
+      //
+      // A refusal is not the same thing and does not fall back: the folder is
+      // there, this account cannot read it, and the pane already draws
+      // `Browse as root` for exactly that.
+      if (outcome === 'failed' && start && !cancelled) void load('', true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [session.status, session.id, load])
 
   // Fetched when the Owner dialog is first wanted, not on connect: most
   // sessions never open it, and a pane that opens is not a request for the

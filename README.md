@@ -425,6 +425,16 @@ plus search/filter/accent for the parts that are live.
   happened to `cd` somewhere new — offering to install a hook they already have. So the last one
   is kept on the session and `ssh_cwd` hands it to a pane that has just mounted. Replay, then
   stream, for the same reason and in the same shape as `sshBus`.
+- **The folder the SFTP pane is showing is remembered per session, for the same reason the
+  terminal's output is.** A tab switch destroys the pane, so every switch back re-listed the
+  directory login lands in and dropped the user three levels above wherever they were working.
+  `lib/sftpPlace` keeps the last canonical path beside `sshBus`'s output buffer and is forgotten
+  with the session. The path only: restoring an elevated listing would fire a `sudo` command from
+  a tab click, against the pane's own rule that navigation never raises a password box — a folder
+  that is refused on return says so and offers `Browse as root`, which is the way in it already
+  draws. A folder that has stopped existing — deleted from this very pane before the switch —
+  falls back to login's directory, because `setPath` never ran and the alternative is a blank
+  breadcrumb with a disabled `↑` and a Refresh that retries the same dead path.
 - **`cd` refuses a path with a line break in it.** The newline that ends the command is the one
   character quoting cannot contain: the shell splits input into lines before it looks at a quote,
   so a directory called `notes\nrm -rf /` — a legal Linux name, out of a listing the server

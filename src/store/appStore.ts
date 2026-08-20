@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import * as api from '@/lib/api'
 import * as ssh from '@/lib/sshBus'
+import * as place from '@/lib/sftpPlace'
 import type { KeyFile, KnownHost, Tunnel, TunnelInput, TunnelState } from '@/lib/api'
 import type { AuthMethod, GroupId, Host, HostInput, Session, SessionStatus } from '@/data/types'
 
@@ -387,6 +388,7 @@ export const useApp = create<AppState>((set, get) => ({
     for (const session of get().sessions.filter((s) => s.hostId === id)) {
       void api.sshDisconnect(session.id).catch(() => {})
       ssh.forget(session.id)
+      place.forget(session.id)
     }
 
     set((state) => ({
@@ -560,6 +562,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (closing) {
       void api.sshDisconnect(closing.id).catch(() => {})
       ssh.forget(closing.id)
+      place.forget(closing.id)
     }
 
     set((state) => {

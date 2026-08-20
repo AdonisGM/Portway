@@ -239,6 +239,12 @@ npm run tauri build    # installer in src-tauri/target/release/bundle/
 
 On Windows: Rust (MSVC toolchain) and WebView2, which ships with Windows 11.
 
+There is no cross-compiling a Windows build from a Mac — the webview is reached through the
+`windows` crate's COM bindings and wants MSVC to link, and the GNU target a mingw cross would
+use is not one Tauri supports for it. `.github/workflows/windows.yml` builds on a Windows runner
+instead, on a push to `main` or `macos-support` and on demand from the Actions tab; the `.msi`
+and the NSIS `-setup.exe` come back as the `portway-windows` artifact.
+
 On macOS: Rust and the Xcode Command Line Tools — `rusqlite` is built from bundled C, so a
 compiler has to be there. WKWebView is part of the OS. `npm run tauri build` produces both
 `bundle/macos/Portway.app` and `bundle/dmg/`, for whichever architecture you are on; the binary

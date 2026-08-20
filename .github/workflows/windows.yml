@@ -1,0 +1,56 @@
+# A Windows installer, built on Windows.
+#
+# There is no cross-compiling this from a Mac. The Windows build links against
+# WebView2 through the `windows` crate's COM bindings and wants the MSVC
+# toolchain to do it; the GNU target that a mingw cross would use is not one
+# Tauri supports for the webview. So the only honest way to hand somebody a
+# `.msi` from a macOS checkout is to build it on a Windows runner, which is what
+# this does.
+name: Windows
+
+on:
+  # Pushes to the branches that carry releasable work, and a button for
+  # everything else — a build that only ever ran on `main` is a build nobody
+  # can get an installer out of while they are still working on a branch.
+  push:
+    branches: [main, macos-support]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # `npm ci` reads package-lock.json, which is committed, so the cache
+          # key is exact rather than a guess at what resolved last time.
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The Rust half is minutes of the build and changes far less often than
+      # the app does. Keyed on src-tauri, because that is the only crate here.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      # `beforeBuildCommand` in tauri.conf.json runs `npm run build`, which is
+      # `tsc --noEmit && vite build` — so a type error fails this job before a
+      # single crate is compiled.
+      - run: npm run tauri build
+
+      # Both bundles the `all` target produces on Windows: the MSI for a managed
+      # install and the NSIS `-setup.exe` for the ordinary one.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portway-windows
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

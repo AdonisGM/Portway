@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import type { Session } from '@/data/types'
 import { sshResize, sshWrite } from '@/lib/api'
+import { log } from '@/lib/log'
 import { encodeText } from '@/lib/bytes'
 import { subscribe } from '@/lib/sshBus'
 import { StatusDot } from '@/components/ui/primitives'
@@ -24,6 +25,69 @@ function token(name: string, fallback: string): string {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
   return value || fallback
 }
+
+/** What a fit worked out, kept so the pane can say so once. */
+interface Fitted {
+  /** Height the pane has to give, in CSS pixels. */
+  room: number
+  /** Height one row actually got, measured rather than derived. */
+  each: number
+  /** Rows dropped because they did not fit. Normally zero. */
+  trimmed: number
+}
+
+/**
+ * Fits the terminal to its pane, then checks the answer against what was drawn.
+ *
+ * `FitAddon` divides a height it read with `parseInt` by a cell height xterm
+ * derived from a measured glyph, and both of those are rounded before they
+ * meet. Where they disagree the answer is one row too many — and a row too many
+ * is a row this pane's `overflow-hidden` cuts in half, which is the shell
+ * writing its prompt on a line whose bottom half is under the status bar.
+ *
+ * So the count is checked against what the renderer actually laid out rather
+ * than against the arithmetic that produced it: the screen element is `rows`
+ * rows tall, so dividing by `rows` gives the height a row really got.
+ *
+ * Computed rather than looped. `resize` does not promise the DOM has caught up
+ * by the time it returns, so a `while` that re-measured could spin forever on
+ * a machine where it never does.
+ */
+function fitTerminal(term: Terminal, fit: FitAddon, mount: HTMLElement): Fitted | null {
+  try {
+    fit.fit()
+  } catch {
+    return null
+  }
+
+  const screen = mount.querySelector('.xterm-screen')
+  if (!(screen instanceof HTMLElement) || term.rows < 1) return null
+  const drawn = screen.getBoundingClientRect().height
+  // Before the first render there is no geometry to judge, and dividing by it
+  // would propose a terminal of infinite rows. `fit` itself no-ops in the same
+  // state, so this is the ordinary first call rather than a failure.
+  if (drawn <= 0) return null
+
+  const style = getComputedStyle(mount)
+  // `getBoundingClientRect` rather than `clientHeight`, which is rounded to a
+  // whole pixel and rounds *up* — measuring the pane as roomier than it is, in
+  // the one direction that would hide the fault being looked for.
+  const room =
+    mount.getBoundingClientRect().height -
+    parseFloat(style.paddingTop) -
+    parseFloat(style.paddingBottom)
+  const each = drawn / term.rows
+  // Half a pixel of slack: a row is either inside the pane or it is not, and
+  // sub-pixel layout should not cost anybody a line of their terminal.
+  const fits = Math.max(1, Math.floor((room + 0.5) / each))
+
+  const trimmed = Math.max(0, term.rows - fits)
+  if (trimmed > 0) term.resize(term.cols, fits)
+  return { room, each, trimmed }
+}
+
+/** Two decimals, because these are sub-pixel numbers and that is the point. */
+const px = (value: number) => `${Math.round(value * 100) / 100}px`
 
 /**
  * `hint` is the keystroke the status bar advertises. It is passed in rather
@@ -125,13 +189,40 @@ export function TerminalPane({ session, hint }: { session: Session; hint?: strin
       },
     })
 
+    // The last size described, so the line is written when the answer changes
+    // rather than on every fit: dragging the divider fires the observer as fast
+    // as the screen refreshes, and the log's own limiter is twenty a second.
+    let described = ''
+
     // Keep the PTY the same size as the pane, so full-screen programs line up.
     const applyFit = () => {
-      try {
-        fit.fit()
-      } catch {
-        return
+      const fitted = fitTerminal(term, fit, mount)
+
+      // What the pane worked out, said once, because a terminal whose last row
+      // is cut in half cannot be diagnosed from a screenshot — the numbers that
+      // tell a rounding disagreement from a shell taller than its window are
+      // these, and they are only knowable on the machine it happens on.
+      const shape = `${term.cols}×${term.rows}`
+      if (fitted && shape !== described) {
+        described = shape
+        // Where the shell's bottom edge lands against the window's own height
+        // is what separates the two things this can be. Equal, and any missing
+        // row is xterm's arithmetic. Past it, and the whole shell is taller
+        // than the window with `#root`'s `overflow: hidden` eating the bottom
+        // strip — which nothing in this file can fix.
+        const shell = document.getElementById('root')?.getBoundingClientRect().bottom ?? 0
+        log.debug(
+          'ui',
+          `terminal fits ${shape}`,
+          [
+            `pane ${px(fitted.room)} · row ${px(fitted.each)}`,
+            fitted.trimmed > 0 ? `dropped ${fitted.trimmed}` : 'nothing dropped',
+            `window ${document.documentElement.clientHeight}px · shell ends ${px(shell)}`,
+            `dpr ${window.devicePixelRatio}`,
+          ].join(' · '),
+        )
       }
+
       setSize({ cols: term.cols, rows: term.rows })
       void sshResize(session.id, term.cols, term.rows).catch(() => {})
     }
@@ -173,16 +264,17 @@ export function TerminalPane({ session, hint }: { session: Session; hint?: strin
    */
   useEffect(() => {
     const term = termRef.current
-    if (!term) return
+    const fit = fitRef.current
+    const mount = mountRef.current
+    if (!term || !fit || !mount) return
     term.options.fontSize = fontSize
     term.options.cursorStyle = cursorStyle
     term.options.cursorBlink = cursorBlink
     term.options.scrollback = scrollback
-    try {
-      fitRef.current?.fit()
-    } catch {
-      return
-    }
+    // Through the same fit as the pane's own, so a font size that leaves a row
+    // half over the edge loses that row here too. A larger font is exactly when
+    // the last row stops fitting, so this is the path that needs it most.
+    fitTerminal(term, fit, mount)
     setSize({ cols: term.cols, rows: term.rows })
     void sshResize(session.id, term.cols, term.rows).catch(() => {})
   }, [fontSize, cursorStyle, cursorBlink, scrollback, session.id])

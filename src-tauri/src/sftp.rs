@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use russh_sftp::client::error::Error as RawError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::{RawSftpSession, SftpSession};
-use russh_sftp::protocol::{OpenFlags, StatusCode};
+use russh_sftp::protocol::{FileType, OpenFlags, StatusCode};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -573,54 +573,209 @@ fn parse_find(out: &[u8]) -> Option<Vec<RemoteFile>> {
     )
 }
 
-/// Downloads a remote file to a local path, reporting progress as it goes.
+/// What a download brought back, so the pane can say what it did.
+///
+/// Bytes alone are enough for one file and not enough for a folder: a tree
+/// comes back with things in it that are neither a file nor a directory, and
+/// those are left where they are. Reporting "3.1 MB" while quietly skipping
+/// four symlinks hides the only surprising part of the answer.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Downloaded {
+    pub bytes: u64,
+    pub files: u64,
+    /// Directories created here, the destination itself included.
+    pub folders: u64,
+    /// Symlinks, sockets, devices — counted, not copied. See `downloading`.
+    pub skipped: u64,
+}
+
+/// Downloads a remote file, or a directory and everything under it.
+///
+/// `local` is the whole destination path rather than a folder to put something
+/// in: the caller has already been to a file picker and knows the name it
+/// wants. For a directory it is the directory to create.
+///
+/// An existing destination is merged into and existing files are overwritten —
+/// the same thing `upload_path` does in the other direction, and for the same
+/// reason: the design has no dialog to ask the question with, and a file panel
+/// has already asked its own.
+///
+/// A wrapper purely so the timing survives every `?` inside — the same shape
+/// `remove` uses, and for the same reason: a tree over a slow link is the kind
+/// of operation that leaves somebody wondering whether anything is happening.
 pub async fn download(
     app: &AppHandle,
     session_id: &str,
     remote: &str,
     local: &str,
     sudo: bool,
-) -> Result<u64> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+) -> Result<Downloaded> {
+    let span = Span::start("sftp", format!("download {remote}"));
+    match downloading(app, session_id, remote, local, sudo).await {
+        Ok(got) => {
+            span.done(
+                Level::Info,
+                Some(&format!(
+                    "{} files, {} bytes, {} folders → {local}",
+                    got.files, got.bytes, got.folders
+                )),
+            );
+            Ok(got)
+        }
+        Err(e) => {
+            span.failed(&e.to_string());
+            Err(e)
+        }
+    }
+}
 
+async fn downloading(
+    app: &AppHandle,
+    session_id: &str,
+    remote: &str,
+    local: &str,
+    sudo: bool,
+) -> Result<Downloaded> {
     let (sftp, host_id) = open(app, session_id).await?;
+
+    // As root is one file, and only one file. The elevated read is `sudo cat`
+    // with a ceiling on it — see `read_as_root` — where a tree would need an
+    // elevated `find` to walk it and one capped `cat` per file it found. That
+    // is a second feature rather than a flag on this one, so the menu offers
+    // this only where it works.
+    if sudo {
+        log(app, host_id, session_id, Origin::User, &format!("sftp get (sudo) {remote}"));
+        let bytes =
+            read_as_root(app, session_id, remote, std::path::Path::new(local), MAX_ROOT_READ)
+                .await?;
+        return Ok(Downloaded { bytes, files: 1, folders: 0, skipped: 0 });
+    }
+
+    // `stat` rather than the kind the listing drew. `Metadata::is_dir` tests
+    // one bit of the mode, and a symlink has that bit set whatever it points
+    // at — so the pane shows every link as a folder, and a download that
+    // trusted it would try to read a text file as a directory. `stat` follows
+    // the link, which is what asking for this entry by name means. The walk
+    // below deliberately does not follow the ones it finds inside.
+    let meta = sftp
+        .metadata(remote)
+        .await
+        .map_err(|e| Error::Ssh(format!("could not read {remote}: {}", tidy(e))))?;
+    let is_dir = meta.file_type().is_dir();
     log(
         app,
         host_id,
         session_id,
         Origin::User,
-        &format!("sftp get{} {remote}", if sudo { " (sudo)" } else { "" }),
+        &format!("sftp get{} {remote}", if is_dir { " -r" } else { "" }),
     );
 
-    if sudo {
-        return read_as_root(app, session_id, remote, std::path::Path::new(local), MAX_ROOT_READ)
-            .await;
+    let window = ssh::session(app, session_id)?.window.clone();
+    let local = std::path::PathBuf::from(local);
+
+    if !is_dir {
+        let mut progress = Progress::new(app, session_id, "download", &window, 1);
+        let bytes =
+            get_file(&sftp, remote, &local, meta.size.unwrap_or(0), Some(&mut progress)).await?;
+        progress.finished_file();
+        return Ok(Downloaded { bytes, files: 1, folders: 0, skipped: 0 });
     }
 
-    let mut source = sftp
-        .open(remote)
-        .await
-        .map_err(|e| Error::Ssh(format!("could not open {remote}: {}", tidy(e))))?;
-    let mut target = tokio::fs::File::create(local).await?;
-
-    let mut buffer = vec![0u8; 64 * 1024];
-    let mut total = 0u64;
-    loop {
-        let read = source.read(&mut buffer).await?;
-        if read == 0 {
-            break;
+    // Walked before anything is fetched, for the reason the upload walk is:
+    // the footer's file counter cannot count towards a total that is still
+    // being discovered — a bar that grows its own denominator reads as going
+    // backwards.
+    //
+    // Breadth-first, so a directory is always seen before the things inside it
+    // and creating them in this order needs no sorting. Iterative because a
+    // recursive async fn would need boxing.
+    let mut folders = vec![local.clone()];
+    let mut fetching: Vec<(String, std::path::PathBuf, u64)> = Vec::new();
+    let mut skipped = 0u64;
+    let mut queue = std::collections::VecDeque::from([(remote.to_string(), local)]);
+    while let Some((from, to)) = queue.pop_front() {
+        let entries = sftp
+            .read_dir(&from)
+            .await
+            .map_err(|e| Error::Ssh(format!("could not read {from}: {}", tidy(e))))?;
+        for entry in entries {
+            let name = entry.file_name();
+            // These names come off the far end and are about to become paths on
+            // this machine. `plain_component` says what a server can do with
+            // one; `edit` hands over a single name per click, where a folder
+            // download hands over a whole tree of them unattended, so a bad one
+            // stops the download rather than being renamed into something near
+            // it — the file that would be written is not the file that was
+            // asked for either way.
+            let component = plain_component(&name).map_err(|why| {
+                Error::Invalid(format!(
+                    "refusing to download {from}: it holds an entry whose name {why}, and \
+                     writing that here would put a file outside the folder you chose."
+                ))
+            })?;
+            let there = join_remote(&from, &name);
+            let here = to.join(component);
+            match entry.file_type() {
+                FileType::Dir => {
+                    folders.push(here.clone());
+                    queue.push_back((there, here));
+                }
+                FileType::File => {
+                    fetching.push((there, here, entry.metadata().size.unwrap_or(0)))
+                }
+                // A symlink is a name pointing somewhere, and neither answer is
+                // right here: recreating it locally points at a path that means
+                // something else on this machine, and following it copies
+                // whatever it aims at — possibly the tree already being walked.
+                // Sockets and devices are not files to copy at all. Left where
+                // they are, and counted, because a silent omission is the worst
+                // of the three.
+                FileType::Symlink => skipped += 1,
+                // Unreadable, which is not the same as exotic. The type comes
+                // out of the permission bits, so a server that sends none in
+                // its directory reply makes every entry look like a socket, and
+                // a whole tree would come down empty while calling it skipped.
+                // One round trip settles it, and costs nothing on the servers
+                // that answered properly in the first place.
+                //
+                // `lstat`, where the one at the top of this function is `stat`,
+                // and the difference is the whole point: on such a server every
+                // entry arrives here, symlinks included, and `stat` would follow
+                // each one. `/var/www/current -> /var/www` would then queue its
+                // own parent, and the walk — which has no cycle guard, because
+                // it does not follow links — would never end. Asking about the
+                // link itself keeps it a link, and a link is skipped.
+                FileType::Other if entry.metadata().permissions.is_none() => {
+                    match sftp.symlink_metadata(&there).await {
+                        Ok(found) if found.file_type().is_dir() => {
+                            folders.push(here.clone());
+                            queue.push_back((there, here));
+                        }
+                        Ok(found) if found.file_type().is_file() => {
+                            fetching.push((there, here, found.size.unwrap_or(0)))
+                        }
+                        _ => skipped += 1,
+                    }
+                }
+                FileType::Other => skipped += 1,
+            }
         }
-        target.write_all(&buffer[..read]).await?;
-        total += read as u64;
     }
-    target.flush().await?;
 
-    logging::info(
-        "sftp",
-        &format!("downloaded {remote}"),
-        Some(&format!("{total} bytes → {local}")),
-    );
-    Ok(total)
+    for folder in &folders {
+        tokio::fs::create_dir_all(folder).await?;
+    }
+
+    let count = fetching.len();
+    let mut progress = Progress::new(app, session_id, "download", &window, count as u32);
+    let mut bytes = 0u64;
+    for (there, here, size) in fetching {
+        bytes += get_file(&sftp, &there, &here, size, Some(&mut progress)).await?;
+        progress.finished_file();
+    }
+
+    Ok(Downloaded { bytes, files: count as u64, folders: folders.len() as u64, skipped })
 }
 
 /// What the transfer footer draws while something is moving.
@@ -969,42 +1124,48 @@ fn name_of(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// The filename to give the scratch copy of a file being edited — or a refusal.
+/// One ordinary path component, or what is wrong with it.
 ///
-/// The name comes from the far end. A remote path is `/`-separated whatever the
-/// server runs, so splitting on `/` leaves one component on Unix and the check
-/// below would never fire; on Windows it is not enough, and that is the whole
-/// point. `\` is a path separator there, `..` is not normalised away by
-/// `Path::join`, and a component like `C:\Users\Public\evil.exe` is *absolute*,
-/// which makes `join` discard the scratch directory entirely and return the
-/// pushed path. All three are legal characters in a Linux filename, so a
-/// hostile — or merely compromised — server can name a file
-/// `..\..\..\Start Menu\Programs\Startup\updater.exe`, and a single click on
-/// Edit would write the server's bytes there and `launch` would run them.
+/// Every name here comes from the far end, and each is about to become part of
+/// a path on this machine. A remote path is `/`-separated whatever the server
+/// runs, so splitting on `/` leaves one component on Unix and this would never
+/// fire; on Windows it is not enough, and that is the whole point. `\` is a
+/// path separator there, `..` is not normalised away by `Path::join`, and a
+/// component like `C:\Users\Public\evil.exe` is *absolute*, which makes `join`
+/// discard the directory it was given entirely and return the pushed path. All
+/// three are legal characters in a Linux filename, so a hostile — or merely
+/// compromised — server can name a file
+/// `..\..\..\Start Menu\Programs\Startup\updater.exe`, and one click on Edit
+/// would write the server's bytes there while `launch` ran them. A folder
+/// download is the same reach with no click per name at all.
 ///
-/// So the name is required to be one ordinary component and nothing else.
-/// Refusing is the right answer rather than sanitising into some nearby name:
-/// the file the user asked to edit is not the file that would be opened, and
-/// the honest outcome is to say what is wrong with it.
-fn scratch_name(remote: &str) -> Result<&str> {
-    let name = remote.rsplit('/').next().unwrap_or("");
-    let refuse = |why: &str| {
-        Err(Error::Invalid(format!(
-            "refusing to edit {remote}: its name {why}. Rename it on the server, or download it \
-             instead."
-        )))
-    };
-
+/// So a name is required to be one ordinary component and nothing else.
+/// Refusing beats sanitising into some nearby name: the file that would be
+/// written is not the file that was asked for, and the honest outcome is to say
+/// what is wrong with it.
+///
+/// `:` sits alongside the separators because on Windows it is what makes a
+/// component drive-absolute, and a drive letter is the shortest escape of all.
+/// NUL because it terminates a path before the OS ever sees the rest.
+fn plain_component(name: &str) -> std::result::Result<&str, &'static str> {
     if name.is_empty() || name == "." || name == ".." {
-        return refuse("is not a file name");
+        return Err("is not a file name");
     }
-    // `:` alongside the separators because on Windows it is what makes a
-    // component drive-absolute, and a drive letter is the shortest escape of
-    // all. NUL because it terminates a path before the OS ever sees the rest.
     if name.contains(['/', '\\', ':', '\0']) {
-        return refuse("contains a path separator");
+        return Err("contains a path separator");
     }
     Ok(name)
+}
+
+/// The filename to give the scratch copy of a file being edited — or a refusal.
+fn scratch_name(remote: &str) -> Result<&str> {
+    let name = remote.rsplit('/').next().unwrap_or("");
+    plain_component(name).map_err(|why| {
+        Error::Invalid(format!(
+            "refusing to edit {remote}: its name {why}. Rename it on the server, or download it \
+             instead."
+        ))
+    })
 }
 
 /// Joins a remote directory and a name. Remote paths are always `/`-separated,
@@ -1385,7 +1546,7 @@ pub async fn edit(
     // Plain SFTP first even when root was asked for. Most files opened this way
     // are the 644 configuration files that read perfectly well and only refuse
     // to be written — and that path streams, where the sudo one does not.
-    let bytes = match get_file(&sftp, remote, &local).await {
+    let bytes = match get_file(&sftp, remote, &local, 0, None).await {
         Ok(bytes) => bytes,
         Err(_) if sudo => read_as_root(app, session_id, remote, &local, LARGE_FILE).await?,
         Err(e) => return Err(e),
@@ -1707,12 +1868,24 @@ fn watch(
 }
 
 /// Downloads to a local path, shared by `download` and `edit`.
+///
+/// `size` is what the server said this file was, taken from the listing or the
+/// `stat` the caller already did, and it is only ever the denominator the
+/// footer draws against — the bytes written are counted here. Asking the server
+/// again would be one more round trip per file, which on a tree of four hundred
+/// is four hundred, for a number that is already known.
 async fn get_file(
     sftp: &SftpSession,
     remote: &str,
     local: &std::path::Path,
+    size: u64,
+    mut progress: Option<&mut Progress>,
 ) -> Result<u64> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    if let Some(p) = progress.as_deref_mut() {
+        p.start(name_of(remote), size);
+    }
 
     let mut source = sftp
         .open(remote)
@@ -1729,6 +1902,9 @@ async fn get_file(
         }
         target.write_all(&buffer[..read]).await?;
         total += read as u64;
+        if let Some(p) = progress.as_deref_mut() {
+            p.advance(read as u64);
+        }
     }
     target.flush().await?;
     Ok(total)
@@ -1909,7 +2085,10 @@ async fn removing(
 
 #[cfg(test)]
 mod tests {
-    use super::{owner_group, parse_find, parse_table, scratch_name, staging_name, FIND_FIELDS};
+    use super::{
+        owner_group, parse_find, parse_table, plain_component, scratch_name, staging_name,
+        FIND_FIELDS,
+    };
 
     /// Captured from GNU findutils 4.9.0 on a real Debian server, listing a
     /// directory only root can read. The name with spaces in it is the reason
@@ -2009,6 +2188,38 @@ mod tests {
         ] {
             let refused = scratch_name(hostile).unwrap_err().to_string();
             assert!(refused.contains("refusing to edit"), "{hostile:?} → {refused}");
+        }
+    }
+
+    /// The same names, met where a folder download meets them.
+    ///
+    /// `edit` gets one server-supplied name per click and a person looking at
+    /// it; a tree hands over hundreds unattended, so the guard has to be the
+    /// same one — and the ordinary names have to survive it, or a download
+    /// refuses files that are merely unusual.
+    #[test]
+    fn refuses_a_downloaded_entry_that_is_a_path() {
+        for hostile in [
+            r"..\..\..\Start Menu\Programs\Startup\updater.exe",
+            r"C:\Users\Public\evil.exe",
+            r"subdir\payload.dll",
+            "..",
+            ".",
+            "",
+            "with\0a nul",
+        ] {
+            assert!(plain_component(hostile).is_err(), "{hostile:?}");
+        }
+        // Legal Linux filenames, every one of them, and none of them an escape.
+        for ordinary in [
+            "access.log",
+            "..hidden",
+            "report.2026.tar.gz",
+            "a file with spaces.txt",
+            "two\nlines.txt",
+            "-rf",
+        ] {
+            assert_eq!(plain_component(ordinary).unwrap(), ordinary);
         }
     }
 

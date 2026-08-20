@@ -244,8 +244,32 @@ export const CWD_HOOK =
 export const sftpList = (sessionId: string, path: string, system = false, sudo = false) =>
   invoke<Listing>('sftp_list', { sessionId, path, system, sudo })
 
+/**
+ * What came back, rather than a byte count.
+ *
+ * A folder download ends with things it did not take — a symlink is a name
+ * pointing somewhere, and copying what it aims at or recreating it locally are
+ * both wrong here — and a total that did not mention them would be hiding the
+ * one surprising part of the answer.
+ */
+export interface Downloaded {
+  bytes: number
+  files: number
+  /** Directories created here, the destination itself included. */
+  folders: number
+  /** Symlinks, sockets and devices, left where they were. */
+  skipped: number
+}
+
+/**
+ * A file, or a folder and everything under it, onto this machine.
+ *
+ * `local` is the whole destination path: for a file the name the save panel
+ * came back with, for a folder the directory to create. `sudo` reads the file
+ * through root and is single files only — see `sftp.rs::downloading`.
+ */
 export const sftpDownload = (sessionId: string, remote: string, local: string, sudo = false) =>
-  invoke<number>('sftp_download', { sessionId, remote, local, sudo })
+  invoke<Downloaded>('sftp_download', { sessionId, remote, local, sudo })
 
 export const sftpUpload = (sessionId: string, local: string, remote: string) =>
   invoke<number>('sftp_upload', { sessionId, local, remote })

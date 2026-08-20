@@ -134,6 +134,10 @@ pub async fn sftp_principals(app: AppHandle, session_id: String) -> Result<sftp:
     on(&app, &session_id, "read accounts", sftp::principals(&app, &session_id).await)
 }
 
+/// A file, or a folder and everything under it, onto this machine.
+///
+/// `local` is the whole destination path — the caller has been to a file
+/// picker, so the name is already decided and is not ours to invent.
 #[tauri::command]
 pub async fn sftp_download(
     app: AppHandle,
@@ -141,7 +145,7 @@ pub async fn sftp_download(
     remote: String,
     local: String,
     sudo: bool,
-) -> Result<u64> {
+) -> Result<sftp::Downloaded> {
     on(
         &app,
         &session_id,

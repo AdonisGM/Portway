@@ -1,6 +1,13 @@
 import { formatSize } from '@/lib/bytes'
 import type { Transfer } from './useTransfer'
 
+/** The present participle of each verb, which is all the footer needs of it. */
+const DOING: Record<Transfer['verb'], string> = {
+  upload: 'uploading',
+  download: 'downloading',
+  delete: 'deleting',
+}
+
 /**
  * The transfer footer, from the handoff (README §SFTP pane): filename on the
  * left, `62% · 3.1 MB/s` on the right, and a 3px accent track under both.
@@ -13,7 +20,10 @@ import type { Transfer } from './useTransfer'
  */
 export function TransferFooter({ transfer }: { transfer: Transfer }) {
   const many = transfer.filesTotal > 1
-  const deleting = transfer.verb === 'delete'
+  // One word for whichever of the three this is, resolved once. The footer says
+  // the same two lines either way — what changes is the verb and, for a delete,
+  // whether there is a quantity behind it at all.
+  const doing = DOING[transfer.verb]
   // A delete moves no bytes, so the item line has a name and a word and no bar
   // under it. Only the count above means anything, and for a single file not
   // even that — which is exactly when the word is the whole message.
@@ -23,11 +33,9 @@ export function TransferFooter({ transfer }: { transfer: Transfer }) {
     <div className="flex flex-none flex-col gap-1.5 border-t border-w06 px-3 py-2.25">
       {many ? (
         <Line
-          left={
-            deleting
-              ? `deleting ${transfer.filesTotal} items`
-              : `uploading ${transfer.filesTotal} files`
-          }
+          left={`${doing} ${transfer.filesTotal} ${
+            transfer.verb === 'delete' ? 'items' : 'files'
+          }`}
           right={`${transfer.filesDone} / ${transfer.filesTotal}`}
           fraction={transfer.filesDone / transfer.filesTotal}
         />
@@ -38,9 +46,7 @@ export function TransferFooter({ transfer }: { transfer: Transfer }) {
         right={
           weighed
             ? `${percent(transfer.bytes, transfer.total)} · ${formatSize(Math.round(transfer.rate))}/s`
-            : deleting
-              ? 'deleting'
-              : 'uploading'
+            : doing
         }
         fraction={weighed ? transfer.bytes / transfer.total : 0}
         bar={weighed}

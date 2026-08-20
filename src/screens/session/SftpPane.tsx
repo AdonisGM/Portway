@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Principals, RemoteFile } from '@/lib/api'
+import { open as pickFolder, save as pickSave } from '@tauri-apps/plugin-dialog'
+import { downloadDir, join } from '@tauri-apps/api/path'
+import type { Downloaded, Principals, RemoteFile } from '@/lib/api'
 import {
   CWD_HOOK,
   LARGE_FILE,
   message,
   sftpChmod,
   sftpChown,
+  sftpDownload,
   sftpList,
   sftpPrincipals,
   sftpRemove,
@@ -127,6 +130,50 @@ function compareFiles(a: RemoteFile, b: RemoteFile, key: string): number {
     default:
       return text(a.name, b.name)
   }
+}
+
+/**
+ * The OS downloads folder, or nothing.
+ *
+ * Only ever where a panel opens, so a platform that has no such folder — or
+ * declines to say — costs the user one navigation rather than the download.
+ */
+async function downloads(): Promise<string | null> {
+  try {
+    return await downloadDir()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Where a download should land, asked for in whichever panel fits.
+ *
+ * Two questions, so two panels. A file has a name the user may want to change
+ * and a place to put it, which is what a save panel is. A folder is being
+ * *created*, and no OS offers a panel for saving a directory — so that one asks
+ * which folder to create it in and takes the name from the server.
+ *
+ * The paths are joined by Tauri rather than with a `/`, because this half runs
+ * on the user's machine and Windows does not spell it that way.
+ *
+ * `null` means the panel was dismissed.
+ */
+async function destinationFor(file: RemoteFile): Promise<string | null> {
+  const into = await downloads()
+  if (file.kind === 'dir') {
+    const parent = await pickFolder({
+      directory: true,
+      multiple: false,
+      title: `Download ${file.name} into…`,
+      ...(into ? { defaultPath: into } : {}),
+    })
+    return typeof parent === 'string' ? await join(parent, file.name) : null
+  }
+  return await pickSave({
+    title: `Download ${file.name}`,
+    defaultPath: into ? await join(into, file.name) : file.name,
+  })
 }
 
 /**
@@ -348,14 +395,25 @@ export function SftpPane({ session, width, resizing }: Props) {
     onUploaded: () => void load(path),
   })
 
-  /** A long operation of our own — a delete — on the same footer an upload
-   *  uses. `done` is the second it stays up afterwards, as uploads do. */
+  /** A long operation of our own — a delete or a download — on the same footer
+   *  an upload uses. `done` is the second it stays up afterwards, as uploads do. */
   const [working, setWorking] = useState<'idle' | 'running' | 'done'>('idle')
   useEffect(() => {
     if (working !== 'done') return
     const timer = window.setTimeout(() => setWorking('idle'), 1000)
     return () => window.clearTimeout(timer)
   }, [working])
+
+  // What the last download brought back. The footer goes with the transfer, and
+  // a transfer that has ended has nothing left to report — but where the bytes
+  // landed and what was left behind is a fact about this machine that outlives
+  // the bar, so it gets a line of its own for a few seconds.
+  const [downloaded, setDownloaded] = useState<Downloaded | null>(null)
+  useEffect(() => {
+    if (!downloaded) return
+    const timer = window.setTimeout(() => setDownloaded(null), 6000)
+    return () => window.clearTimeout(timer)
+  }, [downloaded])
 
   // `done` keeps the finished bar on screen for a moment — see `DropState`.
   const transfer = useTransfer(
@@ -505,6 +563,58 @@ export function SftpPane({ session, width, resizing }: Props) {
       command: `sudo cat -- '${remote}'   ·   every save: sudo cp -- <copy> '${remote}'`,
       writes: true,
       run: () => void withSudo(start),
+    })
+  }
+
+  /**
+   * Fetching something onto this machine.
+   *
+   * Not `act`: nothing on the server changed, so the re-read `act` does
+   * afterwards would be a round trip that can only tell the pane what it
+   * already knows. The footer is the same one an upload uses — `working` is
+   * what gates it — and the line underneath says where the bytes landed once
+   * the bar has gone.
+   */
+  const download = async (file: RemoteFile, sudo = false) => {
+    setMenu(null)
+    setOpError(null)
+    const remote = pathOf(file)
+    try {
+      const local = await destinationFor(file)
+      // Dismissed. Not an error and not worth a line — the user closed a
+      // panel, which is the whole of what happened.
+      if (local === null) return
+
+      setDownloaded(null)
+      setWorking('running')
+      setBusy(`downloading ${remote}`)
+      setDownloaded(await sftpDownload(session.id, remote, local, sudo))
+      setWorking('done')
+    } catch (e) {
+      setWorking('idle')
+      setOpError(message(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /**
+   * The same read, done by root, for a file this account cannot open.
+   *
+   * Files only. The elevated read is `sudo cat` with a ceiling on it, and a
+   * folder would need an elevated walk as well — see `sftp.rs::downloading` —
+   * so the menu offers this where it works and nowhere else.
+   */
+  const downloadAsRoot = (file: RemoteFile) => {
+    const remote = pathOf(file)
+    confirmRoot({
+      action: 'Download as root',
+      path: remote,
+      command: `sudo cat -- '${remote}'`,
+      // It reads the server and writes this machine, which is the direction
+      // this dialog's warning is not about.
+      writes: false,
+      run: () => void withSudo(() => void download(file, true)),
     })
   }
 
@@ -859,14 +969,17 @@ export function SftpPane({ session, width, resizing }: Props) {
           three lines is the whole of it. */}
       {transfer ? <TransferFooter transfer={transfer} /> : null}
 
-      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 300 : 240}>
+      <ContextMenu at={menu?.at ?? null} onClose={() => setMenu(null)} estimatedHeight={menu?.file.kind === 'file' ? 335 : 275}>
         {menu?.file.kind === 'file' ? (
           <>
             <MenuItem onClick={() => menu && openFile(menu.file, false)}>Open</MenuItem>
             <MenuItem onClick={() => menu && openFile(menu.file, true)}>Open with…</MenuItem>
-            <MenuSeparator />
           </>
         ) : null}
+        {/* Both kinds. A folder comes down as a folder — the walk is on the
+            Rust side — so this is one row rather than two. */}
+        <MenuItem onClick={() => menu && void download(menu.file)}>Download…</MenuItem>
+        <MenuSeparator />
         <MenuItem onClick={() => openDialog('rename')}>Rename…</MenuItem>
         <MenuItem onClick={() => openDialog('mode')}>Permissions…</MenuItem>
         <MenuItem onClick={() => openDialog('owner')}>Owner…</MenuItem>
@@ -884,14 +997,22 @@ export function SftpPane({ session, width, resizing }: Props) {
             menu beside its ordinary twin. Two things at once: the menu stays
             short enough to scan, and nothing that runs as root can be reached
             by a pointer sliding down the list. */}
-        <MenuSub label="As root" root estimatedHeight={210}>
+        <MenuSub label="As root" root estimatedHeight={245}>
           {menu?.file.kind === 'file' ? (
-            // The case this whole feature exists for: a config file that reads
-            // fine and refuses to be written. Named "as root" rather than "with
-            // sudo" because what changes is who writes the file; sudo is only how.
-            <MenuItem root onClick={() => menu && openFile(menu.file, false, true)}>
-              Open as root…
-            </MenuItem>
+            <>
+              {/* The case this whole feature exists for: a config file that
+                  reads fine and refuses to be written. Named "as root" rather
+                  than "with sudo" because what changes is who writes the file;
+                  sudo is only how. */}
+              <MenuItem root onClick={() => menu && openFile(menu.file, false, true)}>
+                Open as root…
+              </MenuItem>
+              {/* Files only — see `downloadAsRoot`. A folder offers no such row
+                  rather than one that fails once it is pressed. */}
+              <MenuItem root onClick={() => menu && downloadAsRoot(menu.file)}>
+                Download as root…
+              </MenuItem>
+            </>
           ) : null}
           <MenuItem root onClick={() => openDialog('rename', true)}>
             Rename as root…
@@ -912,6 +1033,28 @@ export function SftpPane({ session, width, resizing }: Props) {
           Delete…
         </MenuItem>
       </ContextMenu>
+
+      {/* What the last download brought back. The footer's bar goes with the
+          transfer; this outlives it, because how many files landed — and what
+          was left behind — is the part worth reading after it has finished. */}
+      {downloaded ? (
+        <div className="flex-none border-t border-w06 px-3 py-2 font-mono text-mono text-accent">
+          downloaded {downloaded.files} {downloaded.files === 1 ? 'file' : 'files'} ·{' '}
+          {size(downloaded.bytes)}
+          {downloaded.folders > 0
+            ? ` · ${downloaded.folders} ${downloaded.folders === 1 ? 'folder' : 'folders'}`
+            : ''}
+          {/* Not a footnote: a symlink or a device node is something the user
+              asked for and did not get, and a total that omitted it would be
+              claiming a folder came down whole when it did not. */}
+          {downloaded.skipped > 0 ? (
+            <span className="text-warn">
+              {' '}
+              · {downloaded.skipped} skipped (links and device files)
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* What is open elsewhere, and whether the last save landed. Editing is
           invisible otherwise: the file is in another app and the write-back

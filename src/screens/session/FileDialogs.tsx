@@ -93,7 +93,7 @@ export function RootActionDialog({
   host: string
   path: string
   /** The command, as the server will see it. Kept in step with the Rust that
-   *  builds it — see `sftp.rs::upload_as_root` and `get_file_as_root`. */
+   *  builds it — see `sftp.rs::upload_as_root` and `read_as_root`. */
   command: string
   /** True when it changes something on the far end. */
   writes: boolean

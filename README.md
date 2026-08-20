@@ -371,6 +371,26 @@ plus search/filter/accent for the parts that are live.
   moves. Polling rather than a filesystem watcher, because editors save by writing a temp file
   and renaming it over the original at least as often as they write in place, and a stat does
   not care which happened.
+- **A folder download is walked before a byte of it moves, and it does not follow symlinks.**
+  `sftp.rs::downloading` collects the whole tree first, for the reason the upload walk does: the
+  footer's file counter cannot count towards a total still being discovered, and a bar that grows
+  its own denominator reads as going backwards. What kind of thing each entry is comes from
+  `DirEntry::file_type`, not `Metadata::is_dir` — the latter tests one bit of the mode and a
+  symlink has that bit set, which is why the pane draws links as folders. Links, sockets and
+  device nodes are counted and left: recreating a link here points it at a path that means
+  something else on this machine, and following one copies whatever it aims at, possibly the tree
+  being walked. The count is reported in the pane, because a total that omitted them would be
+  claiming a folder came down whole when it did not. The top-level entry *is* followed, once, by
+  the `stat` that decides file-or-folder — asking for a link by name is asking for what it points
+  at. As root is single files only: the elevated read is `sudo cat` under a ceiling, and a tree
+  would need an elevated `find` to walk it as well, so the menu offers that row on files alone.
+- **Every name a download turns into a local path is checked, not just the one `edit` uses.**
+  `plain_component` is `scratch_name`'s rule factored out. `edit` hands over one server-supplied
+  name per click; a folder download hands over a whole tree of them, unattended, and `Path::join`
+  will happily leave the destination directory for a component containing `..`, a `\`, or a
+  Windows drive letter — all legal characters in a Linux filename. A bad name stops the download
+  and says which it was, rather than being sanitised into a nearby one: the file that would be
+  written is not the file that was asked for.
 - **Saving as root happens beside SFTP, not inside it.** SFTP has no notion of privilege — the
   subsystem the server starts runs as whoever logged in, and the protocol has no way to ask for
   more. So `sftp.rs::upload_as_root` sends the bytes up the ordinary way into a `0600` staging

@@ -10,7 +10,7 @@ import { listen } from '@tauri-apps/api/event'
  */
 export interface Transfer {
   /** Which operation this is. Deletes have no bytes to measure, only a count. */
-  verb: 'upload' | 'delete'
+  verb: 'upload' | 'download' | 'delete'
   /** The file on the wire right now. */
   name: string
   /** Both zero when there is nothing to weigh — a delete moves no bytes. */
@@ -25,9 +25,9 @@ export interface Transfer {
 
 /**
  * `active` is the pane telling us a transfer is worth showing — in flight, or
- * just finished and being held up for a second. The last event of one upload
- * would otherwise stay on screen until the next, and a transfer that finished
- * ten minutes ago still reading `98%` is worse than no footer at all.
+ * just finished and being held up for a second. The last event of one transfer
+ * would otherwise stay on screen until the next, and one that finished ten
+ * minutes ago still reading `98%` is worse than no footer at all.
  */
 export function useTransfer(sessionId: string, active: boolean): Transfer | null {
   const [transfer, setTransfer] = useState<Transfer | null>(null)

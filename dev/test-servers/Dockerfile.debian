@@ -2,12 +2,21 @@
 ARG BASE=ubuntu:24.04
 FROM ${BASE}
 
+# The apt lists are kept on purpose: real servers have them, and Portway reads
+# pending updates from them.
 RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server sudo procps \
- && rm -rf /var/lib/apt/lists/* \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server sudo procps ca-certificates curl \
  && mkdir -p /run/sshd \
  && useradd -m -s /bin/bash -G sudo deploy \
  && echo 'deploy:portway' | chpasswd
+
+# Optional Docker CLI (static binary) so a test server can show real containers
+# through the host's Docker socket mounted by compose.yml.
+ARG DOCKER_CLI=""
+RUN if [ -n "$DOCKER_CLI" ]; then \
+      curl -fsSL "https://download.docker.com/linux/static/stable/$(uname -m)/docker-${DOCKER_CLI}.tgz" \
+      | tar -xz --strip-components=1 -C /usr/local/bin docker/docker; \
+    fi
 
 COPY sshd_portway.conf /etc/ssh/sshd_config.d/portway.conf
 COPY entrypoint.sh /entrypoint.sh

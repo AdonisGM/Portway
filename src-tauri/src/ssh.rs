@@ -23,7 +23,7 @@ const KEYCHAIN_SERVICE: &str = "com.portway.app";
 
 /// What the host key check saw, kept so a refused connection can be explained.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum HostKeyIssue {
     /// Not in known_hosts yet; the user must confirm the fingerprint.
     Unknown { fingerprint: String, algorithm: String },
@@ -82,7 +82,7 @@ pub struct HostInfo {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
+#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ConnectResult {
     Connected { info: HostInfo },
     HostKey { issue: HostKeyIssue },
@@ -705,6 +705,183 @@ async fn top_processes(session: &Session) -> AppResult<Processes> {
     Ok(Processes { at, rows })
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerBrief {
+    pub name: String,
+    pub state: String,
+    /// "Up 3 hours", "Exited (1) 2 hours ago" as docker prints it.
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum DockerHealth {
+    NotInstalled,
+    /// The user may not talk to the daemon (not root, not in the docker group).
+    NoAccess { detail: String },
+    DaemonDown { detail: String },
+    Ok { running: u32, total: u32, failed: Vec<ContainerBrief>, finished: Vec<ContainerBrief> },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SystemdHealth {
+    /// Init is not systemd (containers, Alpine with OpenRC…).
+    NotSystemd,
+    Ok { services: u32, failed: Vec<String> },
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Upgrade {
+    pub name: String,
+    pub version: String,
+    pub security: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum UpdatesHealth {
+    Unsupported,
+    /// The package index was never downloaded (apt update / apk update).
+    NoIndex { manager: String },
+    Ok {
+        manager: String,
+        upgrades: Vec<Upgrade>,
+        /// When the package index was last refreshed (ms since epoch).
+        index_at: Option<u64>,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Health {
+    pub docker: DockerHealth,
+    pub systemd: SystemdHealth,
+    pub updates: UpdatesHealth,
+}
+
+const HEALTH_SCRIPT: &str = r#"
+if command -v docker >/dev/null 2>&1; then
+  out=$(docker ps -a --format '{{.Names}}\t{{.State}}\t{{.Status}}' 2>&1); echo "rc=$?"; echo "$out"
+else echo notinstalled; fi
+echo @@PORTWAY@@
+if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+  echo "total=$(systemctl list-units --type=service --no-legend --plain 2>/dev/null | wc -l)"
+  systemctl list-units --type=service --state=failed --no-legend --plain 2>/dev/null | awk '{print $1}'
+else echo notsystemd; fi
+echo @@PORTWAY@@
+if command -v apt >/dev/null 2>&1; then
+  echo mgr=apt
+  # List files keep the repository's publish time as mtime; the directory itself
+  # (and the cache/stamp files when present) change when apt update runs.
+  if ls /var/lib/apt/lists/*_Packages* >/dev/null 2>&1; then
+    echo "stamp=$(stat -c %Y /var/lib/apt/periodic/update-success-stamp /var/cache/apt/pkgcache.bin /var/lib/apt/lists 2>/dev/null | sort -n | tail -n1)"
+  else echo "stamp="; fi
+  apt list --upgradable 2>/dev/null | tail -n +2
+elif command -v apk >/dev/null 2>&1; then
+  echo mgr=apk
+  echo "stamp=$(stat -c %Y /var/cache/apk/APKINDEX.*.tar.gz 2>/dev/null | sort -n | tail -n1)"
+  apk version -l '<' 2>/dev/null | tail -n +2
+else echo mgr=none; fi
+"#;
+
+fn parse_docker(section: &str) -> DockerHealth {
+    let mut lines = section.lines();
+    let first = lines.next().unwrap_or("").trim();
+    if first == "notinstalled" {
+        return DockerHealth::NotInstalled;
+    }
+    let rest: Vec<&str> = lines.collect();
+    if first != "rc=0" {
+        let detail = rest.join("\n").trim().to_string();
+        return if detail.contains("permission denied") {
+            DockerHealth::NoAccess { detail }
+        } else {
+            DockerHealth::DaemonDown { detail }
+        };
+    }
+    let (mut running, mut total, mut failed, mut finished) = (0, 0, Vec::new(), Vec::new());
+    for line in rest.iter().filter(|l| !l.trim().is_empty()) {
+        let mut f = line.splitn(3, '\t');
+        let c = ContainerBrief {
+            name: f.next().unwrap_or("").to_string(),
+            state: f.next().unwrap_or("").to_string(),
+            status: f.next().unwrap_or("").to_string(),
+        };
+        total += 1;
+        match c.state.as_str() {
+            "running" => running += 1,
+            "restarting" | "dead" => failed.push(c),
+            "exited" if c.status.starts_with("Exited (0)") => finished.push(c),
+            "exited" => failed.push(c),
+            _ => {}
+        }
+    }
+    DockerHealth::Ok { running, total, failed, finished }
+}
+
+fn parse_systemd(section: &str) -> SystemdHealth {
+    let mut lines = section.lines().map(str::trim).filter(|l| !l.is_empty());
+    match lines.next() {
+        Some(first) if first.starts_with("total=") => SystemdHealth::Ok {
+            services: first[6..].trim().parse().unwrap_or(0),
+            failed: lines.map(str::to_string).collect(),
+        },
+        _ => SystemdHealth::NotSystemd,
+    }
+}
+
+fn parse_updates(section: &str) -> UpdatesHealth {
+    let mut lines = section.lines().map(str::trim).filter(|l| !l.is_empty());
+    let manager = match lines.next().and_then(|l| l.strip_prefix("mgr=")) {
+        Some(m) if m == "apt" || m == "apk" => m.to_string(),
+        _ => return UpdatesHealth::Unsupported,
+    };
+    let stamp = lines.next().and_then(|l| l.strip_prefix("stamp=")).unwrap_or("");
+    let index_at = stamp.split('.').next().and_then(|s| s.parse::<u64>().ok()).map(|s| s * 1000);
+    if index_at.is_none() {
+        return UpdatesHealth::NoIndex { manager };
+    }
+    let upgrades = lines
+        .filter_map(|l| {
+            if manager == "apt" {
+                // "openssl/noble-updates,noble-security 3.0.13-0ubuntu3.5 amd64 [upgradable from: …]"
+                let (name, rest) = l.split_once('/')?;
+                let mut f = rest.split_whitespace();
+                let suites = f.next()?;
+                Some(Upgrade { name: name.to_string(), version: f.next()?.to_string(), security: suites.contains("security") })
+            } else {
+                // "busybox-1.36.1-r29 < 1.36.1-r31"
+                let (current, newer) = l.split_once('<')?;
+                let current = current.trim();
+                // The name is everything before the "-<version>-r<n>" suffix.
+                let name = current.rsplitn(3, '-').nth(2).unwrap_or(current);
+                Some(Upgrade { name: name.to_string(), version: newer.trim().to_string(), security: false })
+            }
+        })
+        .collect();
+    UpdatesHealth::Ok { manager, upgrades, index_at }
+}
+
+async fn read_health(session: &Session) -> AppResult<Health> {
+    let out = exec(&session.handle, HEALTH_SCRIPT).await?.stdout;
+    let parts: Vec<&str> = out.split(MARK).collect();
+    Ok(Health {
+        docker: parse_docker(parts.first().unwrap_or(&"")),
+        systemd: parse_systemd(parts.get(1).unwrap_or(&"")),
+        updates: parse_updates(parts.get(2).unwrap_or(&"")),
+    })
+}
+
+/// Docker, systemd and package-update status for the overview.
+#[tauri::command]
+pub async fn server_health(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Health> {
+    let session = sessions.get(&server_id, &user)?;
+    read_health(&session).await
+}
+
 /// Quote a value for a POSIX shell.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
@@ -795,6 +972,9 @@ mod tests {
         assert!(sshd.rss > 0);
         assert!(procs.rows.iter().all(|r| r.container.is_none()), "no docker inside the test server");
 
+        let health = read_health(&session).await.unwrap();
+        assert!(matches!(health.systemd, SystemdHealth::NotSystemd), "containers do not run systemd");
+
         // A known host now connects without asking.
         assert!(matches!(open(&target(2201, "deploy"), Credential::Key(key.clone()), None).await.unwrap(), Opened::Ready(_)));
 
@@ -845,6 +1025,60 @@ mod tests {
         assert_eq!(container_id(&format!("0::/system.slice/docker-{id}.scope")), Some(id.clone()));
         assert_eq!(container_id(&format!("12:cpu:/docker/{id}")), Some(id));
         assert_eq!(container_id("0::/user.slice/user-1000.slice/session-3.scope"), None);
+    }
+
+    #[test]
+    fn parses_docker_section() {
+        assert!(matches!(parse_docker("notinstalled\n"), DockerHealth::NotInstalled));
+        assert!(matches!(
+            parse_docker("rc=1\npermission denied while trying to connect to the Docker daemon socket\n"),
+            DockerHealth::NoAccess { .. }
+        ));
+        assert!(matches!(parse_docker("rc=1\nCannot connect to the Docker daemon at unix:///var/run/docker.sock\n"), DockerHealth::DaemonDown { .. }));
+        let ok = "rc=0\nweb\trunning\tUp 3 hours\nmigrate\texited\tExited (0) 2 hours ago\nworker\texited\tExited (1) 5 minutes ago\numami\trestarting\tRestarting (1) 3 seconds ago\n";
+        match parse_docker(ok) {
+            DockerHealth::Ok { running, total, failed, finished } => {
+                assert_eq!((running, total), (1, 4));
+                assert_eq!(failed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["worker", "umami"]);
+                assert_eq!(finished[0].name, "migrate");
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn parses_systemd_and_updates() {
+        assert!(matches!(parse_systemd("notsystemd\n"), SystemdHealth::NotSystemd));
+        match parse_systemd("total=42\nportway-queue.service\n") {
+            SystemdHealth::Ok { services, failed } => assert_eq!((services, failed), (42, vec!["portway-queue.service".to_string()])),
+            _ => panic!(),
+        }
+        assert!(matches!(parse_updates("mgr=none\n"), UpdatesHealth::Unsupported));
+        assert!(matches!(parse_updates("mgr=apt\nstamp=\n"), UpdatesHealth::NoIndex { .. }));
+        let apt = "mgr=apt\nstamp=1790000000.123\nopenssl/noble-updates,noble-security 3.0.13-0ubuntu3.5 amd64 [upgradable from: 3.0.13-0ubuntu3.4]\ncurl/noble-updates 8.5.0-2ubuntu10.6 amd64 [upgradable from: 8.5.0-2ubuntu10.5]\n";
+        match parse_updates(apt) {
+            UpdatesHealth::Ok { upgrades, index_at, .. } => {
+                assert_eq!(index_at, Some(1_790_000_000_000));
+                assert_eq!(upgrades.len(), 2);
+                assert!(upgrades[0].security && !upgrades[1].security);
+                assert_eq!((upgrades[0].name.as_str(), upgrades[0].version.as_str()), ("openssl", "3.0.13-0ubuntu3.5"));
+            }
+            _ => panic!(),
+        }
+        match parse_updates("mgr=apk\nstamp=1790000000\nbusybox-1.36.1-r29 < 1.36.1-r31\nlibcrypto3-3.3.2-r0 < 3.3.3-r0\n") {
+            UpdatesHealth::Ok { upgrades, .. } => {
+                assert_eq!(upgrades.iter().map(|u| u.name.as_str()).collect::<Vec<_>>(), ["busybox", "libcrypto3"]);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn serializes_fields_in_camel_case() {
+        let r = ConnectResult::NeedPassphrase { key_path: "~/.ssh/k".into(), retry: true };
+        assert_eq!(serde_json::to_value(&r).unwrap(), serde_json::json!({ "status": "needPassphrase", "keyPath": "~/.ssh/k", "retry": true }));
+        let u = UpdatesHealth::Ok { manager: "apt".into(), upgrades: vec![], index_at: Some(1) };
+        assert_eq!(serde_json::to_value(&u).unwrap()["indexAt"], 1);
     }
 
     #[test]

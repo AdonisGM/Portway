@@ -85,6 +85,21 @@ export type ProcessRow = {
 
 export type Processes = { at: number; rows: ProcessRow[] }
 
+export type ContainerBrief = { name: string; state: string; status: string }
+
+export type Health = {
+  docker:
+    | { kind: 'notInstalled' }
+    | { kind: 'noAccess'; detail: string }
+    | { kind: 'daemonDown'; detail: string }
+    | { kind: 'ok'; running: number; total: number; failed: ContainerBrief[]; finished: ContainerBrief[] }
+  systemd: { kind: 'notSystemd' } | { kind: 'ok'; services: number; failed: string[] }
+  updates:
+    | { kind: 'unsupported' }
+    | { kind: 'noIndex'; manager: string }
+    | { kind: 'ok'; manager: string; upgrades: Array<{ name: string; version: string; security: boolean }>; indexAt: number | null }
+}
+
 export type ConnectOptions = {
   password?: string
   passphrase?: string
@@ -127,6 +142,7 @@ type Api = {
   disconnectAll(): Promise<void>
   stats(serverId: string, user: string): Promise<Stats>
   processes(serverId: string, user: string): Promise<Processes>
+  health(serverId: string, user: string): Promise<Health>
   /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop). */
   openTerminal(serverId: string, user: string, tool?: 'htop'): Promise<void>
 }
@@ -145,6 +161,7 @@ const tauriApi: Api = {
   disconnectAll: () => invoke('ssh_disconnect_all'),
   stats: (serverId, user) => invoke('server_stats', { serverId, user }),
   processes: (serverId, user) => invoke('server_processes', { serverId, user }),
+  health: (serverId, user) => invoke('server_health', { serverId, user }),
   openTerminal: (serverId, user, tool) => invoke('open_terminal', { serverId, user, tool }),
 }
 
@@ -243,6 +260,9 @@ function browserApi(): Api {
       return fail('needs_app')
     },
     async processes() {
+      return fail('needs_app')
+    },
+    async health() {
       return fail('needs_app')
     },
     async openTerminal() {

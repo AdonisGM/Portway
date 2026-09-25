@@ -63,6 +63,7 @@ pub fn run() {
             ssh::ssh_forget_secret,
             ssh::server_stats,
             ssh::server_processes,
+            ssh::server_health,
             ssh::open_terminal,
         ])
         .setup(|app| {

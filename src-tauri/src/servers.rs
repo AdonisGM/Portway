@@ -13,7 +13,7 @@ use crate::paths::{contract_tilde, expand_tilde};
 use crate::ssh_config::{self, ConfigHost};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Auth {
     /// Private key file, stored as written by the user (usually `~/.ssh/...`).
     Key { path: String },

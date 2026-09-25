@@ -1,20 +1,12 @@
-import { Lock, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { useConnections } from '../../app/connections'
+import { Lock } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useNav, type ModuleId } from '../../app/nav'
 import { Chip, TONES, cx } from '../../components/ui/primitives'
-import { api, isAppError, type AppError, type Health, type Server } from '../../lib/api'
-
-const REFRESH_MS = 60_000
+import { api, type Health, type Server } from '../../lib/api'
+import { ErrorLine, RefreshControl, useRefreshed } from './refresh'
 
 type ChipSpec = { text: string; tone: { fg: string; bg: string }; title?: string }
 type Row = { label: string; value: string; dim?: boolean; chips?: ChipSpec[]; note?: ReactNode; locked?: string; module?: ModuleId }
-
-function agoLabel(at: Date | null, now: number) {
-  if (!at) return 'đang đọc…'
-  const mins = Math.floor((now - at.getTime()) / 60_000)
-  return mins < 1 ? 'cập nhật vừa xong' : `cập nhật ${mins} phút trước`
-}
 
 function when(ms: number) {
   const d = new Date(ms)
@@ -89,64 +81,19 @@ function rows(h: Health): Row[] {
 
 /** "Tình trạng": Docker, systemd and pending package updates. Heavier than the
  *  live numbers, so it reads once, then every minute or on demand. */
+const loadHealth = (s: string, u: string) => api.health(s, u)
+
 export function HealthCard({ server, user }: { server: Server; user: string }) {
-  const { markLost } = useConnections()
   const nav = useNav()
-  const [health, setHealth] = useState<Health | null>(null)
-  const [error, setError] = useState<AppError | null>(null)
-  const [at, setAt] = useState<Date | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [now, setNow] = useState(Date.now())
-
-  const load = useCallback(async () => {
-    setBusy(true)
-    try {
-      setHealth(await api.health(server.id, user))
-      setError(null)
-      setAt(new Date())
-    } catch (e) {
-      const err = isAppError(e) ? e : { code: 'unknown', detail: String(e) }
-      if (err.code === 'connection_lost' || err.code === 'not_connected') markLost(server.id, user, err)
-      else setError(err)
-    } finally {
-      setBusy(false)
-    }
-  }, [server.id, user, markLost])
-
-  useEffect(() => {
-    void load()
-    const refresh = setInterval(load, REFRESH_MS)
-    const tick = setInterval(() => setNow(Date.now()), 30_000)
-    return () => {
-      clearInterval(refresh)
-      clearInterval(tick)
-    }
-  }, [load])
+  const { data: health, error, at, busy, refresh } = useRefreshed<Health>(server.id, user, loadHealth)
 
   return (
     <div className="flex flex-col gap-1 rounded-xl border border-line bg-surface p-4">
       <div className="mb-1.5 flex items-start gap-2">
         <span className="flex-1 text-[15px] font-semibold">Tình trạng</span>
-        <span className="inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap text-muted">
-          {error ? 'không đọc được' : agoLabel(at, now)}
-          <button
-            type="button"
-            title="Làm mới"
-            onClick={load}
-            disabled={busy}
-            className="flex size-5 cursor-pointer items-center justify-center rounded-[5px] border border-line2 text-ink2 hover:border-muted disabled:cursor-default"
-          >
-            <RefreshCw size={12} strokeWidth={1.9} className={busy ? 'animate-spin' : undefined} />
-          </button>
-        </span>
+        <RefreshControl at={at} busy={busy} error={error} onRefresh={refresh} />
       </div>
-
-      {error && (
-        <span className="font-mono text-[11px] text-danger select-text">
-          {error.code}
-          {error.detail ? `: ${error.detail}` : ''}
-        </span>
-      )}
+      <ErrorLine error={error} />
 
       {health
         ? rows(health).map((r) => (

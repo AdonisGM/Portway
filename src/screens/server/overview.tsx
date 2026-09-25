@@ -6,6 +6,7 @@ import { StatStrip, StatStripSkeleton, type StatItem } from '../../components/ui
 import { api, isAppError, type AppError, type Processes, type Server, type Stats } from '../../lib/api'
 import { formatBytes, formatDecimal, formatPercent, inUnit, unitName, unitOf } from './format'
 import { HealthCard } from './health'
+import { PortsCard } from './ports'
 
 const POLL_MS = 5000
 
@@ -202,6 +203,9 @@ export function Overview({ server, user }: { server: Server; user: string }) {
       <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))' }}>
         <TopProcesses server={server} user={user} />
         <HealthCard server={server} user={user} />
+      </div>
+      <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
+        <PortsCard server={server} user={user} />
       </div>
     </div>
   )

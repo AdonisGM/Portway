@@ -403,7 +403,7 @@ async fn exec(handle: &Handle<Client>, command: &str) -> AppResult<ExecOutput> {
     }
 }
 
-const MARK: &str = "@@PORTWAY@@";
+pub const MARK: &str = "@@PORTWAY@@";
 
 async fn read_host_info(handle: &Handle<Client>) -> AppResult<HostInfo> {
     let script = format!(
@@ -882,6 +882,14 @@ pub async fn server_health(sessions: tauri::State<'_, Sessions>, server_id: Stri
     read_health(&session).await
 }
 
+/// Listening ports, UFW rules and exposure warnings for the overview.
+#[tauri::command]
+pub async fn server_ports(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::ports::Ports> {
+    let session = sessions.get(&server_id, &user)?;
+    let out = exec(&session.handle, crate::ports::PORTS_SCRIPT).await?.stdout;
+    Ok(crate::ports::parse_ports(&out))
+}
+
 /// Quote a value for a POSIX shell.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
@@ -971,6 +979,13 @@ mod tests {
         assert_eq!(sshd.user.as_deref(), Some("root"));
         assert!(sshd.rss > 0);
         assert!(procs.rows.iter().all(|r| r.container.is_none()), "no docker inside the test server");
+
+        let out = exec(&session.handle, crate::ports::PORTS_SCRIPT).await.unwrap().stdout;
+        let ports = crate::ports::parse_ports(&out);
+        let ssh = ports.listening.iter().find(|l| l.port == 22).expect("sshd listens on 22");
+        assert_eq!((ssh.scope, ssh.process.as_deref()), (crate::ports::Scope::Public, Some("sshd")));
+        assert!(matches!(ports.firewall, crate::ports::Firewall::NotInstalled));
+        assert!(ports.processes_complete, "root sees every process");
 
         let health = read_health(&session).await.unwrap();
         assert!(matches!(health.systemd, SystemdHealth::NotSystemd), "containers do not run systemd");

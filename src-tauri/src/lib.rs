@@ -1,6 +1,7 @@
 mod error;
 mod keys;
 mod paths;
+mod ports;
 mod servers;
 mod ssh;
 mod ssh_config;
@@ -64,6 +65,7 @@ pub fn run() {
             ssh::server_stats,
             ssh::server_processes,
             ssh::server_health,
+            ssh::server_ports,
             ssh::open_terminal,
         ])
         .setup(|app| {

@@ -100,6 +100,35 @@ export type Health = {
     | { kind: 'ok'; manager: string; upgrades: Array<{ name: string; version: string; security: boolean }>; indexAt: number | null }
 }
 
+export type Listen = {
+  proto: 'tcp' | 'udp'
+  port: number
+  bind: string
+  scope: 'loopback' | 'private' | 'public'
+  process: string | null
+  container: string | null
+}
+
+export type UfwRule = { to: string; action: string; from: string; both: boolean }
+
+export type PortWarning =
+  | { kind: 'databasePublic'; name: string; port: number; bind: string; via: string | null; docker: boolean; guessed: boolean }
+  | { kind: 'dockerBypass'; port: number; container: string }
+  | { kind: 'ruleIneffective'; port: number; from: string; container: string }
+  | { kind: 'ruleUnused'; to: string }
+
+export type Ports = {
+  listening: Listen[]
+  firewall:
+    | { kind: 'notInstalled' }
+    | { kind: 'needsRoot' }
+    | { kind: 'error'; detail: string }
+    | { kind: 'inactive' }
+    | { kind: 'active'; defaultIncoming: string; rules: UfwRule[] }
+  warnings: PortWarning[]
+  processesComplete: boolean
+}
+
 export type ConnectOptions = {
   password?: string
   passphrase?: string
@@ -143,6 +172,7 @@ type Api = {
   stats(serverId: string, user: string): Promise<Stats>
   processes(serverId: string, user: string): Promise<Processes>
   health(serverId: string, user: string): Promise<Health>
+  ports(serverId: string, user: string): Promise<Ports>
   /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop). */
   openTerminal(serverId: string, user: string, tool?: 'htop'): Promise<void>
 }
@@ -162,6 +192,7 @@ const tauriApi: Api = {
   stats: (serverId, user) => invoke('server_stats', { serverId, user }),
   processes: (serverId, user) => invoke('server_processes', { serverId, user }),
   health: (serverId, user) => invoke('server_health', { serverId, user }),
+  ports: (serverId, user) => invoke('server_ports', { serverId, user }),
   openTerminal: (serverId, user, tool) => invoke('open_terminal', { serverId, user, tool }),
 }
 
@@ -263,6 +294,9 @@ function browserApi(): Api {
       return fail('needs_app')
     },
     async health() {
+      return fail('needs_app')
+    },
+    async ports() {
       return fail('needs_app')
     },
     async openTerminal() {

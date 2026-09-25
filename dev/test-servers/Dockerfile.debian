@@ -4,8 +4,9 @@ FROM ${BASE}
 
 # The apt lists are kept on purpose: real servers have them, and Portway reads
 # pending updates from them.
+ARG EXTRA_PKGS=""
 RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server sudo procps ca-certificates curl \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server sudo procps ca-certificates curl $EXTRA_PKGS \
  && mkdir -p /run/sshd \
  && useradd -m -s /bin/bash -G sudo deploy \
  && echo 'deploy:portway' | chpasswd

@@ -10,10 +10,12 @@ x-server: &server
 
 services:
   # Has the Docker CLI and the host's Docker socket: root sees the real
-  # containers, deploy is refused (not in the docker group).
+  # containers, deploy is refused (not in the docker group). Also has ufw with
+  # NET_ADMIN, so a firewall can be turned on inside this container only.
   ubuntu:
     <<: *server
-    build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "ubuntu:24.04", DOCKER_CLI: "27.3.1" } }
+    build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "ubuntu:24.04", DOCKER_CLI: "27.3.1", EXTRA_PKGS: "ufw iptables" } }
+    cap_add: [NET_ADMIN]
     hostname: pw-ubuntu
     ports: ["127.0.0.1:2201:22"]
     volumes:

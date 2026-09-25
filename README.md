@@ -18,11 +18,20 @@ pnpm tauri dev
 ## Build
 
 ```sh
-rustup target add aarch64-apple-darwin x86_64-apple-darwin   # chỉ cần một lần
-pnpm build:mac   # universal (Apple Silicon + Intel) → .app, .dmg
+./scripts/build-mac.sh          # build universal (Apple Silicon + Intel)
+./scripts/build-mac.sh --open   # build xong mở luôn thư mục kết quả
 ```
 
-File cài đặt nằm trong `src-tauri/target/universal-apple-darwin/release/bundle/`.
+Kết quả (`Portway.app` và file `.dmg`) được gom vào `release/<version>/`, version lấy từ `src-tauri/tauri.conf.json`. Thư mục `release/` không được commit.
+
+## Version
+
+Mỗi commit tăng version một bậc, bằng `pnpm version:bump <patch|minor|major|x.y.z>`. Lệnh này sửa cùng lúc `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` và `Cargo.lock`.
+
+- `0.0.x`: đang dựng giao diện với dữ liệu mẫu, mỗi commit tăng patch.
+- `0.1.0`: xong giao diện toàn bộ màn hình theo thiết kế.
+- Sau `0.1.0`: tính năng mới tăng minor, sửa lỗi hoặc chỉnh nhỏ tăng patch.
+- `1.0.0`: kết nối SSH thật, dùng được hằng ngày.
 
 ## Cấu trúc
 

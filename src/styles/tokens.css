@@ -1,0 +1,72 @@
+/* Tokens copied from HomeUI (home/apps/web/src/styles/tokens.css), ink palette.
+   Portway defaults to dark, so index.html sets data-theme="dark"; the light block
+   is kept so a light mode later needs no re-copying.
+
+   --grain is the opacity of the grain overlay, not part of the palette. Dark needs
+   less than light: at the same opacity the grain turns into visible noise on dark. */
+
+:root {
+  color-scheme: light;
+  --grain: 0.15;
+  --scrim: rgba(17, 19, 21, 0.42);
+  --shadow: 0 1px 2px rgba(51, 39, 42, 0.06);
+  --shadow-md: 0 2px 8px rgba(51, 39, 42, 0.09);
+  --shadow-lg: 0 12px 32px rgba(51, 39, 42, 0.16);
+
+  --bg: #f1f2f3;
+  --surface: #f8f9fa;
+  --rail: #e6e8ea;
+  --sunken: #e6e8ea;
+  --raised: #f5f6f7;
+  --ink: #111315;
+  --ink2: #383c40;
+  --muted: #64686d;
+  --line: rgba(17, 19, 21, 0.1);
+  --line2: rgba(17, 19, 21, 0.22);
+  --accent: #111315;
+  --accent-fg: #f8f9fa;
+  --accent-soft: rgba(17, 19, 21, 0.08);
+  --success: #2f6b4f;
+  --success-soft: #eef3ee;
+  --warn: #8b6928;
+  --warn-soft: #f5f0e7;
+  --danger: #99463a;
+  --danger-soft: #f5edec;
+  --info: #3a5f86;
+  --info-soft: #eaeff5;
+  --tip-bg: #111315;
+  --tip-fg: #f1f2f3;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --grain: 0.09;
+  --scrim: rgba(0, 0, 0, 0.58);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 10px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.5);
+
+  --bg: #141617;
+  --surface: #1c1f21;
+  --rail: #18191b;
+  --sunken: #26292c;
+  --raised: #212427;
+  --ink: #eef0f2;
+  --ink2: #c6cacd;
+  --muted: #989da2;
+  --line: rgba(238, 240, 242, 0.14);
+  --line2: rgba(238, 240, 242, 0.22);
+  --accent: #eef0f2;
+  --accent-fg: #141617;
+  --accent-soft: rgba(238, 240, 242, 0.1);
+  --success: #5db285;
+  --success-soft: rgba(93, 178, 133, 0.14);
+  --warn: #c69e57;
+  --warn-soft: rgba(198, 158, 87, 0.14);
+  --danger: #d08275;
+  --danger-soft: rgba(208, 130, 117, 0.14);
+  --info: #7aa0cc;
+  --info-soft: rgba(122, 160, 204, 0.14);
+  --tip-bg: #eef0f2;
+  --tip-fg: #141617;
+}

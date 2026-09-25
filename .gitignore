@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Bản build đã gom (scripts/build-mac.sh)
+release

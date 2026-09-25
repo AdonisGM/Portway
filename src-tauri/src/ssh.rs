@@ -1,0 +1,671 @@
+//! SSH sessions to saved servers, one per server × user, built on russh.
+//!
+//! Host keys are checked against ~/.ssh/known_hosts like OpenSSH: an unknown
+//! key is only added after the user confirmed its fingerprint, a changed key is
+//! refused. Passwords and key passphrases can be kept in the macOS Keychain.
+
+use russh::client::{self, Handle};
+use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
+use russh::ChannelMsg;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use crate::error::{AppError, AppResult};
+use crate::paths::{expand_tilde, ssh_dir};
+use crate::servers::{Auth, ServerStore};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const EXEC_TIMEOUT: Duration = Duration::from_secs(20);
+const KEYCHAIN_SERVICE: &str = "com.portway.app";
+
+/// What the host key check saw, kept so a refused connection can be explained.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum HostKeyIssue {
+    /// Not in known_hosts yet; the user must confirm the fingerprint.
+    Unknown { fingerprint: String, algorithm: String },
+    /// known_hosts has a different key for this host: possible MITM or a reinstall.
+    Changed { fingerprint: String, algorithm: String, line: usize },
+}
+
+struct Client {
+    host: String,
+    port: u16,
+    known_hosts: PathBuf,
+    /// Fingerprint the user accepted for an unknown host, if any.
+    trust: Option<String>,
+    issue: Arc<Mutex<Option<HostKeyIssue>>>,
+}
+
+impl client::Handler for Client {
+    type Error = russh::Error;
+
+    async fn check_server_key(&mut self, key: &PublicKeyOrCertificate) -> Result<bool, Self::Error> {
+        let key: PublicKey = match key {
+            PublicKeyOrCertificate::PublicKey { key, .. } => key.clone(),
+            PublicKeyOrCertificate::Certificate(cert) => PublicKey::from(cert.public_key().clone()),
+        };
+        let fingerprint = key.fingerprint(HashAlg::Sha256).to_string();
+        let algorithm = key.algorithm().to_string();
+        let known_hosts = &self.known_hosts;
+        match keys::check_known_hosts_path(&self.host, self.port, &key, known_hosts) {
+            Ok(true) => Ok(true),
+            Ok(false) => {
+                if self.trust.as_deref() == Some(fingerprint.as_str()) {
+                    keys::known_hosts::learn_known_hosts_path(&self.host, self.port, &key, known_hosts)?;
+                    return Ok(true);
+                }
+                *self.issue.lock().unwrap() = Some(HostKeyIssue::Unknown { fingerprint, algorithm });
+                Ok(false)
+            }
+            Err(keys::Error::KeyChanged { line }) => {
+                *self.issue.lock().unwrap() = Some(HostKeyIssue::Changed { fingerprint, algorithm, line });
+                Ok(false)
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+/// Facts read from the server right after connecting.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInfo {
+    /// e.g. "Ubuntu 24.04", from /etc/os-release.
+    pub os: Option<String>,
+    pub hostname: String,
+    pub kernel: String,
+    pub uptime_secs: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum ConnectResult {
+    Connected { info: HostInfo },
+    HostKey { issue: HostKeyIssue },
+    /// Password auth and no usable password; `retry` when the last one was rejected.
+    NeedPassword { retry: bool },
+    /// The key file is encrypted; `retry` when the last passphrase was wrong.
+    NeedPassphrase { key_path: String, retry: bool },
+}
+
+struct Session {
+    handle: Handle<Client>,
+    /// Previous counters, to turn totals into CPU % and network rates.
+    last: Mutex<Option<(Instant, Counters)>>,
+}
+
+#[derive(Default)]
+pub struct Sessions {
+    map: Mutex<HashMap<String, Arc<Session>>>,
+}
+
+fn session_key(server_id: &str, user: &str) -> String {
+    format!("{server_id}|{user}")
+}
+
+impl Sessions {
+    fn get(&self, server_id: &str, user: &str) -> AppResult<Arc<Session>> {
+        let map = self.map.lock().unwrap();
+        match map.get(&session_key(server_id, user)) {
+            Some(s) if !s.handle.is_closed() => Ok(s.clone()),
+            _ => Err(AppError::new("not_connected")),
+        }
+    }
+}
+
+fn keychain(account: &str) -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, account).ok()
+}
+fn password_account(server_id: &str, user: &str) -> String {
+    format!("password:{server_id}:{user}")
+}
+fn passphrase_account(key_path: &str) -> String {
+    format!("passphrase:{key_path}")
+}
+
+fn map_connect_error(e: russh::Error, host: &str, port: u16) -> AppError {
+    use std::io::ErrorKind;
+    match e {
+        russh::Error::IO(io) => match io.kind() {
+            ErrorKind::ConnectionRefused => AppError::detail("refused", format!("connect to host {host} port {port}: Connection refused")),
+            ErrorKind::TimedOut => AppError::detail("timeout", format!("connect to host {host} port {port}: Operation timed out")),
+            _ if io.to_string().contains("failed to lookup") || io.to_string().contains("nodename nor servname") => {
+                AppError::detail("dns", format!("Could not resolve hostname {host}"))
+            }
+            _ => AppError::detail("network", io),
+        },
+        other => AppError::detail("ssh", other),
+    }
+}
+
+
+pub struct Target {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub known_hosts: PathBuf,
+}
+
+pub enum Credential {
+    Key(Arc<keys::PrivateKey>),
+    Password(String),
+}
+
+enum Opened {
+    Ready(Handle<Client>),
+    HostKey(HostKeyIssue),
+    /// The server refused the credential.
+    Rejected,
+}
+
+/// Connect, check the host key and authenticate.
+async fn open(target: &Target, credential: Credential, trust: Option<String>) -> AppResult<Opened> {
+    let issue = Arc::new(Mutex::new(None));
+    let handler = Client {
+        host: target.host.clone(),
+        port: target.port,
+        known_hosts: target.known_hosts.clone(),
+        trust,
+        issue: issue.clone(),
+    };
+    let config = Arc::new(client::Config {
+        keepalive_interval: Some(Duration::from_secs(15)),
+        keepalive_max: 3,
+        nodelay: true,
+        ..Default::default()
+    });
+
+    let connecting = client::connect(config, (target.host.as_str(), target.port), handler);
+    let mut handle = match tokio::time::timeout(CONNECT_TIMEOUT, connecting).await {
+        Err(_) => {
+            return Err(AppError::detail(
+                "timeout",
+                format!("connect to host {} port {}: Operation timed out", target.host, target.port),
+            ))
+        }
+        Ok(Err(e)) => {
+            if let Some(issue) = issue.lock().unwrap().take() {
+                return Ok(Opened::HostKey(issue));
+            }
+            return Err(map_connect_error(e, &target.host, target.port));
+        }
+        Ok(Ok(h)) => h,
+    };
+
+    let auth = match credential {
+        Credential::Key(k) => {
+            let hash = if k.algorithm().is_rsa() {
+                handle.best_supported_rsa_hash().await.ok().flatten().unwrap_or(Some(HashAlg::Sha256))
+            } else {
+                None
+            };
+            handle.authenticate_publickey(&target.user, PrivateKeyWithHashAlg::new(k, hash)).await
+        }
+        Credential::Password(p) => handle.authenticate_password(&target.user, p).await,
+    }
+    .map_err(|e| AppError::detail("ssh", e))?;
+
+    if !auth.success() {
+        let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+        return Ok(Opened::Rejected);
+    }
+    Ok(Opened::Ready(handle))
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn ssh_connect(
+    store: tauri::State<'_, ServerStore>,
+    sessions: tauri::State<'_, Sessions>,
+    server_id: String,
+    user: String,
+    password: Option<String>,
+    passphrase: Option<String>,
+    remember: Option<bool>,
+    trust_fingerprint: Option<String>,
+) -> AppResult<ConnectResult> {
+    let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
+    let account = server.accounts.iter().find(|a| a.user == user).cloned().ok_or_else(|| AppError::new("no_account"))?;
+    let remember = remember.unwrap_or(true);
+
+    // Load the key before connecting, so a missing or encrypted key is reported
+    // without touching the network.
+    let key = match &account.auth {
+        Auth::Key { path } => {
+            let file = expand_tilde(path);
+            if !file.is_file() {
+                return Err(AppError::detail("key_missing", path));
+            }
+            let stored = keychain(&passphrase_account(path)).and_then(|e| e.get_password().ok());
+            let given = passphrase.clone().filter(|p| !p.is_empty());
+            let attempt = given.clone().or(stored.clone());
+            match keys::load_secret_key(&file, attempt.as_deref()) {
+                Ok(k) => {
+                    if remember {
+                        if let (Some(p), Some(entry)) = (given, keychain(&passphrase_account(path))) {
+                            let _ = entry.set_password(&p);
+                        }
+                    }
+                    Some(Arc::new(k))
+                }
+                Err(keys::Error::KeyIsEncrypted) => {
+                    return Ok(ConnectResult::NeedPassphrase { key_path: path.clone(), retry: false });
+                }
+                Err(e) if attempt.is_some() => {
+                    // Wrong passphrase: forget a stored one so it is not retried forever.
+                    if passphrase.is_none() {
+                        if let Some(entry) = keychain(&passphrase_account(path)) {
+                            let _ = entry.delete_credential();
+                        }
+                    }
+                    let _ = e;
+                    return Ok(ConnectResult::NeedPassphrase { key_path: path.clone(), retry: true });
+                }
+                Err(e) => return Err(AppError::detail("key_unreadable", e)),
+            }
+        }
+        Auth::Password => None,
+    };
+
+    let stored_password = || keychain(&password_account(&server_id, &user)).and_then(|e| e.get_password().ok());
+    let pw = if key.is_none() {
+        match password.clone().filter(|p| !p.is_empty()).or_else(stored_password) {
+            Some(p) => Some(p),
+            None => return Ok(ConnectResult::NeedPassword { retry: false }),
+        }
+    } else {
+        None
+    };
+
+    let credential = match (&key, &pw) {
+        (Some(k), _) => Credential::Key(k.clone()),
+        (None, Some(p)) => Credential::Password(p.clone()),
+        (None, None) => unreachable!("either a key or a password is set above"),
+    };
+    let target = Target { host: server.host.clone(), port: server.port, user: user.clone(), known_hosts: ssh_dir().join("known_hosts") };
+    let handle = match open(&target, credential, trust_fingerprint).await? {
+        Opened::Ready(h) => h,
+        Opened::HostKey(issue) => return Ok(ConnectResult::HostKey { issue }),
+        Opened::Rejected => {
+            if key.is_none() {
+                // Drop a stored password the server no longer accepts.
+                if password.is_none() {
+                    if let Some(entry) = keychain(&password_account(&server_id, &user)) {
+                        let _ = entry.delete_credential();
+                    }
+                }
+                return Ok(ConnectResult::NeedPassword { retry: true });
+            }
+            return Err(AppError::detail("auth_failed", format!("{user}@{}: Permission denied (publickey)", server.host)));
+        }
+    };
+    if remember {
+        if let (Some(p), Some(entry)) = (password.filter(|p| !p.is_empty()), keychain(&password_account(&server_id, &user))) {
+            let _ = entry.set_password(&p);
+        }
+    }
+
+    let session = Arc::new(Session { handle, last: Mutex::new(None) });
+    let info = read_host_info(&session.handle).await?;
+    if let Some(os) = &info.os {
+        store.set_os(&server_id, os)?;
+    }
+    sessions.map.lock().unwrap().insert(session_key(&server_id, &user), session);
+    Ok(ConnectResult::Connected { info })
+}
+
+#[tauri::command]
+pub async fn ssh_disconnect(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<()> {
+    let session = sessions.map.lock().unwrap().remove(&session_key(&server_id, &user));
+    if let Some(s) = session {
+        let _ = s.handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+    }
+    Ok(())
+}
+
+/// Close every session. The UI calls this when it starts, since a reloaded
+/// webview no longer knows about sessions opened before.
+#[tauri::command]
+pub async fn ssh_disconnect_all(sessions: tauri::State<'_, Sessions>) -> AppResult<()> {
+    let all: Vec<Arc<Session>> = sessions.map.lock().unwrap().drain().map(|(_, s)| s).collect();
+    for s in all {
+        let _ = s.handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+    }
+    Ok(())
+}
+
+/// Forget the password or passphrase stored for this account.
+#[tauri::command]
+pub fn ssh_forget_secret(server_id: String, user: String, key_path: Option<String>) {
+    let account = match key_path {
+        Some(p) => passphrase_account(&p),
+        None => password_account(&server_id, &user),
+    };
+    if let Some(e) = keychain(&account) {
+        let _ = e.delete_credential();
+    }
+}
+
+pub struct ExecOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub code: Option<u32>,
+}
+
+impl ExecOutput {
+    /// Output of a command that must print something; a failure with no stdout
+    /// becomes an error carrying stderr.
+    fn stdout_or_err(self) -> AppResult<String> {
+        if self.stdout.trim().is_empty() && self.code != Some(0) {
+            return Err(AppError::detail("remote_command", self.stderr.trim()));
+        }
+        Ok(self.stdout)
+    }
+}
+
+/// Run a command in a new channel and collect its output.
+async fn exec(handle: &Handle<Client>, command: &str) -> AppResult<ExecOutput> {
+    let run = async {
+        let mut channel = handle.channel_open_session().await?;
+        channel.exec(true, command).await?;
+        let (mut out, mut err, mut code) = (Vec::new(), Vec::new(), None);
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => out.extend_from_slice(&data),
+                ChannelMsg::ExtendedData { data, .. } => err.extend_from_slice(&data),
+                ChannelMsg::ExitStatus { exit_status } => code = Some(exit_status),
+                _ => {}
+            }
+        }
+        Ok::<_, russh::Error>(ExecOutput {
+            stdout: String::from_utf8_lossy(&out).into_owned(),
+            stderr: String::from_utf8_lossy(&err).into_owned(),
+            code,
+        })
+    };
+    match tokio::time::timeout(EXEC_TIMEOUT, run).await {
+        Err(_) => Err(AppError::new("exec_timeout")),
+        Ok(Err(e)) if handle.is_closed() => Err(AppError::detail("connection_lost", e)),
+        Ok(Err(e)) => Err(AppError::detail("ssh", e)),
+        Ok(Ok(o)) => Ok(o),
+    }
+}
+
+const MARK: &str = "@@PORTWAY@@";
+
+async fn read_host_info(handle: &Handle<Client>) -> AppResult<HostInfo> {
+    let script = format!(
+        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null"
+    );
+    let out = exec(handle, &script).await?.stdout_or_err()?;
+    let parts: Vec<&str> = out.split(MARK).map(str::trim).collect();
+    let get = |i: usize| parts.get(i).copied().unwrap_or("");
+    Ok(HostInfo {
+        os: os_name(get(0)),
+        hostname: get(1).to_string(),
+        kernel: get(2).to_string(),
+        uptime_secs: get(3).split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) as u64,
+    })
+}
+
+/// "Ubuntu 24.04", "Debian 12", "Alpine 3.20.8" from /etc/os-release.
+fn os_name(os_release: &str) -> Option<String> {
+    let field = |key: &str| {
+        os_release.lines().find_map(|l| l.strip_prefix(&format!("{key}="))).map(|v| v.trim().trim_matches('"').to_string())
+    };
+    let name = field("NAME").or_else(|| field("ID"))?;
+    let name = name.trim_end_matches(" GNU/Linux").trim_end_matches(" Linux").to_string();
+    Some(match field("VERSION_ID") {
+        Some(v) if !v.is_empty() => format!("{name} {v}"),
+        _ => name,
+    })
+}
+
+/// Raw totals read from /proc; rates need two samples.
+#[derive(Clone, Copy, Default)]
+struct Counters {
+    cpu_total: u64,
+    cpu_idle: u64,
+    net_rx: u64,
+    net_tx: u64,
+}
+
+#[derive(Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Stats {
+    /// Busy CPU over the last interval, 0–100. None on the very first sample.
+    pub cpu_percent: Option<f64>,
+    pub load: [f64; 3],
+    pub cores: u32,
+    pub mem_total: u64,
+    pub mem_used: u64,
+    pub disk_total: u64,
+    pub disk_used: u64,
+    pub disk_avail: u64,
+    /// Bytes per second over the last interval, all interfaces except lo.
+    pub net_rx_rate: Option<f64>,
+    pub net_tx_rate: Option<f64>,
+    pub uptime_secs: u64,
+}
+
+const STATS_SCRIPT: &str = "head -n1 /proc/stat; echo @@PORTWAY@@; cat /proc/loadavg; echo @@PORTWAY@@; \
+grep -c ^processor /proc/cpuinfo; echo @@PORTWAY@@; cat /proc/meminfo; echo @@PORTWAY@@; df -kP / | tail -n1; \
+echo @@PORTWAY@@; cat /proc/net/dev; echo @@PORTWAY@@; cat /proc/uptime";
+
+fn parse_stats(text: &str) -> (Stats, Counters) {
+    let parts: Vec<&str> = text.split(MARK).map(str::trim).collect();
+    let get = |i: usize| parts.get(i).copied().unwrap_or("");
+    let mut stats = Stats::default();
+    let mut c = Counters::default();
+
+    // cpu  user nice system idle iowait irq softirq steal …
+    let cpu: Vec<u64> = get(0).split_whitespace().skip(1).filter_map(|v| v.parse().ok()).collect();
+    c.cpu_total = cpu.iter().take(8).sum();
+    c.cpu_idle = cpu.get(3).copied().unwrap_or(0) + cpu.get(4).copied().unwrap_or(0);
+
+    let load: Vec<f64> = get(1).split_whitespace().take(3).filter_map(|v| v.parse().ok()).collect();
+    if load.len() == 3 {
+        stats.load = [load[0], load[1], load[2]];
+    }
+    stats.cores = get(2).parse().unwrap_or(0);
+
+    let mem = |key: &str| -> Option<u64> {
+        get(3).lines().find_map(|l| l.strip_prefix(key)).and_then(|v| v.split_whitespace().next()?.parse::<u64>().ok()).map(|kb| kb * 1024)
+    };
+    stats.mem_total = mem("MemTotal:").unwrap_or(0);
+    let avail = mem("MemAvailable:").unwrap_or_else(|| {
+        mem("MemFree:").unwrap_or(0) + mem("Buffers:").unwrap_or(0) + mem("Cached:").unwrap_or(0)
+    });
+    stats.mem_used = stats.mem_total.saturating_sub(avail);
+
+    // Filesystem 1024-blocks Used Available Capacity Mounted
+    let df: Vec<u64> = get(4).split_whitespace().skip(1).take(3).filter_map(|v| v.parse().ok()).collect();
+    if df.len() == 3 {
+        stats.disk_total = df[0] * 1024;
+        stats.disk_used = df[1] * 1024;
+        stats.disk_avail = df[2] * 1024;
+    }
+
+    // "  eth0: rx_bytes rx_packets … (8 rx fields) tx_bytes …"
+    for line in get(5).lines().skip(2) {
+        let Some((iface, rest)) = line.split_once(':') else { continue };
+        if iface.trim() == "lo" {
+            continue;
+        }
+        let f: Vec<u64> = rest.split_whitespace().filter_map(|v| v.parse().ok()).collect();
+        c.net_rx += f.first().copied().unwrap_or(0);
+        c.net_tx += f.get(8).copied().unwrap_or(0);
+    }
+
+    stats.uptime_secs = get(6).split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) as u64;
+    (stats, c)
+}
+
+async fn sample(session: &Session) -> AppResult<(Stats, Counters, Instant)> {
+    let out = exec(&session.handle, STATS_SCRIPT).await?.stdout_or_err()?;
+    let (stats, counters) = parse_stats(&out);
+    Ok((stats, counters, Instant::now()))
+}
+
+/// Live resource numbers for the overview. The first call samples twice, one
+/// second apart, so CPU % and network rates are available straight away.
+#[tauri::command]
+pub async fn server_stats(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Stats> {
+    let session = sessions.get(&server_id, &user)?;
+    let previous = *session.last.lock().unwrap();
+    let previous = match previous {
+        Some(p) => p,
+        None => {
+            let (_, c, t) = sample(&session).await?;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            (t, c)
+        }
+    };
+    let (mut stats, now_c, now_t) = sample(&session).await?;
+    let (prev_t, prev_c) = previous;
+    let secs = now_t.duration_since(prev_t).as_secs_f64().max(0.001);
+    let total = now_c.cpu_total.saturating_sub(prev_c.cpu_total);
+    let idle = now_c.cpu_idle.saturating_sub(prev_c.cpu_idle);
+    if total > 0 {
+        stats.cpu_percent = Some(100.0 * (total - idle.min(total)) as f64 / total as f64);
+    }
+    stats.net_rx_rate = Some(now_c.net_rx.saturating_sub(prev_c.net_rx) as f64 / secs);
+    stats.net_tx_rate = Some(now_c.net_tx.saturating_sub(prev_c.net_tx) as f64 / secs);
+    *session.last.lock().unwrap() = Some((now_t, now_c));
+    Ok(stats)
+}
+
+/// Quote a value for a POSIX shell.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Open Terminal.app running `ssh` for this account, through a temporary
+/// .command file so no Automation permission is needed. The command is built
+/// here with every argument quoted, never taken as a string from the UI.
+#[tauri::command]
+pub fn open_terminal(store: tauri::State<ServerStore>, server_id: String, user: String) -> AppResult<()> {
+    let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
+    let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
+    let mut args = vec!["ssh".to_string()];
+    if server.port != 22 {
+        args.push(format!("-p {}", server.port));
+    }
+    if let Auth::Key { path } = &account.auth {
+        args.push(format!("-i {}", shell_quote(&expand_tilde(path).to_string_lossy())));
+    }
+    args.push(shell_quote(&format!("{}@{}", account.user, server.host)));
+
+    let dir = std::env::temp_dir().join("portway");
+    std::fs::create_dir_all(&dir)?;
+    let file = dir.join(format!("ssh-{}.command", uuid::Uuid::new_v4()));
+    std::fs::write(&file, format!("#!/bin/sh\nrm -f \"$0\"\nexec {}\n", args.join(" ")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let status = std::process::Command::new("open").arg("-a").arg("Terminal").arg(&file).status()?;
+    if !status.success() {
+        return Err(AppError::detail("terminal", format!("open exited with {status}")));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Against the Docker test servers (scripts/test-servers.sh up):
+    /// `cargo test -- --ignored live_`
+    #[tokio::test]
+    #[ignore]
+    async fn live_docker_servers() {
+        let known_hosts = std::env::temp_dir().join(format!("portway-known-hosts-{}", std::process::id()));
+        let _ = std::fs::remove_file(&known_hosts);
+        let key = Arc::new(keys::load_secret_key(expand_tilde("~/.ssh/id_ed25519"), None).expect("~/.ssh/id_ed25519"));
+        let target = |port: u16, user: &str| Target { host: "127.0.0.1".into(), port, user: user.into(), known_hosts: known_hosts.clone() };
+
+        // Unknown host key: refused and reported with its fingerprint.
+        let fp = match open(&target(2201, "root"), Credential::Key(key.clone()), None).await.unwrap() {
+            Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) => fingerprint,
+            _ => panic!("expected an unknown host key"),
+        };
+        assert!(fp.starts_with("SHA256:"));
+
+        // Trusting that fingerprint records it and connects.
+        let Opened::Ready(handle) = open(&target(2201, "root"), Credential::Key(key.clone()), Some(fp.clone())).await.unwrap() else {
+            panic!("expected to connect after trusting the key");
+        };
+        assert!(std::fs::read_to_string(&known_hosts).unwrap().trim_start().starts_with("[127.0.0.1]:2201 "));
+        let info = read_host_info(&handle).await.unwrap();
+        assert!(info.os.as_deref().unwrap().starts_with("Ubuntu 24.04"), "{:?}", info.os);
+        assert_eq!(info.hostname, "pw-ubuntu");
+
+        let session = Session { handle, last: Mutex::new(None) };
+        let (s, c, _) = sample(&session).await.unwrap();
+        assert!(s.cores > 0 && s.mem_total > 0 && s.disk_total > 0 && c.cpu_total > 0);
+
+        // A known host now connects without asking.
+        assert!(matches!(open(&target(2201, "deploy"), Credential::Key(key.clone()), None).await.unwrap(), Opened::Ready(_)));
+
+        // Another host that reuses a recorded key line for its address: key changed.
+        let ubuntu_line = std::fs::read_to_string(&known_hosts).unwrap();
+        std::fs::write(&known_hosts, ubuntu_line.replace("[127.0.0.1]:2201", "[127.0.0.1]:2202")).unwrap();
+        assert!(matches!(
+            open(&target(2202, "deploy"), Credential::Key(key.clone()), None).await.unwrap(),
+            Opened::HostKey(HostKeyIssue::Changed { .. })
+        ));
+
+        // Password auth on Debian: wrong password is rejected, the right one works.
+        std::fs::write(&known_hosts, "").unwrap();
+        let fp = match open(&target(2202, "deploy"), Credential::Password("nope".into()), None).await.unwrap() {
+            Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) => fingerprint,
+            _ => panic!("expected an unknown host key"),
+        };
+        assert!(matches!(open(&target(2202, "deploy"), Credential::Password("nope".into()), Some(fp)).await.unwrap(), Opened::Rejected));
+        assert!(matches!(open(&target(2202, "deploy"), Credential::Password("portway".into()), None).await.unwrap(), Opened::Ready(_)));
+
+        // Nothing listening: refused.
+        let err = open(&target(2299, "root"), Credential::Key(key), None).await.err().unwrap();
+        assert_eq!(err.code, "refused");
+
+        std::fs::remove_file(&known_hosts).ok();
+    }
+
+    #[test]
+    fn quotes_for_shell() {
+        assert_eq!(shell_quote("root@1.2.3.4"), "'root@1.2.3.4'");
+        assert_eq!(shell_quote("a'b; rm -rf ~"), "'a'\\''b; rm -rf ~'");
+    }
+
+    #[test]
+    fn os_names() {
+        assert_eq!(os_name("NAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\n").as_deref(), Some("Ubuntu 24.04"));
+        assert_eq!(os_name("NAME=\"Debian GNU/Linux\"\nVERSION_ID=\"12\"").as_deref(), Some("Debian 12"));
+        assert_eq!(os_name("NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.20.8").as_deref(), Some("Alpine 3.20.8"));
+        assert_eq!(os_name(""), None);
+    }
+
+    #[test]
+    fn parses_proc_output() {
+        let text = "cpu  100 0 50 800 50 0 0 0 0 0\n@@PORTWAY@@\n0.82 0.50 0.40 1/200 999\n@@PORTWAY@@\n4\n@@PORTWAY@@\n\
+MemTotal:        8000000 kB\nMemFree:         1000000 kB\nMemAvailable:    3000000 kB\n@@PORTWAY@@\n\
+overlay 83000000 60000000 23000000 73% /\n@@PORTWAY@@\n\
+Inter-|   Receive |  Transmit\n face |bytes packets errs drop fifo frame compressed multicast|bytes\n\
+    lo: 500 5 0 0 0 0 0 0 500 5 0 0 0 0 0 0\n  eth0: 1000 10 0 0 0 0 0 0 2000 20 0 0 0 0 0 0\n@@PORTWAY@@\n3542400.12 100.0\n";
+        let (s, c) = parse_stats(text);
+        assert_eq!((c.cpu_total, c.cpu_idle), (1000, 850));
+        assert_eq!(s.load, [0.82, 0.50, 0.40]);
+        assert_eq!(s.cores, 4);
+        assert_eq!(s.mem_total, 8_000_000 * 1024);
+        assert_eq!(s.mem_used, 5_000_000 * 1024);
+        assert_eq!((s.disk_total, s.disk_used, s.disk_avail), (83_000_000 * 1024, 60_000_000 * 1024, 23_000_000 * 1024));
+        assert_eq!((c.net_rx, c.net_tx), (1000, 2000), "lo is excluded");
+        assert_eq!(s.uptime_secs, 3_542_400);
+    }
+}

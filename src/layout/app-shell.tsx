@@ -1,6 +1,7 @@
 import { useNav } from '../app/nav'
 import { KeyListScreen } from '../screens/keys/key-list'
 import { PlaceholderScreen } from '../screens/placeholder'
+import { ServerScreen } from '../screens/server/server-screen'
 import { ServerListScreen } from '../screens/servers/server-list'
 import { Menu } from './menu'
 import { Rail } from './rail'
@@ -24,8 +25,13 @@ export function AppShell() {
               <ServerListScreen />
             ) : screen.kind === 'keys' ? (
               <KeyListScreen />
+            ) : screen.kind === 'server' ? (
+              <ServerScreen serverId={screen.serverId} user={screen.user} module={screen.module} />
             ) : (
-              <PlaceholderScreen />
+              <PlaceholderScreen
+                title="Tunnel"
+                subtitle="Chuyển tiếp cổng qua SSH để dùng dịch vụ trên server như đang chạy trên máy bạn."
+              />
             )}
           </main>
         </div>

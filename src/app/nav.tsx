@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
+import { useConnections } from './connections'
 
 export type RailId = 'conn' | 'server' | 'tunnels'
 export type ModuleId = 'overview' | 'files' | 'docker' | 'services' | 'firewall' | 'logs'
@@ -27,8 +28,8 @@ type Nav = {
   goRail: (rail: RailId) => void
   openModule: (module: ModuleId, sub?: { docker?: DockerView; services?: ServicesView; log?: string }) => void
   toggleGroup: (module: ModuleId) => void
-  /** Open (or switch to) a session for this server and user. The SSH connection
-   *  itself is not made yet; this only opens the server screens. */
+  /** Open (or switch to) a session for this server and user and connect it
+   *  over SSH if it is not connected yet. */
   connect: (serverId: string, user: string) => void
   closeSession: (s: Session) => void
   /** Close every session of a server, e.g. when it is deleted. */
@@ -41,6 +42,7 @@ export const railOf = (s: Screen): RailId =>
   s.kind === 'server' ? 'server' : s.kind === 'tunnels' ? 'tunnels' : 'conn'
 
 export function NavProvider({ children }: { children: ReactNode }) {
+  const conns = useConnections()
   const [screen, setScreen] = useState<Screen>({ kind: 'servers' })
   const [sessions, setSessions] = useState<Session[]>([])
   // The server session to return to when switching back to the server rail.
@@ -82,9 +84,12 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const connect = (serverId: string, user: string) => {
     setSessions((list) => (list.some((s) => s.serverId === serverId && s.user === user) ? list : [...list, { serverId, user }]))
     go({ kind: 'server', serverId, user, module: 'overview' })
+    const current = conns.get(serverId, user)
+    if (!current || current.status === 'failed') void conns.connect(serverId, user)
   }
 
   const closeWhere = (drop: (s: Session) => boolean) => {
+    for (const s of sessions.filter(drop)) void conns.disconnect(s.serverId, s.user)
     const rest = sessions.filter((s) => !drop(s))
     setSessions(rest)
     if (screen.kind !== 'server' || !drop(screen)) return

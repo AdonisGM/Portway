@@ -58,6 +58,42 @@ export type ImportReport = { found: number; added: Server[]; skipped: string[] }
 
 export type AppError = { code: string; field?: string; detail?: string }
 
+export type HostKeyIssue =
+  | { kind: 'unknown'; fingerprint: string; algorithm: string }
+  | { kind: 'changed'; fingerprint: string; algorithm: string; line: number }
+
+export type HostInfo = { os: string | null; hostname: string; kernel: string; uptimeSecs: number }
+
+export type ConnectResult =
+  | { status: 'connected'; info: HostInfo }
+  | { status: 'hostKey'; issue: HostKeyIssue }
+  | { status: 'needPassword'; retry: boolean }
+  | { status: 'needPassphrase'; keyPath: string; retry: boolean }
+
+export type ConnectOptions = {
+  password?: string
+  passphrase?: string
+  /** Keep the password or passphrase in the Keychain (default true). */
+  remember?: boolean
+  /** Fingerprint the user accepted for an unknown host key. */
+  trustFingerprint?: string
+}
+
+/** Live resource numbers; sizes in bytes, rates in bytes per second. */
+export type Stats = {
+  cpuPercent: number | null
+  load: [number, number, number]
+  cores: number
+  memTotal: number
+  memUsed: number
+  diskTotal: number
+  diskUsed: number
+  diskAvail: number
+  netRxRate: number | null
+  netTxRate: number | null
+  uptimeSecs: number
+}
+
 export function isAppError(e: unknown): e is AppError {
   return typeof e === 'object' && e !== null && 'code' in e
 }
@@ -70,6 +106,12 @@ type Api = {
   listKeys(): Promise<SshKey[]>
   publicKey(path: string): Promise<string>
   generateKey(input: GenerateKeyInput): Promise<SshKey>
+  setPinned(id: string, pinned: boolean): Promise<Server>
+  connect(serverId: string, user: string, opts?: ConnectOptions): Promise<ConnectResult>
+  disconnect(serverId: string, user: string): Promise<void>
+  disconnectAll(): Promise<void>
+  stats(serverId: string, user: string): Promise<Stats>
+  openTerminal(serverId: string, user: string): Promise<void>
 }
 
 const tauriApi: Api = {
@@ -80,6 +122,12 @@ const tauriApi: Api = {
   listKeys: () => invoke('ssh_keys_list'),
   publicKey: (path) => invoke('ssh_key_public', { path }),
   generateKey: (input) => invoke('ssh_key_generate', { input }),
+  setPinned: (id, pinned) => invoke('server_set_pinned', { id, pinned }),
+  connect: (serverId, user, opts = {}) => invoke('ssh_connect', { serverId, user, ...opts }),
+  disconnect: (serverId, user) => invoke('ssh_disconnect', { serverId, user }),
+  disconnectAll: () => invoke('ssh_disconnect_all'),
+  stats: (serverId, user) => invoke('server_stats', { serverId, user }),
+  openTerminal: (serverId, user) => invoke('open_terminal', { serverId, user }),
 }
 
 /** Stand-in used when the UI runs in a plain browser (vite dev without Tauri):
@@ -158,6 +206,26 @@ function browserApi(): Api {
       }
       keys.push(key)
       return key
+    },
+    async setPinned(id, pinned) {
+      const list = read()
+      const s = list.find((x) => x.id === id)
+      if (!s) fail('not_found')
+      const next = { ...s!, pinned }
+      write(list.map((x) => (x.id === id ? next : x)))
+      return next
+    },
+    // SSH needs the Rust side; in a plain browser say so instead of faking it.
+    async connect() {
+      return fail('needs_app')
+    },
+    async disconnect() {},
+    async disconnectAll() {},
+    async stats() {
+      return fail('needs_app')
+    },
+    async openTerminal() {
+      fail('needs_app')
     },
   }
 }

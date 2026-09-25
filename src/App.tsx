@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ConnectionsProvider } from './app/connections'
 import { NavProvider } from './app/nav'
 import { ServersProvider } from './app/servers'
 import { SplashScreen } from './components/splash'
@@ -13,12 +14,14 @@ export default function App() {
 
   return (
     <ServersProvider>
-      <NavProvider>
-        <ToastProvider>
-          <AppShell />
-          <SplashScreen ready={ready} />
-        </ToastProvider>
-      </NavProvider>
+      <ConnectionsProvider>
+        <NavProvider>
+          <ToastProvider>
+            <AppShell />
+            <SplashScreen ready={ready} />
+          </ToastProvider>
+        </NavProvider>
+      </ConnectionsProvider>
     </ServersProvider>
   )
 }

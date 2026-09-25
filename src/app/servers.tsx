@@ -14,6 +14,9 @@ type Servers = {
   /** Re-read ~/.ssh and report what changed since the last read. */
   reloadKeys: () => Promise<{ total: number; added: SshKey[]; removed: SshKey[] }>
   generateKey: (input: GenerateKeyInput) => Promise<SshKey>
+  setPinned: (id: string, pinned: boolean) => Promise<void>
+  /** Re-read the saved list (e.g. after the Rust side recorded a detected OS). */
+  refresh: () => Promise<void>
 }
 
 const ServersContext = createContext<Servers | null>(null)
@@ -38,6 +41,13 @@ export function ServersProvider({ children }: { children: ReactNode }) {
     setKeys(next)
     return { total: next.length, added, removed }
   }, [])
+
+  const refresh = useCallback(async () => setServers(await api.listServers()), [])
+
+  const setPinned = async (id: string, pinned: boolean) => {
+    const saved = await api.setPinned(id, pinned)
+    setServers((list) => list.map((s) => (s.id === id ? saved : s)))
+  }
 
   const generateKey = async (input: GenerateKeyInput) => {
     const key = await api.generateKey(input)
@@ -85,6 +95,8 @@ export function ServersProvider({ children }: { children: ReactNode }) {
         importSshConfig,
         reloadKeys,
         generateKey,
+        setPinned,
+        refresh,
       }}
     >
       {children}

@@ -2,6 +2,7 @@ mod error;
 mod keys;
 mod paths;
 mod servers;
+mod ssh;
 mod ssh_config;
 
 use tauri::Manager;
@@ -51,16 +52,24 @@ pub fn run() {
             servers::servers_list,
             servers::server_save,
             servers::server_delete,
+            servers::server_set_pinned,
             servers::servers_import_ssh_config,
             keys::ssh_keys_list,
             keys::ssh_key_public,
             keys::ssh_key_generate,
+            ssh::ssh_connect,
+            ssh::ssh_disconnect,
+            ssh::ssh_disconnect_all,
+            ssh::ssh_forget_secret,
+            ssh::server_stats,
+            ssh::open_terminal,
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let store = servers::ServerStore::load(data_dir.join("servers.json"))
                 .map_err(|e| format!("cannot load servers.json: {} {}", e.code, e.detail.unwrap_or_default()))?;
             app.manage(store);
+            app.manage(ssh::Sessions::default());
 
             // Hidden from the first frame; the splash shows them again when it fades.
             if let Some(window) = app.get_webview_window("main") {

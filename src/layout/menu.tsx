@@ -14,15 +14,14 @@ import {
   List,
   Server,
   Shield,
-  Terminal,
   X,
   type LucideIcon,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useNav, type DockerView, type ModuleId, type ServicesView } from '../app/nav'
+import { useConnections } from '../app/connections'
 import { useServers } from '../app/servers'
 import { OsBadge } from '../components/os-badge'
-import { LOG_SOURCES, MODULE_COUNTS, TUNNELS } from '../mock/data'
 import { MODULE_LABELS } from './meta'
 
 /** Second column: the menu of whichever rail area is active. */
@@ -74,7 +73,6 @@ function TunnelMenu() {
       <MenuItem
         icon={ArrowLeftRight}
         label="Tunnel"
-        count={TUNNELS.length}
         active={nav.screen.kind === 'tunnels'}
         onClick={() => nav.go({ kind: 'tunnels' })}
       />
@@ -88,17 +86,16 @@ function ServerMenu() {
   const nav = useNav()
   const s = nav.screen.kind === 'server' ? nav.screen : null
   const inModule = (m: ModuleId) => s?.module === m
-  const docker = (view: DockerView, icon: LucideIcon, label: string, count: number): Kid => ({
+  // Sub-views only; counts appear once each module reads real data.
+  const docker = (view: DockerView, icon: LucideIcon, label: string): Kid => ({
     icon,
     label,
-    count,
     active: inModule('docker') && nav.dockerView === view,
     onClick: () => nav.openModule('docker', { docker: view }),
   })
-  const services = (view: ServicesView, icon: LucideIcon, label: string, count: number): Kid => ({
+  const services = (view: ServicesView, icon: LucideIcon, label: string): Kid => ({
     icon,
     label,
-    count,
     active: inModule('services') && nav.servicesView === view,
     onClick: () => nav.openModule('services', { services: view }),
   })
@@ -110,32 +107,19 @@ function ServerMenu() {
       id: 'docker',
       icon: Box,
       kids: [
-        docker('containers', List, 'Container', MODULE_COUNTS.containers),
-        docker('compose', Layers, 'Compose', MODULE_COUNTS.compose),
-        docker('images', Layers, 'Images', MODULE_COUNTS.images),
-        docker('volumes', Database, 'Volumes', MODULE_COUNTS.volumes),
+        docker('containers', List, 'Container'),
+        docker('compose', Layers, 'Compose'),
+        docker('images', Layers, 'Images'),
+        docker('volumes', Database, 'Volumes'),
       ],
     },
     {
       id: 'services',
       icon: Activity,
-      alert: MODULE_COUNTS.failedServices ? `${MODULE_COUNTS.failedServices} lỗi` : undefined,
-      kids: [
-        services('services', List, 'Dịch vụ', MODULE_COUNTS.services),
-        services('jobs', Clock, 'Tác vụ định kỳ', MODULE_COUNTS.jobs),
-      ],
+      kids: [services('services', List, 'Dịch vụ'), services('jobs', Clock, 'Tác vụ định kỳ')],
     },
-    { id: 'firewall', icon: Shield, count: MODULE_COUNTS.firewallRules },
-    {
-      id: 'logs',
-      icon: FileText,
-      kids: LOG_SOURCES.map((src) => ({
-        icon: Terminal,
-        label: src.label,
-        active: inModule('logs') && nav.logSource === src.id,
-        onClick: () => nav.openModule('logs', { log: src.id }),
-      })),
-    },
+    { id: 'firewall', icon: Shield },
+    { id: 'logs', icon: FileText },
   ]
 
   return (
@@ -173,10 +157,19 @@ function ServerMenu() {
   )
 }
 
+/** Green when every session of the host is connected, amber while one is
+ *  connecting or waiting for input, red when one failed. */
+function hostDot(statuses: Array<string | undefined>) {
+  if (statuses.some((s) => s === 'failed' || s === undefined)) return 'var(--danger)'
+  if (statuses.some((s) => s === 'connecting' || s === 'prompt')) return 'var(--warn)'
+  return 'var(--success)'
+}
+
 /** Open sessions grouped by server, each user as its own row. */
 function Sessions() {
   const nav = useNav()
   const { byId } = useServers()
+  const conns = useConnections()
   const current = nav.screen.kind === 'server' ? nav.screen : null
   const hosts = [...new Set(nav.sessions.map((s) => s.serverId))]
 
@@ -199,7 +192,7 @@ function Sessions() {
               <OsBadge os={srv?.os} size={22} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex items-center gap-1.5 font-semibold">
-                  <span className="size-1.5 flex-none rounded-full bg-success" />
+                  <span className="size-1.5 flex-none rounded-full" style={{ background: hostDot(users.map((u) => conns.get(id, u.user)?.status)) }} />
                   <span className="truncate">{srv?.name ?? id}</span>
                 </span>
                 <span className="truncate font-mono text-[10.5px] text-muted">{srv?.host}</span>

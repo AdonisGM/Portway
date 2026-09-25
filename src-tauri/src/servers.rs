@@ -156,6 +156,27 @@ impl ServerStore {
         Ok(saved)
     }
 
+    /// Record the OS detected on connect; only writes when it changed.
+    pub fn set_os(&self, id: &str, os: &str) -> AppResult<()> {
+        let mut servers = self.servers.lock().unwrap();
+        let Some(server) = servers.iter_mut().find(|s| s.id == id) else { return Ok(()) };
+        if server.os.as_deref() == Some(os) {
+            return Ok(());
+        }
+        server.os = Some(os.to_string());
+        self.persist(&servers)
+    }
+
+    /// Pin or unpin a server.
+    pub fn set_pinned(&self, id: &str, pinned: bool) -> AppResult<Server> {
+        let mut servers = self.servers.lock().unwrap();
+        let server = servers.iter_mut().find(|s| s.id == id).ok_or_else(|| AppError::new("not_found"))?;
+        server.pinned = pinned;
+        let saved = server.clone();
+        self.persist(&servers)?;
+        Ok(saved)
+    }
+
     pub fn delete(&self, id: &str) -> AppResult<()> {
         let mut servers = self.servers.lock().unwrap();
         let before = servers.len();
@@ -294,6 +315,11 @@ pub fn servers_list(store: tauri::State<ServerStore>) -> Vec<Server> {
 #[tauri::command]
 pub fn server_save(store: tauri::State<ServerStore>, input: ServerInput) -> AppResult<Server> {
     store.save(input)
+}
+
+#[tauri::command]
+pub fn server_set_pinned(store: tauri::State<ServerStore>, id: String, pinned: bool) -> AppResult<Server> {
+    store.set_pinned(&id, pinned)
 }
 
 #[tauri::command]

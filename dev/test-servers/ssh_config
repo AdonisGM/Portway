@@ -1,0 +1,18 @@
+# ~/.ssh/config style entries for the test servers, handy for trying the importer.
+Host pw-ubuntu
+  HostName 127.0.0.1
+  Port 2201
+  User root
+  IdentityFile ~/.ssh/id_ed25519
+
+Host pw-debian
+  HostName 127.0.0.1
+  Port 2202
+  User deploy
+  IdentityFile ~/.ssh/id_ed25519
+
+Host pw-alpine
+  HostName 127.0.0.1
+  Port 2203
+  User root
+  IdentityFile ~/.ssh/id_ed25519

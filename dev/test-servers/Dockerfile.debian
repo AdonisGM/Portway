@@ -1,0 +1,17 @@
+# SSH test server for Portway on a Debian-family base (Ubuntu or Debian).
+ARG BASE=ubuntu:24.04
+FROM ${BASE}
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server sudo procps \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /run/sshd \
+ && useradd -m -s /bin/bash -G sudo deploy \
+ && echo 'deploy:portway' | chpasswd
+
+COPY sshd_portway.conf /etc/ssh/sshd_config.d/portway.conf
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 22
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,9 +1,11 @@
 import { useNav } from '../app/nav'
-import { MODULE_LABELS, serverById } from '../layout/meta'
+import { useServers } from '../app/servers'
+import { MODULE_LABELS } from '../layout/meta'
 
 /** Stand-in content for each screen until it is built from the design. */
 export function PlaceholderScreen() {
   const { screen } = useNav()
+  const { byId } = useServers()
 
   const [title, sub] =
     screen.kind === 'servers'
@@ -13,8 +15,8 @@ export function PlaceholderScreen() {
         : screen.kind === 'tunnels'
           ? ['Tunnel', 'Chuyển tiếp cổng qua SSH để dùng dịch vụ trên server như đang chạy trên máy bạn.']
           : [
-              screen.serverId,
-              `${screen.user}@${serverById(screen.serverId)?.host ?? ''} · ${MODULE_LABELS[screen.module]}`,
+              byId(screen.serverId)?.name ?? screen.serverId,
+              `${screen.user}@${byId(screen.serverId)?.host ?? ''} · ${MODULE_LABELS[screen.module]} · chưa kết nối SSH thật`,
             ]
 
   return (

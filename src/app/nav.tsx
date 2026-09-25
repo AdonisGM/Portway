@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
-import { SESSIONS } from '../mock/data'
 
 export type RailId = 'conn' | 'server' | 'tunnels'
 export type ModuleId = 'overview' | 'files' | 'docker' | 'services' | 'firewall' | 'logs'
@@ -28,7 +27,12 @@ type Nav = {
   goRail: (rail: RailId) => void
   openModule: (module: ModuleId, sub?: { docker?: DockerView; services?: ServicesView; log?: string }) => void
   toggleGroup: (module: ModuleId) => void
+  /** Open (or switch to) a session for this server and user. The SSH connection
+   *  itself is not made yet; this only opens the server screens. */
+  connect: (serverId: string, user: string) => void
   closeSession: (s: Session) => void
+  /** Close every session of a server, e.g. when it is deleted. */
+  closeServer: (serverId: string) => void
 }
 
 const NavContext = createContext<Nav | null>(null)
@@ -38,7 +42,7 @@ export const railOf = (s: Screen): RailId =>
 
 export function NavProvider({ children }: { children: ReactNode }) {
   const [screen, setScreen] = useState<Screen>({ kind: 'servers' })
-  const [sessions, setSessions] = useState<Session[]>(SESSIONS)
+  const [sessions, setSessions] = useState<Session[]>([])
   // The server session to return to when switching back to the server rail.
   const [lastServer, setLastServer] = useState<Extract<Screen, { kind: 'server' }> | null>(null)
   const [dockerView, setDockerView] = useState<DockerView>('containers')
@@ -75,15 +79,24 @@ export function NavProvider({ children }: { children: ReactNode }) {
 
   const toggleGroup = (module: ModuleId) => setExpanded((e) => ({ ...e, [module]: !e[module] }))
 
-  const closeSession = (target: Session) => {
-    const rest = sessions.filter((s) => !(s.serverId === target.serverId && s.user === target.user))
+  const connect = (serverId: string, user: string) => {
+    setSessions((list) => (list.some((s) => s.serverId === serverId && s.user === user) ? list : [...list, { serverId, user }]))
+    go({ kind: 'server', serverId, user, module: 'overview' })
+  }
+
+  const closeWhere = (drop: (s: Session) => boolean) => {
+    const rest = sessions.filter((s) => !drop(s))
     setSessions(rest)
-    const current = screen.kind === 'server' && screen.serverId === target.serverId && screen.user === target.user
-    if (!current) return
+    if (screen.kind !== 'server' || !drop(screen)) return
     const next = rest[rest.length - 1]
     if (next) go({ kind: 'server', ...next, module: screen.module })
     else go({ kind: 'servers' })
   }
+
+  const closeSession = (target: Session) =>
+    closeWhere((s) => s.serverId === target.serverId && s.user === target.user)
+
+  const closeServer = (serverId: string) => closeWhere((s) => s.serverId === serverId)
 
   return (
     <NavContext.Provider
@@ -99,7 +112,9 @@ export function NavProvider({ children }: { children: ReactNode }) {
         goRail,
         openModule,
         toggleGroup,
+        connect,
         closeSession,
+        closeServer,
       }}
     >
       {children}

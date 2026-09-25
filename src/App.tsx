@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { NavProvider } from './app/nav'
+import { ServersProvider } from './app/servers'
 import { SplashScreen } from './components/splash'
+import { ToastProvider } from './components/toast'
 import { AppShell } from './layout/app-shell'
 
 export default function App() {
@@ -10,9 +12,13 @@ export default function App() {
   useEffect(() => setReady(true), [])
 
   return (
-    <NavProvider>
-      <AppShell />
-      <SplashScreen ready={ready} />
-    </NavProvider>
+    <ServersProvider>
+      <NavProvider>
+        <ToastProvider>
+          <AppShell />
+          <SplashScreen ready={ready} />
+        </ToastProvider>
+      </NavProvider>
+    </ServersProvider>
   )
 }

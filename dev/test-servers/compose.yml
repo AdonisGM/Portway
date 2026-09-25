@@ -1,0 +1,28 @@
+# Local SSH servers for developing Portway. Only bound to 127.0.0.1.
+# The public key mounted as authorized_keys defaults to ~/.ssh/id_ed25519.pub;
+# override with PORTWAY_TEST_PUBKEY=/path/to/key.pub.
+name: portway-test
+
+x-server: &server
+  restart: unless-stopped
+  volumes:
+    - ${PORTWAY_TEST_PUBKEY:-${HOME}/.ssh/id_ed25519.pub}:/authorized_keys:ro
+
+services:
+  ubuntu:
+    <<: *server
+    build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "ubuntu:24.04" } }
+    hostname: pw-ubuntu
+    ports: ["127.0.0.1:2201:22"]
+
+  debian:
+    <<: *server
+    build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "debian:12" } }
+    hostname: pw-debian
+    ports: ["127.0.0.1:2202:22"]
+
+  alpine:
+    <<: *server
+    build: { context: ., dockerfile: Dockerfile.alpine }
+    hostname: pw-alpine
+    ports: ["127.0.0.1:2203:22"]

@@ -1,3 +1,9 @@
+mod error;
+mod keys;
+mod paths;
+mod servers;
+mod ssh_config;
+
 use tauri::Manager;
 
 /// Show or hide the native macOS traffic lights. The splash screen hides them so
@@ -39,8 +45,20 @@ mod macos {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![set_window_controls_visible])
+        .invoke_handler(tauri::generate_handler![
+            set_window_controls_visible,
+            servers::servers_list,
+            servers::server_save,
+            servers::server_delete,
+            servers::servers_import_ssh_config,
+            keys::ssh_keys_list,
+        ])
         .setup(|app| {
+            let data_dir = app.path().app_data_dir()?;
+            let store = servers::ServerStore::load(data_dir.join("servers.json"))
+                .map_err(|e| format!("cannot load servers.json: {} {}", e.code, e.detail.unwrap_or_default()))?;
+            app.manage(store);
+
             // Hidden from the first frame; the splash shows them again when it fades.
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]

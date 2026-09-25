@@ -1,0 +1,18 @@
+# SSH test server for Portway on Alpine.
+FROM alpine:3.20
+
+RUN apk add --no-cache openssh sudo bash procps \
+ && ssh-keygen -A \
+ && adduser -D -s /bin/bash deploy \
+ && echo 'deploy:portway' | chpasswd \
+ && echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/wheel \
+ && addgroup deploy wheel \
+ && mkdir -p /etc/ssh/sshd_config.d \
+ && echo 'Include /etc/ssh/sshd_config.d/*.conf' >> /etc/ssh/sshd_config
+
+COPY sshd_portway.conf /etc/ssh/sshd_config.d/portway.conf
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 22
+ENTRYPOINT ["/entrypoint.sh"]

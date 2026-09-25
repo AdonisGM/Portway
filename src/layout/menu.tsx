@@ -20,8 +20,10 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useNav, type DockerView, type ModuleId, type ServicesView } from '../app/nav'
-import { KEYS, LOG_SOURCES, MODULE_COUNTS, SERVERS, TUNNELS } from '../mock/data'
-import { MODULE_LABELS, osBadge, serverById, statusDot } from './meta'
+import { useServers } from '../app/servers'
+import { OsBadge } from '../components/os-badge'
+import { LOG_SOURCES, MODULE_COUNTS, TUNNELS } from '../mock/data'
+import { MODULE_LABELS } from './meta'
 
 /** Second column: the menu of whichever rail area is active. */
 export function Menu() {
@@ -42,20 +44,21 @@ function MenuTitle({ children }: { children: ReactNode }) {
 
 function ConnMenu() {
   const nav = useNav()
+  const { servers, keys } = useServers()
   return (
     <>
       <MenuTitle>Quản lý kết nối</MenuTitle>
       <MenuItem
         icon={Server}
         label="Danh sách server"
-        count={SERVERS.length}
+        count={servers.length}
         active={nav.screen.kind === 'servers'}
         onClick={() => nav.go({ kind: 'servers' })}
       />
       <MenuItem
         icon={KeyRound}
         label="Khoá SSH"
-        count={KEYS.length}
+        count={keys.length}
         active={nav.screen.kind === 'keys'}
         onClick={() => nav.go({ kind: 'keys' })}
       />
@@ -173,6 +176,7 @@ function ServerMenu() {
 /** Open sessions grouped by server, each user as its own row. */
 function Sessions() {
   const nav = useNav()
+  const { byId } = useServers()
   const current = nav.screen.kind === 'server' ? nav.screen : null
   const hosts = [...new Set(nav.sessions.map((s) => s.serverId))]
 
@@ -183,8 +187,7 @@ function Sessions() {
         <span className="num text-[11px] text-muted">{nav.sessions.length}</span>
       </div>
       {hosts.map((id) => {
-        const srv = serverById(id)
-        const badge = osBadge(srv?.os)
+        const srv = byId(id)
         const users = nav.sessions.filter((s) => s.serverId === id)
         return (
           <div key={id} className="mb-1 flex flex-col gap-px">
@@ -193,17 +196,11 @@ function Sessions() {
               onClick={() => nav.go({ kind: 'server', serverId: id, user: users[0].user, module: current?.module ?? 'overview' })}
               className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-accent-soft"
             >
-              <span
-                title={srv?.os}
-                className="flex size-[22px] flex-none items-center justify-center rounded-[5px] text-[12px] leading-none font-bold text-white"
-                style={{ background: badge.bg }}
-              >
-                {badge.letter}
-              </span>
+              <OsBadge os={srv?.os} size={22} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex items-center gap-1.5 font-semibold">
-                  <span className="size-1.5 flex-none rounded-full" style={{ background: statusDot(srv) }} />
-                  {id}
+                  <span className="size-1.5 flex-none rounded-full bg-success" />
+                  <span className="truncate">{srv?.name ?? id}</span>
                 </span>
                 <span className="truncate font-mono text-[10.5px] text-muted">{srv?.host}</span>
               </span>

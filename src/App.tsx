@@ -9,9 +9,10 @@ export default function App() {
 
   return (
     <>
-      <main className="relative h-full bg-bg">
-        <div className="grain pointer-events-none absolute inset-0" style={{ opacity: 'var(--grain)' }} />
-      </main>
+      <main className="h-full bg-bg" />
+      {/* Grain over the whole app, above content like home's AppShell; it never
+          takes clicks. */}
+      <div className="grain pointer-events-none fixed inset-0 z-[1]" style={{ opacity: 'var(--grain)' }} />
       <SplashScreen ready={ready} />
     </>
   )

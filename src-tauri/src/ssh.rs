@@ -19,6 +19,8 @@ use crate::servers::{Auth, ServerStore};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const EXEC_TIMEOUT: Duration = Duration::from_secs(20);
+/// Leaves room under OpenSSH's default MaxSessions (10) for a terminal or SFTP.
+const CHANNELS_PER_SESSION: usize = 6;
 const KEYCHAIN_SERVICE: &str = "com.portway.app";
 
 /// What the host key check saw, kept so a refused connection can be explained.
@@ -94,6 +96,9 @@ pub enum ConnectResult {
 
 struct Session {
     handle: Handle<Client>,
+    /// Limits channels open at once. OpenSSH allows 10 per connection
+    /// (MaxSessions); the overview alone reads six things in parallel.
+    channels: tokio::sync::Semaphore,
     /// Previous counters, to turn totals into CPU % and network rates.
     last: Mutex<Option<(Instant, Counters)>>,
     /// Previous CPU ticks per pid, for per-process CPU %.
@@ -102,7 +107,7 @@ struct Session {
 
 impl Session {
     fn new(handle: Handle<Client>) -> Self {
-        Self { handle, last: Mutex::new(None), last_procs: Mutex::new(None) }
+        Self { handle, channels: tokio::sync::Semaphore::new(CHANNELS_PER_SESSION), last: Mutex::new(None), last_procs: Mutex::new(None) }
     }
 }
 
@@ -318,7 +323,7 @@ pub async fn ssh_connect(
     }
 
     let session = Arc::new(Session::new(handle));
-    let info = read_host_info(&session.handle).await?;
+    let info = read_host_info(&session).await?;
     if let Some(os) = &info.os {
         store.set_os(&server_id, os)?;
     }
@@ -375,11 +380,30 @@ impl ExecOutput {
     }
 }
 
-/// Run a command in a new channel and collect its output.
-async fn exec(handle: &Handle<Client>, command: &str) -> AppResult<ExecOutput> {
+/// Run a script in a new channel and collect its output, with the default timeout.
+async fn exec(session: &Session, command: &str) -> AppResult<ExecOutput> {
+    exec_with(session, command, EXEC_TIMEOUT).await
+}
+
+/// Run a script on the server.
+///
+/// Scripts separate their sections with `MARK`. Each run swaps it for a random
+/// token and swaps it back in the output, so a script that prints command lines
+/// (the process list) cannot be confused by another Portway script running at
+/// the same time. Everything runs with PORTWAY_PROBE=1 in its environment, so
+/// Portway's own commands can be left out of the process list.
+async fn exec_with(session: &Session, command: &str, timeout: Duration) -> AppResult<ExecOutput> {
+    let handle = &session.handle;
+    // Waiting for a free channel counts towards the timeout too.
+    let _permit = tokio::time::timeout(timeout, session.channels.acquire())
+        .await
+        .map_err(|_| AppError::new("exec_timeout"))?
+        .map_err(|e| AppError::detail("ssh", e))?;
+    let token = format!("@@PW{}@@", uuid::Uuid::new_v4().simple());
+    let wrapped = format!("env PORTWAY_PROBE=1 sh -c {}", shell_quote(&command.replace(MARK, &token)));
     let run = async {
         let mut channel = handle.channel_open_session().await?;
-        channel.exec(true, command).await?;
+        channel.exec(true, wrapped.as_str()).await?;
         let (mut out, mut err, mut code) = (Vec::new(), Vec::new(), None);
         while let Some(msg) = channel.wait().await {
             match msg {
@@ -390,12 +414,12 @@ async fn exec(handle: &Handle<Client>, command: &str) -> AppResult<ExecOutput> {
             }
         }
         Ok::<_, russh::Error>(ExecOutput {
-            stdout: String::from_utf8_lossy(&out).into_owned(),
+            stdout: String::from_utf8_lossy(&out).replace(&token, MARK),
             stderr: String::from_utf8_lossy(&err).into_owned(),
             code,
         })
     };
-    match tokio::time::timeout(EXEC_TIMEOUT, run).await {
+    match tokio::time::timeout(timeout, run).await {
         Err(_) => Err(AppError::new("exec_timeout")),
         Ok(Err(e)) if handle.is_closed() => Err(AppError::detail("connection_lost", e)),
         Ok(Err(e)) => Err(AppError::detail("ssh", e)),
@@ -405,11 +429,11 @@ async fn exec(handle: &Handle<Client>, command: &str) -> AppResult<ExecOutput> {
 
 pub const MARK: &str = "@@PORTWAY@@";
 
-async fn read_host_info(handle: &Handle<Client>) -> AppResult<HostInfo> {
+async fn read_host_info(session: &Session) -> AppResult<HostInfo> {
     let script = format!(
         "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null"
     );
-    let out = exec(handle, &script).await?.stdout_or_err()?;
+    let out = exec(session, &script).await?.stdout_or_err()?;
     let parts: Vec<&str> = out.split(MARK).map(str::trim).collect();
     let get = |i: usize| parts.get(i).copied().unwrap_or("");
     Ok(HostInfo {
@@ -514,7 +538,7 @@ fn parse_stats(text: &str) -> (Stats, Counters) {
 }
 
 async fn sample(session: &Session) -> AppResult<(Stats, Counters, Instant)> {
-    let out = exec(&session.handle, STATS_SCRIPT).await?.stdout_or_err()?;
+    let out = exec(&session, STATS_SCRIPT).await?.stdout_or_err()?;
     let (stats, counters) = parse_stats(&out);
     Ok((stats, counters, Instant::now()))
 }
@@ -602,11 +626,29 @@ fn container_id(cgroup: &str) -> Option<String> {
     })
 }
 
+/// `pid -> (uid, command line, container id)` from the per-pid detail lines.
+/// Portway's own probes and processes that exited come back without a uid.
+fn parse_proc_details(section: &str) -> HashMap<u32, (Option<u32>, String, Option<String>)> {
+    section
+        .lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.strip_prefix("@@P ")?.splitn(4, '\t').collect();
+            let pid = f.first()?.trim().parse().ok()?;
+            if f.get(1) == Some(&"probe") {
+                return Some((pid, (None, String::new(), None)));
+            }
+            let uid = f.get(1).and_then(|u| u.trim().parse().ok());
+            let cmdline = f.get(2).map(|c| c.trim().to_string()).unwrap_or_default();
+            Some((pid, (uid, cmdline, f.get(3).and_then(|g| container_id(g)))))
+        })
+        .collect()
+}
+
 async fn sample_procs(session: &Session) -> AppResult<(Instant, u64, u64, HashMap<u32, (u64, u64, String)>)> {
     let script = format!(
         "getconf CLK_TCK 2>/dev/null || echo 100; echo {MARK}; getconf PAGESIZE 2>/dev/null || echo 4096; echo {MARK}; cat /proc/[0-9]*/stat 2>/dev/null"
     );
-    let out = exec(&session.handle, &script).await?.stdout_or_err()?;
+    let out = exec(&session, &script).await?.stdout_or_err()?;
     let now = Instant::now();
     let parts: Vec<&str> = out.split(MARK).map(str::trim).collect();
     let hz = parts.first().and_then(|v| v.parse().ok()).filter(|v| *v > 0).unwrap_or(100);
@@ -652,10 +694,17 @@ async fn top_processes(session: &Session) -> AppResult<Processes> {
     // Details for the few rows shown: uid, command line, container.
     let pids: Vec<String> = ranked.iter().map(|r| r.0.to_string()).collect();
     let detail = format!(
-        "for p in {}; do echo \"@@P $p\"; awk '/^Uid:/{{print $2}}' /proc/$p/status 2>/dev/null; echo; tr '\\000' ' ' < /proc/$p/cmdline 2>/dev/null; echo; cat /proc/$p/cgroup 2>/dev/null | head -n 5 | tr '\\n' ' '; echo; done; echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --format '{{{{.ID}}}} {{{{.Names}}}}' 2>/dev/null",
-        pids.join(" ")
+        r#"for p in {pids}; do
+  if tr '\000' '\n' < /proc/$p/environ 2>/dev/null | grep -q '^PORTWAY_PROBE=1$'; then printf '@@P %s\tprobe\n' "$p"; continue; fi
+  u=$(awk '/^Uid:/{{print $2}}' /proc/$p/status 2>/dev/null)
+  c=$(tr '\000\t\n' '   ' < /proc/$p/cmdline 2>/dev/null)
+  g=$(head -n 5 /proc/$p/cgroup 2>/dev/null | tr '\t\n' '  ')
+  printf '@@P %s\t%s\t%s\t%s\n' "$p" "$u" "$c" "$g"
+done
+echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --format '{{{{.ID}}}} {{{{.Names}}}}' 2>/dev/null"#,
+        pids = pids.join(" ")
     );
-    let out = exec(&session.handle, &detail).await?.stdout;
+    let out = exec(&session, &detail).await?.stdout;
     let parts: Vec<&str> = out.split(MARK).collect();
     let passwd: HashMap<u32, String> = parts
         .get(1)
@@ -672,21 +721,11 @@ async fn top_processes(session: &Session) -> AppResult<Processes> {
         .lines()
         .filter_map(|l| l.trim().split_once(' ').map(|(id, name)| (id.to_string(), name.to_string())))
         .collect();
-    let mut details: HashMap<u32, (Option<u32>, String, Option<String>)> = HashMap::new();
-    for block in parts.first().unwrap_or(&"").split("@@P ").skip(1) {
-        let mut lines = block.lines();
-        let Some(pid) = lines.next().and_then(|l| l.trim().parse::<u32>().ok()) else { continue };
-        let uid = lines.next().and_then(|l| l.trim().parse().ok());
-        let _blank = lines.next();
-        let cmdline = lines.next().unwrap_or("").trim().to_string();
-        let _end = lines.next();
-        let cgroup = lines.next().unwrap_or("");
-        details.insert(pid, (uid, cmdline, container_id(cgroup)));
-    }
+    let mut details = parse_proc_details(parts.first().unwrap_or(&""));
 
     let rows = ranked
         .into_iter()
-        // No uid means /proc/<pid> no longer existed: the process exited.
+        // No uid: the process exited, or it is one of Portway's own probes.
         .filter_map(|(pid, cpu, rss, comm)| Some((pid, cpu, rss, comm, details.remove(&pid).filter(|d| d.0.is_some())?)))
         .take(TOP_N)
         .map(|(pid, cpu, rss, comm, (uid, cmdline, cid))| {
@@ -866,7 +905,7 @@ fn parse_updates(section: &str) -> UpdatesHealth {
 }
 
 async fn read_health(session: &Session) -> AppResult<Health> {
-    let out = exec(&session.handle, HEALTH_SCRIPT).await?.stdout;
+    let out = exec(&session, HEALTH_SCRIPT).await?.stdout;
     let parts: Vec<&str> = out.split(MARK).collect();
     Ok(Health {
         docker: parse_docker(parts.first().unwrap_or(&"")),
@@ -882,11 +921,28 @@ pub async fn server_health(sessions: tauri::State<'_, Sessions>, server_id: Stri
     read_health(&session).await
 }
 
+/// Mounted filesystems and Docker disk usage for the overview.
+#[tauri::command]
+pub async fn server_disks(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::disks::Disks> {
+    let session = sessions.get(&server_id, &user)?;
+    let out = exec(&session, crate::disks::DISKS_SCRIPT).await?.stdout;
+    Ok(crate::disks::parse_disks(&out))
+}
+
+/// Docker disk usage. `docker system df` sizes every volume, which can take
+/// tens of seconds, so it gets its own call and a long timeout.
+#[tauri::command]
+pub async fn server_docker_disk(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::disks::DockerDisk> {
+    let session = sessions.get(&server_id, &user)?;
+    let out = exec_with(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await?.stdout;
+    Ok(crate::disks::parse_docker_df(out.trim_start()))
+}
+
 /// Listening ports, UFW rules and exposure warnings for the overview.
 #[tauri::command]
 pub async fn server_ports(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::ports::Ports> {
     let session = sessions.get(&server_id, &user)?;
-    let out = exec(&session.handle, crate::ports::PORTS_SCRIPT).await?.stdout;
+    let out = exec(&session, crate::ports::PORTS_SCRIPT).await?.stdout;
     Ok(crate::ports::parse_ports(&out))
 }
 
@@ -965,11 +1021,21 @@ mod tests {
             panic!("expected to connect after trusting the key");
         };
         assert!(std::fs::read_to_string(&known_hosts).unwrap().trim_start().starts_with("[127.0.0.1]:2201 "));
-        let info = read_host_info(&handle).await.unwrap();
+        let session = Arc::new(Session::new(handle));
+        let info = read_host_info(&session).await.unwrap();
         assert!(info.os.as_deref().unwrap().starts_with("Ubuntu 24.04"), "{:?}", info.os);
         assert_eq!(info.hostname, "pw-ubuntu");
 
-        let session = Session::new(handle);
+        // More parallel reads than OpenSSH's MaxSessions (10) still succeed.
+        let tasks: Vec<_> = (0..16)
+            .map(|_| {
+                let s = session.clone();
+                tokio::spawn(async move { exec(&s, "sleep 1; echo ok").await.map(|o| o.stdout) })
+            })
+            .collect();
+        for task in tasks {
+            assert_eq!(task.await.unwrap().unwrap().trim(), "ok");
+        }
         let (s, c, _) = sample(&session).await.unwrap();
         assert!(s.cores > 0 && s.mem_total > 0 && s.disk_total > 0 && c.cpu_total > 0);
 
@@ -980,12 +1046,20 @@ mod tests {
         assert!(sshd.rss > 0);
         assert!(procs.rows.iter().all(|r| r.container.is_none()), "no docker inside the test server");
 
-        let out = exec(&session.handle, crate::ports::PORTS_SCRIPT).await.unwrap().stdout;
+        let out = exec(&session, crate::ports::PORTS_SCRIPT).await.unwrap().stdout;
         let ports = crate::ports::parse_ports(&out);
         let ssh = ports.listening.iter().find(|l| l.port == 22).expect("sshd listens on 22");
         assert_eq!((ssh.scope, ssh.process.as_deref()), (crate::ports::Scope::Public, Some("sshd")));
-        assert!(matches!(ports.firewall, crate::ports::Firewall::NotInstalled));
+        // pw-ubuntu has ufw enabled inside its container (see dev/test-servers).
+        assert!(matches!(ports.firewall, crate::ports::Firewall::Active { .. }), "{:?}", ports.firewall);
         assert!(ports.processes_complete, "root sees every process");
+
+        let out = exec(&session, crate::disks::DISKS_SCRIPT).await.unwrap().stdout;
+        let disks = crate::disks::parse_disks(&out);
+        assert_eq!(disks.mounts.first().map(|m| m.path.as_str()), Some("/"));
+        assert!(disks.mounts.iter().all(|m| m.path != "/etc/hosts" && m.path != "/dev/shm"), "{:?}", disks.mounts);
+        let out = exec_with(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await.unwrap().stdout;
+        assert!(matches!(crate::disks::parse_docker_df(out.trim_start()), crate::disks::DockerDisk::Ok { .. }), "root on pw-ubuntu reaches the host Docker");
 
         let health = read_health(&session).await.unwrap();
         assert!(matches!(health.systemd, SystemdHealth::NotSystemd), "containers do not run systemd");
@@ -1032,6 +1106,15 @@ mod tests {
         assert_eq!(m[&1], (200, 300, "systemd".into()));
         assert_eq!(m[&1234], (1000, 5120, "node server.js".into()));
         assert_eq!(m[&77], (10, 10, "weird) name)".into()));
+    }
+
+    #[test]
+    fn parses_process_details() {
+        let d = parse_proc_details("@@P 12\t0\tnginx: master process\t0::/system.slice/nginx.service \n@@P 99\tprobe\n@@P 7\t\t\t\n");
+        assert_eq!(d[&12].0, Some(0));
+        assert_eq!(d[&12].1, "nginx: master process");
+        assert_eq!(d[&99].0, None, "Portway's own probe");
+        assert_eq!(d[&7].0, None, "exited");
     }
 
     #[test]

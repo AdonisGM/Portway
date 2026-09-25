@@ -1,3 +1,4 @@
+mod disks;
 mod error;
 mod keys;
 mod paths;
@@ -66,6 +67,8 @@ pub fn run() {
             ssh::server_processes,
             ssh::server_health,
             ssh::server_ports,
+            ssh::server_disks,
+            ssh::server_docker_disk,
             ssh::open_terminal,
         ])
         .setup(|app| {

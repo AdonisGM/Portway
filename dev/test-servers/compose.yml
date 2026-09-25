@@ -16,6 +16,7 @@ services:
     <<: *server
     build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "ubuntu:24.04", DOCKER_CLI: "27.3.1", EXTRA_PKGS: "ufw iptables" } }
     cap_add: [NET_ADMIN]
+    environment: { PORTWAY_UFW: "1" }
     hostname: pw-ubuntu
     ports: ["127.0.0.1:2201:22"]
     volumes:

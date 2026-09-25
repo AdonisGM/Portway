@@ -5,9 +5,9 @@ import { isAppError, type AppError } from '../../lib/api'
 
 const REFRESH_MS = 60_000
 
-/** Read once, then every minute or on demand: for overview cards that are
- *  heavier than the live 5 s numbers. */
-export function useRefreshed<T>(serverId: string, user: string, load: (serverId: string, user: string) => Promise<T>) {
+/** Read once, then every minute (or `everyMs`) or on demand: for overview
+ *  cards that are heavier than the live 5 s numbers. */
+export function useRefreshed<T>(serverId: string, user: string, load: (serverId: string, user: string) => Promise<T>, everyMs = REFRESH_MS) {
   const { markLost } = useConnections()
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<AppError | null>(null)
@@ -31,9 +31,9 @@ export function useRefreshed<T>(serverId: string, user: string, load: (serverId:
 
   useEffect(() => {
     void refresh()
-    const timer = setInterval(refresh, REFRESH_MS)
+    const timer = setInterval(refresh, everyMs)
     return () => clearInterval(timer)
-  }, [refresh])
+  }, [refresh, everyMs])
 
   return { data, error, at, busy, refresh }
 }

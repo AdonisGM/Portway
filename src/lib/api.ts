@@ -129,6 +129,15 @@ export type Ports = {
   processesComplete: boolean
 }
 
+export type Mount = { path: string; device: string; fsType: string | null; total: number; used: number; avail: number }
+export type DockerUsage = { kind: string; total: number; active: number; size: number; reclaimable: number }
+export type Disks = { mounts: Mount[] }
+export type DockerDisk =
+  | { kind: 'notInstalled' }
+  | { kind: 'noAccess'; detail: string }
+  | { kind: 'daemonDown'; detail: string }
+  | { kind: 'ok'; rows: DockerUsage[] }
+
 export type ConnectOptions = {
   password?: string
   passphrase?: string
@@ -173,6 +182,9 @@ type Api = {
   processes(serverId: string, user: string): Promise<Processes>
   health(serverId: string, user: string): Promise<Health>
   ports(serverId: string, user: string): Promise<Ports>
+  disks(serverId: string, user: string): Promise<Disks>
+  /** Slow on servers with large volumes (docker system df). */
+  dockerDisk(serverId: string, user: string): Promise<DockerDisk>
   /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop). */
   openTerminal(serverId: string, user: string, tool?: 'htop'): Promise<void>
 }
@@ -193,6 +205,8 @@ const tauriApi: Api = {
   processes: (serverId, user) => invoke('server_processes', { serverId, user }),
   health: (serverId, user) => invoke('server_health', { serverId, user }),
   ports: (serverId, user) => invoke('server_ports', { serverId, user }),
+  disks: (serverId, user) => invoke('server_disks', { serverId, user }),
+  dockerDisk: (serverId, user) => invoke('server_docker_disk', { serverId, user }),
   openTerminal: (serverId, user, tool) => invoke('open_terminal', { serverId, user, tool }),
 }
 
@@ -297,6 +311,12 @@ function browserApi(): Api {
       return fail('needs_app')
     },
     async ports() {
+      return fail('needs_app')
+    },
+    async disks() {
+      return fail('needs_app')
+    },
+    async dockerDisk() {
       return fail('needs_app')
     },
     async openTerminal() {

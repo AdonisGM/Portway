@@ -7,6 +7,7 @@ import { api, isAppError, type AppError, type Processes, type Server, type Stats
 import { formatBytes, formatDecimal, formatPercent, inUnit, unitName, unitOf } from './format'
 import { HealthCard } from './health'
 import { PortsCard } from './ports'
+import { DisksCard } from './disks'
 
 const POLL_MS = 5000
 
@@ -206,6 +207,7 @@ export function Overview({ server, user }: { server: Server; user: string }) {
       </div>
       <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
         <PortsCard server={server} user={user} />
+        <DisksCard server={server} user={user} />
       </div>
     </div>
   )

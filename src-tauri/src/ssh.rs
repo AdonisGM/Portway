@@ -96,6 +96,14 @@ struct Session {
     handle: Handle<Client>,
     /// Previous counters, to turn totals into CPU % and network rates.
     last: Mutex<Option<(Instant, Counters)>>,
+    /// Previous CPU ticks per pid, for per-process CPU %.
+    last_procs: Mutex<Option<(Instant, HashMap<u32, u64>)>>,
+}
+
+impl Session {
+    fn new(handle: Handle<Client>) -> Self {
+        Self { handle, last: Mutex::new(None), last_procs: Mutex::new(None) }
+    }
 }
 
 #[derive(Default)]
@@ -309,7 +317,7 @@ pub async fn ssh_connect(
         }
     }
 
-    let session = Arc::new(Session { handle, last: Mutex::new(None) });
+    let session = Arc::new(Session::new(handle));
     let info = read_host_info(&session.handle).await?;
     if let Some(os) = &info.os {
         store.set_os(&server_id, os)?;
@@ -539,6 +547,164 @@ pub async fn server_stats(sessions: tauri::State<'_, Sessions>, server_id: Strin
     Ok(stats)
 }
 
+/// One row of the "top processes" table.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessRow {
+    pub pid: u32,
+    /// Full command line, or `[name]` for kernel threads.
+    pub command: String,
+    /// User name from the server's /etc/passwd; None when the uid is not there
+    /// (typically a user that only exists inside a container).
+    pub user: Option<String>,
+    pub uid: Option<u32>,
+    /// Docker container name (or short id when the name cannot be read).
+    pub container: Option<String>,
+    /// CPU over the last interval, % of one core like top (can exceed 100).
+    pub cpu_percent: f64,
+    /// Resident memory in bytes.
+    pub rss: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Processes {
+    /// When the second sample was taken (ms since epoch).
+    pub at: u64,
+    pub rows: Vec<ProcessRow>,
+}
+
+const TOP_N: usize = 6;
+
+/// `pid -> (utime + stime, rss pages, comm)` from concatenated /proc/<pid>/stat.
+fn parse_proc_stats(text: &str) -> HashMap<u32, (u64, u64, String)> {
+    let mut out = HashMap::new();
+    for line in text.lines() {
+        // "pid (comm) state …": comm may contain spaces and parentheses.
+        let (Some(open), Some(close)) = (line.find('('), line.rfind(')')) else { continue };
+        let Ok(pid) = line[..open].trim().parse::<u32>() else { continue };
+        let comm = line[open + 1..close].to_string();
+        let f: Vec<&str> = line[close + 1..].split_whitespace().collect();
+        // f[0] is field 3 (state); utime is field 14, stime 15, rss 24.
+        let num = |i: usize| f.get(i).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        out.insert(pid, (num(11) + num(12), num(21), comm));
+    }
+    out
+}
+
+/// A 64-hex container id in a /proc/<pid>/cgroup line (docker, containerd, podman).
+fn container_id(cgroup: &str) -> Option<String> {
+    let bytes = cgroup.as_bytes();
+    (0..bytes.len().saturating_sub(63)).find_map(|i| {
+        let s = &cgroup[i..i + 64];
+        let bounded = (i == 0 || !bytes[i - 1].is_ascii_hexdigit()) && bytes.get(i + 64).is_none_or(|b| !b.is_ascii_hexdigit());
+        (bounded && s.bytes().all(|b| b.is_ascii_hexdigit())).then(|| s.to_string())
+    })
+}
+
+async fn sample_procs(session: &Session) -> AppResult<(Instant, u64, u64, HashMap<u32, (u64, u64, String)>)> {
+    let script = format!(
+        "getconf CLK_TCK 2>/dev/null || echo 100; echo {MARK}; getconf PAGESIZE 2>/dev/null || echo 4096; echo {MARK}; cat /proc/[0-9]*/stat 2>/dev/null"
+    );
+    let out = exec(&session.handle, &script).await?.stdout_or_err()?;
+    let now = Instant::now();
+    let parts: Vec<&str> = out.split(MARK).map(str::trim).collect();
+    let hz = parts.first().and_then(|v| v.parse().ok()).filter(|v| *v > 0).unwrap_or(100);
+    let page = parts.get(1).and_then(|v| v.parse().ok()).filter(|v| *v > 0).unwrap_or(4096);
+    Ok((now, hz, page, parse_proc_stats(parts.get(2).copied().unwrap_or(""))))
+}
+
+/// The busiest processes right now. The first call samples twice, one second
+/// apart; later calls compare with the previous call.
+#[tauri::command]
+pub async fn server_processes(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Processes> {
+    let session = sessions.get(&server_id, &user)?;
+    top_processes(&session).await
+}
+
+async fn top_processes(session: &Session) -> AppResult<Processes> {
+    let previous = session.last_procs.lock().unwrap().clone();
+    let previous = match previous {
+        Some(p) => p,
+        None => {
+            let (t, _, _, s) = sample_procs(session).await?;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            (t, s.into_iter().map(|(pid, (ticks, _, _))| (pid, ticks)).collect())
+        }
+    };
+    let (now, hz, page, current) = sample_procs(session).await?;
+    let secs = now.duration_since(previous.0).as_secs_f64().max(0.001);
+
+    let mut ranked: Vec<(u32, f64, u64, String)> = current
+        .iter()
+        .map(|(pid, (ticks, rss, comm))| {
+            // A pid that was not there before started during the interval.
+            let delta = ticks.saturating_sub(previous.1.get(pid).copied().unwrap_or(*ticks));
+            (*pid, 100.0 * delta as f64 / hz as f64 / secs, rss * page, comm.clone())
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(b.2.cmp(&a.2)));
+    // Take extra candidates: some are gone by the time details are read (the
+    // short-lived shells of this very sampling, for one).
+    ranked.truncate(TOP_N * 2);
+    *session.last_procs.lock().unwrap() = Some((now, current.iter().map(|(pid, (t, _, _))| (*pid, *t)).collect()));
+
+    // Details for the few rows shown: uid, command line, container.
+    let pids: Vec<String> = ranked.iter().map(|r| r.0.to_string()).collect();
+    let detail = format!(
+        "for p in {}; do echo \"@@P $p\"; awk '/^Uid:/{{print $2}}' /proc/$p/status 2>/dev/null; echo; tr '\\000' ' ' < /proc/$p/cmdline 2>/dev/null; echo; cat /proc/$p/cgroup 2>/dev/null | head -n 5 | tr '\\n' ' '; echo; done; echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --format '{{{{.ID}}}} {{{{.Names}}}}' 2>/dev/null",
+        pids.join(" ")
+    );
+    let out = exec(&session.handle, &detail).await?.stdout;
+    let parts: Vec<&str> = out.split(MARK).collect();
+    let passwd: HashMap<u32, String> = parts
+        .get(1)
+        .unwrap_or(&"")
+        .lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split(':').collect();
+            Some((f.get(2)?.parse().ok()?, f.first()?.to_string()))
+        })
+        .collect();
+    let names: HashMap<String, String> = parts
+        .get(2)
+        .unwrap_or(&"")
+        .lines()
+        .filter_map(|l| l.trim().split_once(' ').map(|(id, name)| (id.to_string(), name.to_string())))
+        .collect();
+    let mut details: HashMap<u32, (Option<u32>, String, Option<String>)> = HashMap::new();
+    for block in parts.first().unwrap_or(&"").split("@@P ").skip(1) {
+        let mut lines = block.lines();
+        let Some(pid) = lines.next().and_then(|l| l.trim().parse::<u32>().ok()) else { continue };
+        let uid = lines.next().and_then(|l| l.trim().parse().ok());
+        let _blank = lines.next();
+        let cmdline = lines.next().unwrap_or("").trim().to_string();
+        let _end = lines.next();
+        let cgroup = lines.next().unwrap_or("");
+        details.insert(pid, (uid, cmdline, container_id(cgroup)));
+    }
+
+    let rows = ranked
+        .into_iter()
+        // No uid means /proc/<pid> no longer existed: the process exited.
+        .filter_map(|(pid, cpu, rss, comm)| Some((pid, cpu, rss, comm, details.remove(&pid).filter(|d| d.0.is_some())?)))
+        .take(TOP_N)
+        .map(|(pid, cpu, rss, comm, (uid, cmdline, cid))| {
+            ProcessRow {
+                pid,
+                command: if cmdline.is_empty() { format!("[{comm}]") } else { cmdline },
+                user: uid.and_then(|u| passwd.get(&u).cloned()),
+                uid,
+                container: cid.map(|id| names.get(&id).cloned().unwrap_or_else(|| id[..12].to_string())),
+                cpu_percent: cpu,
+                rss,
+            }
+        })
+        .collect();
+    let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    Ok(Processes { at, rows })
+}
+
 /// Quote a value for a POSIX shell.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
@@ -548,10 +714,19 @@ fn shell_quote(s: &str) -> String {
 /// .command file so no Automation permission is needed. The command is built
 /// here with every argument quoted, never taken as a string from the UI.
 #[tauri::command]
-pub fn open_terminal(store: tauri::State<ServerStore>, server_id: String, user: String) -> AppResult<()> {
+pub fn open_terminal(store: tauri::State<ServerStore>, server_id: String, user: String, tool: Option<String>) -> AppResult<()> {
+    // Remote commands are fixed here; the UI only picks one by name.
+    let remote = match tool.as_deref() {
+        None => None,
+        Some("htop") => Some("command -v htop >/dev/null 2>&1 && exec htop || exec top"),
+        Some(_) => return Err(AppError::new("unknown_tool")),
+    };
     let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
     let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
     let mut args = vec!["ssh".to_string()];
+    if remote.is_some() {
+        args.push("-t".into());
+    }
     if server.port != 22 {
         args.push(format!("-p {}", server.port));
     }
@@ -559,6 +734,9 @@ pub fn open_terminal(store: tauri::State<ServerStore>, server_id: String, user: 
         args.push(format!("-i {}", shell_quote(&expand_tilde(path).to_string_lossy())));
     }
     args.push(shell_quote(&format!("{}@{}", account.user, server.host)));
+    if let Some(cmd) = remote {
+        args.push(shell_quote(cmd));
+    }
 
     let dir = std::env::temp_dir().join("portway");
     std::fs::create_dir_all(&dir)?;
@@ -606,9 +784,16 @@ mod tests {
         assert!(info.os.as_deref().unwrap().starts_with("Ubuntu 24.04"), "{:?}", info.os);
         assert_eq!(info.hostname, "pw-ubuntu");
 
-        let session = Session { handle, last: Mutex::new(None) };
+        let session = Session::new(handle);
         let (s, c, _) = sample(&session).await.unwrap();
         assert!(s.cores > 0 && s.mem_total > 0 && s.disk_total > 0 && c.cpu_total > 0);
+
+        let procs = top_processes(&session).await.unwrap();
+        assert!(!procs.rows.is_empty());
+        let sshd = procs.rows.iter().find(|r| r.command.contains("sshd")).expect("sshd among the top processes");
+        assert_eq!(sshd.user.as_deref(), Some("root"));
+        assert!(sshd.rss > 0);
+        assert!(procs.rows.iter().all(|r| r.container.is_none()), "no docker inside the test server");
 
         // A known host now connects without asking.
         assert!(matches!(open(&target(2201, "deploy"), Credential::Key(key.clone()), None).await.unwrap(), Opened::Ready(_)));
@@ -641,6 +826,25 @@ mod tests {
     fn quotes_for_shell() {
         assert_eq!(shell_quote("root@1.2.3.4"), "'root@1.2.3.4'");
         assert_eq!(shell_quote("a'b; rm -rf ~"), "'a'\\''b; rm -rf ~'");
+    }
+
+    #[test]
+    fn parses_proc_stat_lines() {
+        let text = "1 (systemd) S 0 1 1 0 -1 4194560 100 200 0 0 150 50 0 0 20 0 1 0 5 1000 300 18446744073709551615\n\
+1234 (node server.js) R 1 1234 1234 0 -1 0 0 0 0 0 900 100 0 0 20 0 11 0 99 5000 5120 0\n\
+77 (weird) name)) S 1 77 77 0 -1 0 0 0 0 0 7 3 0 0 20 0 1 0 9 100 10 0\n";
+        let m = parse_proc_stats(text);
+        assert_eq!(m[&1], (200, 300, "systemd".into()));
+        assert_eq!(m[&1234], (1000, 5120, "node server.js".into()));
+        assert_eq!(m[&77], (10, 10, "weird) name)".into()));
+    }
+
+    #[test]
+    fn finds_container_ids() {
+        let id = "a".repeat(64);
+        assert_eq!(container_id(&format!("0::/system.slice/docker-{id}.scope")), Some(id.clone()));
+        assert_eq!(container_id(&format!("12:cpu:/docker/{id}")), Some(id));
+        assert_eq!(container_id("0::/user.slice/user-1000.slice/session-3.scope"), None);
     }
 
     #[test]

@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useConnections } from '../../app/connections'
+import { useToast } from '../../components/toast'
+import { Button, cx } from '../../components/ui/primitives'
 import { StatStrip, StatStripSkeleton, type StatItem } from '../../components/ui/stat-strip'
-import { api, isAppError, type AppError, type Server, type Stats } from '../../lib/api'
+import { api, isAppError, type AppError, type Processes, type Server, type Stats } from '../../lib/api'
 import { formatBytes, formatDecimal, formatPercent, inUnit, unitName, unitOf } from './format'
 
 const POLL_MS = 5000
 
-/** Resource numbers polled from the server while the overview is open. */
-function useStats(serverId: string, user: string) {
+/** Poll `load` every 5 s while mounted. A closed session marks the connection
+ *  lost; other errors are shown and retried on the next tick. */
+function usePoll<T>(serverId: string, user: string, load: (serverId: string, user: string) => Promise<T>) {
   const { markLost } = useConnections()
-  const [stats, setStats] = useState<Stats | null>(null)
+  const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<AppError | null>(null)
   const [at, setAt] = useState<Date | null>(null)
 
@@ -18,9 +21,9 @@ function useStats(serverId: string, user: string) {
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
       try {
-        const s = await api.stats(serverId, user)
+        const d = await load(serverId, user)
         if (!alive) return
-        setStats(s)
+        setData(d)
         setError(null)
         setAt(new Date())
       } catch (e) {
@@ -39,9 +42,31 @@ function useStats(serverId: string, user: string) {
       alive = false
       clearTimeout(timer)
     }
-  }, [serverId, user, markLost])
+  }, [serverId, user, markLost, load])
 
-  return { stats, error, at }
+  return { data, error, at }
+}
+
+function Live({ ok, error, at }: { ok: boolean; error: AppError | null; at: Date | null }) {
+  return (
+    <span
+      className="inline-flex items-center gap-[5px] text-[11px] whitespace-nowrap text-muted"
+      title={at ? `Cập nhật lúc ${at.toLocaleTimeString('vi-VN')}` : undefined}
+    >
+      <span className={cx('size-1.5 rounded-full', error ? 'bg-warn' : ok ? 'bg-success' : 'bg-muted')} />
+      {error ? 'không đọc được, đang thử lại' : ok ? 'trực tiếp · 5 giây' : 'đang đọc…'}
+    </span>
+  )
+}
+
+function ErrorLine({ error }: { error: AppError | null }) {
+  if (!error) return null
+  return (
+    <span className="font-mono text-[11px] text-danger select-text">
+      {error.code}
+      {error.detail ? `: ${error.detail}` : ''}
+    </span>
+  )
 }
 
 function resourceItems(s: Stats): StatItem[] {
@@ -79,28 +104,102 @@ function resourceItems(s: Stats): StatItem[] {
   ]
 }
 
+const loadStats = (s: string, u: string) => api.stats(s, u)
+const loadProcesses = (s: string, u: string) => api.processes(s, u)
+
+function Resources({ server, user }: { server: Server; user: string }) {
+  const { data, error, at } = usePoll<Stats>(server.id, user, loadStats)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <span className="flex-1 text-[13px] font-semibold">Tài nguyên</span>
+        <Live ok={!!data} error={error} at={at} />
+      </div>
+      {data ? <StatStrip items={resourceItems(data)} /> : <StatStripSkeleton />}
+      <ErrorLine error={error} />
+    </div>
+  )
+}
+
+const PROC_COLS = 'minmax(140px,1.5fr) 96px 96px minmax(70px,1fr) 64px'
+
+const barColor = (v: number) => (v >= 85 ? 'var(--danger)' : v >= 70 ? 'var(--warn)' : 'var(--ink2)')
+
+function TopProcesses({ server, user }: { server: Server; user: string }) {
+  const { data, error, at } = usePoll<Processes>(server.id, user, loadProcesses)
+  const toast = useToast()
+  const snapAt = data ? new Date(data.at).toLocaleTimeString('vi-VN') : null
+
+  const openTop = () =>
+    api.openTerminal(server.id, user, 'htop').catch((e) => toast({ title: 'Không mở được Terminal', detail: isAppError(e) ? (e.detail ?? e.code) : String(e) }))
+
+  return (
+    <div className="flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-4">
+      <div className="flex items-start gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-[15px] font-semibold">Tiến trình dùng nhiều nhất</span>
+          <span className="text-[11px] text-muted">{snapAt ? `Ảnh chụp lúc ${snapAt}` : 'Đang đọc danh sách tiến trình…'}</span>
+        </div>
+        <Live ok={!!data} error={error} at={at} />
+      </div>
+
+      <div className="grid gap-3 px-0.5 text-[11px] text-muted" style={{ gridTemplateColumns: PROC_COLS }}>
+        <span>Tiến trình</span>
+        <span>User</span>
+        <span>Container</span>
+        <span>CPU (% hiện tại)</span>
+        <span className="text-right">RAM</span>
+      </div>
+
+      {data
+        ? data.rows.map((p) => (
+            <div key={p.pid} className="grid items-center gap-3 border-t border-line px-0.5 py-[5px]" style={{ gridTemplateColumns: PROC_COLS }}>
+              <span className="truncate font-mono text-[11.5px] select-text" title={`PID ${p.pid} · ${p.command}`}>
+                {p.command}
+              </span>
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate font-mono text-[11.5px] text-ink2">{p.user ?? p.uid ?? '—'}</span>
+                {!p.user && p.uid != null && <span className="text-[10.5px] text-muted">(container)</span>}
+              </span>
+              <span className="truncate text-[12px] text-ink2">{p.container ?? '—'}</span>
+              <span className="flex items-center gap-2">
+                <span className="block h-[5px] flex-1 overflow-hidden rounded-[3px] bg-sunken">
+                  <span
+                    className="block h-full transition-[width] duration-500"
+                    style={{ width: `${Math.min(100, p.cpuPercent)}%`, background: barColor(p.cpuPercent) }}
+                  />
+                </span>
+                <span className="num w-12 text-right">{formatDecimal(p.cpuPercent, 1)}%</span>
+              </span>
+              <span className="num text-right text-ink2">{formatBytes(p.rss)}</span>
+            </div>
+          ))
+        : Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="grid items-center gap-3 border-t border-line px-0.5 py-2" style={{ gridTemplateColumns: PROC_COLS }}>
+              {[70, 50, 40, 60, 40].map((w, j) => (
+                <span key={j} className="block h-2.5 rounded-md bg-sunken" style={{ width: `${w}%` }} />
+              ))}
+            </div>
+          ))}
+
+      <ErrorLine error={error} />
+      <div className="flex justify-end">
+        <Button variant="ghost" size="xs" onClick={openTop}>
+          htop trong Terminal
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 /** "Tổng quan" of a connected server. Sections are added one at a time, each
  *  backed by real data read over SSH. */
 export function Overview({ server, user }: { server: Server; user: string }) {
-  const { stats, error, at } = useStats(server.id, user)
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <span className="flex-1 text-[13px] font-semibold">Tài nguyên</span>
-          <span className="inline-flex items-center gap-[5px] text-[11px] whitespace-nowrap text-muted" title={at ? `Cập nhật lúc ${at.toLocaleTimeString('vi-VN')}` : undefined}>
-            <span className={`size-1.5 rounded-full ${error ? 'bg-warn' : stats ? 'bg-success' : 'bg-muted'}`} />
-            {error ? 'không đọc được, đang thử lại' : stats ? 'trực tiếp · 5 giây' : 'đang đọc…'}
-          </span>
-        </div>
-        {stats ? <StatStrip items={resourceItems(stats)} /> : <StatStripSkeleton />}
-        {error && (
-          <span className="font-mono text-[11px] text-danger select-text">
-            {error.code}
-            {error.detail ? `: ${error.detail}` : ''}
-          </span>
-        )}
+      <Resources server={server} user={user} />
+      <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))' }}>
+        <TopProcesses server={server} user={user} />
       </div>
     </div>
   )

@@ -70,6 +70,21 @@ export type ConnectResult =
   | { status: 'needPassword'; retry: boolean }
   | { status: 'needPassphrase'; keyPath: string; retry: boolean }
 
+export type ProcessRow = {
+  pid: number
+  /** Full command line, or `[name]` for kernel threads. */
+  command: string
+  /** From the server's /etc/passwd; null when the uid only exists in a container. */
+  user: string | null
+  uid: number | null
+  container: string | null
+  /** % of one core over the last interval, like top. */
+  cpuPercent: number
+  rss: number
+}
+
+export type Processes = { at: number; rows: ProcessRow[] }
+
 export type ConnectOptions = {
   password?: string
   passphrase?: string
@@ -111,7 +126,9 @@ type Api = {
   disconnect(serverId: string, user: string): Promise<void>
   disconnectAll(): Promise<void>
   stats(serverId: string, user: string): Promise<Stats>
-  openTerminal(serverId: string, user: string): Promise<void>
+  processes(serverId: string, user: string): Promise<Processes>
+  /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop). */
+  openTerminal(serverId: string, user: string, tool?: 'htop'): Promise<void>
 }
 
 const tauriApi: Api = {
@@ -127,7 +144,8 @@ const tauriApi: Api = {
   disconnect: (serverId, user) => invoke('ssh_disconnect', { serverId, user }),
   disconnectAll: () => invoke('ssh_disconnect_all'),
   stats: (serverId, user) => invoke('server_stats', { serverId, user }),
-  openTerminal: (serverId, user) => invoke('open_terminal', { serverId, user }),
+  processes: (serverId, user) => invoke('server_processes', { serverId, user }),
+  openTerminal: (serverId, user, tool) => invoke('open_terminal', { serverId, user, tool }),
 }
 
 /** Stand-in used when the UI runs in a plain browser (vite dev without Tauri):
@@ -222,6 +240,9 @@ function browserApi(): Api {
     async disconnect() {},
     async disconnectAll() {},
     async stats() {
+      return fail('needs_app')
+    },
+    async processes() {
       return fail('needs_app')
     },
     async openTerminal() {

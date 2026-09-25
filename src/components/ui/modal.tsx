@@ -24,7 +24,15 @@ export function Modal({
   footer?: ReactNode
 }) {
   return (
-    <Dialog.Root open={open} onOpenChange={(e) => !e.open && onClose()} lazyMount unmountOnExit>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(e) => !e.open && onClose()}
+      // Ark focuses the first focusable element (the close button) by default;
+      // prefer an input marked with autoFocus.
+      initialFocusEl={() => document.querySelector<HTMLElement>('[data-scope=dialog][data-part=content] [data-autofocus]')}
+      lazyMount
+      unmountOnExit
+    >
       <Portal>
         <Dialog.Backdrop className="fixed inset-0 z-40 bg-[var(--scrim)]" />
         <Dialog.Positioner className="fixed inset-0 z-40 flex items-start justify-center overflow-auto px-5 pt-[4vh] pb-6">

@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import { api, type ImportReport, type Server, type ServerInput, type SshKey } from '../lib/api'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { api, type GenerateKeyInput, type ImportReport, type Server, type ServerInput, type SshKey } from '../lib/api'
 
 type Servers = {
   servers: Server[]
@@ -11,7 +11,9 @@ type Servers = {
   save: (input: ServerInput) => Promise<Server>
   remove: (id: string) => Promise<void>
   importSshConfig: () => Promise<ImportReport>
-  reloadKeys: () => Promise<void>
+  /** Re-read ~/.ssh and report what changed since the last read. */
+  reloadKeys: () => Promise<{ total: number; added: SshKey[]; removed: SshKey[] }>
+  generateKey: (input: GenerateKeyInput) => Promise<SshKey>
 }
 
 const ServersContext = createContext<Servers | null>(null)
@@ -24,7 +26,24 @@ export function ServersProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const reloadKeys = useCallback(async () => setKeys(await api.listKeys()), [])
+  // Latest key list for reloadKeys, which compares against it after an await.
+  const keysRef = useRef(keys)
+  keysRef.current = keys
+
+  const reloadKeys = useCallback(async () => {
+    const next = await api.listKeys()
+    const prev = keysRef.current
+    const added = next.filter((k) => !prev.some((p) => p.path === k.path))
+    const removed = prev.filter((p) => !next.some((k) => k.path === p.path))
+    setKeys(next)
+    return { total: next.length, added, removed }
+  }, [])
+
+  const generateKey = async (input: GenerateKeyInput) => {
+    const key = await api.generateKey(input)
+    setKeys((list) => [...list, key].sort((a, b) => a.name.localeCompare(b.name)))
+    return key
+  }
 
   useEffect(() => {
     Promise.all([api.listServers(), api.listKeys()])
@@ -65,6 +84,7 @@ export function ServersProvider({ children }: { children: ReactNode }) {
         remove,
         importSshConfig,
         reloadKeys,
+        generateKey,
       }}
     >
       {children}

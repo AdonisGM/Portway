@@ -26,7 +26,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           className="fixed right-5 bottom-5 z-[70] flex max-w-[440px] flex-col gap-1.5 rounded-xl bg-tip-bg px-3.5 py-3 text-[12.5px] text-tip-fg shadow-pop"
         >
           <span className="font-semibold">{toast.title}</span>
-          {toast.detail && <span className="font-mono text-[11.5px] leading-normal break-all opacity-85">{toast.detail}</span>}
+          {toast.detail && <span className="font-mono text-[11.5px] leading-normal [overflow-wrap:anywhere] opacity-85">{toast.detail}</span>}
           {!!toast.actions?.length && (
             <div className="mt-0.5 flex gap-1.5">
               {toast.actions.map((a) => (

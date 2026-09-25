@@ -42,6 +42,7 @@ export function TextInput({
   onBlur,
   invalid,
   autoFocus,
+  type = 'text',
 }: {
   value: string
   onChange: (v: string) => void
@@ -52,14 +53,16 @@ export function TextInput({
   onBlur?: () => void
   invalid?: boolean
   autoFocus?: boolean
+  type?: 'text' | 'password'
 }) {
   return (
     <input
-      type="text"
+      type={type}
       value={value}
       onBlur={onBlur}
       placeholder={placeholder}
       autoFocus={autoFocus}
+      data-autofocus={autoFocus || undefined}
       spellCheck={false}
       autoCorrect="off"
       autoCapitalize="off"

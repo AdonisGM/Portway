@@ -45,6 +45,7 @@ mod macos {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             set_window_controls_visible,
             servers::servers_list,
@@ -52,6 +53,8 @@ pub fn run() {
             servers::server_delete,
             servers::servers_import_ssh_config,
             keys::ssh_keys_list,
+            keys::ssh_key_public,
+            keys::ssh_key_generate,
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;

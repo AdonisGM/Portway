@@ -28,6 +28,7 @@
   --color-tip-fg: var(--tip-fg);
 
   --font-sans: 'Inter Variable', Inter, system-ui, sans-serif;
+  --font-num: Roboto, system-ui, sans-serif;
   --font-mono: 'Roboto Mono', ui-monospace, monospace;
 
   --shadow-card: var(--shadow);
@@ -82,6 +83,12 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+}
+
+/* Every figure uses Roboto with tabular digits, as in HomeUI. */
+@utility num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Grain background: SVG fractal noise laid over the page at --grain opacity. */

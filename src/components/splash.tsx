@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { AdonisLockup, BUILD_DURATION_MS } from '@adonisgm/logo'
+import { setWindowControlsVisible } from '../lib/window'
 
 /** Splash shown on every app launch, modelled on home's: the logo builds once,
  *  holds for a beat, then fades out to reveal the UI.
  *
  *  It is removed at the later of two moments — the logo build finishing and the
  *  app being ready — plus a short hold. BUILD_DURATION_MS comes from the logo
- *  package so the timing stays in sync if the logo changes. */
+ *  package so the timing stays in sync if the logo changes.
+ *
+ *  The native traffic lights are hidden while it is up (Rust hides them before
+ *  the first frame; the mount effect covers a webview reload) and come back as
+ *  it starts to fade. */
 
 const FADE_MS = 650
 const HOLD_MS = 300
@@ -15,6 +20,8 @@ export function SplashScreen({ ready }: { ready: boolean }) {
   const [fading, setFading] = useState(false)
   const [gone, setGone] = useState(false)
   const startedAt = useRef(performance.now())
+
+  useEffect(() => setWindowControlsVisible(false), [])
 
   useEffect(() => {
     if (!ready) return
@@ -28,6 +35,7 @@ export function SplashScreen({ ready }: { ready: boolean }) {
 
   useEffect(() => {
     if (!fading) return
+    setWindowControlsVisible(true)
     const off = setTimeout(() => setGone(true), FADE_MS + 60)
     return () => clearTimeout(off)
   }, [fading])

@@ -2590,8 +2590,10 @@ dependencies = [
 
 [[package]]
 name = "portway"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
+ "objc2",
+ "objc2-app-kit",
  "serde",
  "serde_json",
  "tauri",

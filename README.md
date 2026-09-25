@@ -11,9 +11,10 @@
 ## Phát triển
 
 ```sh
-pnpm install
-pnpm tauri dev
+./scripts/dev.sh
 ```
+
+Script tự nạp Rust vào PATH, cài dependency khi lockfile thay đổi, báo lỗi nếu cổng 1420 đang bị chiếm, rồi chạy `pnpm tauri dev`.
 
 ## Build
 

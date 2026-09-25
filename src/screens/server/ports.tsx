@@ -2,6 +2,7 @@ import { AlertTriangle, Info, Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { api, type Ports, type PortWarning, type Server } from '../../lib/api'
 import { ErrorLine, RefreshControl, useRefreshed } from './refresh'
+import { UseSudoButton } from './sudo'
 
 const loadPorts = (s: string, u: string) => api.ports(s, u)
 
@@ -54,13 +55,14 @@ function Tile({ label, children, title }: { label: string; children: ReactNode; 
   )
 }
 
-function FirewallTile({ ports }: { ports: Ports }) {
+function FirewallTile({ ports, server, user }: { ports: Ports; server: Server; user: string }) {
   const fw = ports.firewall
   if (fw.kind === 'needsRoot')
     return (
       <span className="flex items-center gap-1.5 pt-[3px] text-[12px] text-muted">
         <Lock size={13} strokeWidth={1.9} />
-        Cần root để đọc rule
+        <span className="flex-1">Cần root để đọc rule</span>
+        <UseSudoButton server={server} user={user} />
       </span>
     )
   if (fw.kind === 'error')
@@ -82,7 +84,7 @@ function FirewallTile({ ports }: { ports: Ports }) {
 
 /** "Cổng mạng & firewall": what listens, what UFW allows, and what to worry about. */
 export function PortsCard({ server, user }: { server: Server; user: string }) {
-  const { data, error, at, busy, refresh } = useRefreshed<Ports>(server.id, user, loadPorts)
+  const { data, error, at, busy, refresh, live } = useRefreshed<Ports>(server.id, user, loadPorts)
   const publicCount = data?.listening.filter((l) => l.scope === 'public').length ?? 0
   const listTitle = data?.listening
     .map((l) => `${l.port}/${l.proto} · ${hostPort(l.bind, l.port)}${l.container ? ` · ${l.container}` : l.process ? ` · ${l.process}` : ''}`)
@@ -92,7 +94,7 @@ export function PortsCard({ server, user }: { server: Server; user: string }) {
     <div className="flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start gap-2">
         <span className="flex-1 text-[15px] font-semibold">Cổng mạng & firewall</span>
-        <RefreshControl at={at} busy={busy} error={error} onRefresh={refresh} />
+        <RefreshControl at={at} busy={busy} error={error} onRefresh={refresh} live={live} />
       </div>
       <ErrorLine error={error} />
 
@@ -106,7 +108,7 @@ export function PortsCard({ server, user }: { server: Server; user: string }) {
               </span>
             </Tile>
             <Tile label="Firewall (UFW) cho phép">
-              <FirewallTile ports={data} />
+              <FirewallTile ports={data} server={server} user={user} />
             </Tile>
           </div>
 
@@ -125,7 +127,7 @@ export function PortsCard({ server, user }: { server: Server; user: string }) {
           })}
 
           {!data.processesComplete && (
-            <span className="text-[11px] text-muted">Đang xem bằng {user}, nên không biết tiến trình nào giữ các cổng của user khác.</span>
+            <span className="text-[11px] text-muted">Đang xem bằng {user} không có sudo, nên không biết tiến trình nào giữ các cổng của user khác.</span>
           )}
         </>
       ) : (

@@ -1,3 +1,4 @@
+mod audit;
 mod disks;
 mod error;
 mod keys;
@@ -60,7 +61,11 @@ pub fn run() {
             keys::ssh_key_public,
             keys::ssh_key_generate,
             ssh::ssh_connect,
+            ssh::ssh_reconnect,
             ssh::ssh_disconnect,
+            ssh::ssh_sudo,
+            ssh::ssh_sudo_off,
+            audit::audit_list,
             ssh::ssh_disconnect_all,
             ssh::ssh_forget_secret,
             ssh::server_stats,
@@ -77,6 +82,7 @@ pub fn run() {
                 .map_err(|e| format!("cannot load servers.json: {} {}", e.code, e.detail.unwrap_or_default()))?;
             app.manage(store);
             app.manage(ssh::Sessions::default());
+            app.manage(audit::AuditLog::load(data_dir.join("audit.jsonl")));
 
             // Hidden from the first frame; the splash shows them again when it fades.
             if let Some(window) = app.get_webview_window("main") {

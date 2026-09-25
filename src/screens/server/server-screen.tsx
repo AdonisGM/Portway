@@ -11,6 +11,7 @@ import { hostPort, sshCommand } from '../servers/format'
 import { ConnectPrompt } from './connect-prompt'
 import { connectError, formatUptime } from './format'
 import { Overview } from './overview'
+import { SudoBanner, SudoPrompt } from './sudo'
 
 /** One open session: header, connection state, then the selected module. */
 export function ServerScreen({ serverId, user, module }: { serverId: string; user: string; module: ModuleId }) {
@@ -32,14 +33,23 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
       {conn?.status === 'prompt' && (
         <ConnectPrompt server={server} user={user} prompt={conn.prompt} onCancel={() => conns.markLost(serverId, user, { code: 'cancelled' })} />
       )}
-      {conn?.status === 'connected' &&
-        (module === 'overview' ? (
-          <Overview server={server} user={user} />
-        ) : (
-          <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">
-            Mục {MODULE_LABELS[module]} sẽ làm ở bước sau
+      {(conn?.status === 'connected' || conn?.status === 'reconnecting') && (
+        <>
+          {conn.status === 'reconnecting' && <Reconnecting server={server} user={user} conn={conn} />}
+          <SudoBanner server={server} user={user} sudo={conn.sudo} />
+          {/* Last numbers stay on screen, dimmed, while reconnecting. */}
+          <div className="flex flex-col gap-4 transition-opacity duration-200" style={{ opacity: conn.status === 'reconnecting' ? 0.55 : 1 }}>
+            {module === 'overview' ? (
+              <Overview server={server} user={user} />
+            ) : (
+              <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">
+                Mục {MODULE_LABELS[module]} sẽ làm ở bước sau
+              </div>
+            )}
           </div>
-        ))}
+        </>
+      )}
+      {conns.sudoAsked(serverId, user) && conn?.status === 'connected' && <SudoPrompt server={server} user={user} />}
     </div>
   )
 }
@@ -52,6 +62,8 @@ function ServerHeader({ server, user, conn }: { server: Server; user: string; co
   const status =
     conn?.status === 'connected'
       ? { label: 'Đã kết nối', tone: TONES.success }
+      : conn?.status === 'reconnecting'
+        ? { label: 'Đang kết nối lại', tone: TONES.warn }
       : conn?.status === 'connecting' || conn?.status === 'prompt'
         ? { label: 'Đang kết nối', tone: TONES.warn }
         : !conn || conn.error.code === 'cancelled'
@@ -98,6 +110,28 @@ function ServerHeader({ server, user, conn }: { server: Server; user: string; co
         onClick={() => run(() => api.openTerminal(server.id, user).then(() => toast({ title: 'Đã mở Terminal', detail: command })), 'Không mở được Terminal')}
       >
         Mở Terminal
+      </Button>
+    </div>
+  )
+}
+
+function Reconnecting({ server, user, conn }: { server: Server; user: string; conn: Extract<Connection, { status: 'reconnecting' }> }) {
+  const conns = useConnections()
+  const lost = new Date(conn.lostAt).toLocaleTimeString('vi-VN')
+  return (
+    <div className="flex items-center gap-3 rounded-[10px] border border-line bg-warn-soft px-3.5 py-2.5">
+      <span className="size-2 flex-none rounded-full bg-warn" />
+      <div className="flex flex-1 flex-col gap-0.5">
+        <span className="font-semibold text-ink">
+          Mất kết nối tới {server.name}, đang kết nối lại{conn.attempt > 0 ? ` (lần ${conn.attempt})` : ''}…
+        </span>
+        <span className="text-[11.5px] text-ink2">
+          Số liệu bên dưới là bản cuối lúc {lost}, chưa được cập nhật.
+          {conn.error.detail && <span className="font-mono"> {conn.error.detail}</span>}
+        </span>
+      </div>
+      <Button size="xs" onClick={() => conns.retryNow(server.id, user)}>
+        Thử ngay
       </Button>
     </div>
   )

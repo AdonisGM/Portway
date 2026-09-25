@@ -138,6 +138,20 @@ export type DockerDisk =
   | { kind: 'daemonDown'; detail: string }
   | { kind: 'ok'; rows: DockerUsage[] }
 
+export type SudoResult = { status: 'enabled' } | { status: 'needPassword'; retry: boolean } | { status: 'notAllowed'; detail: string }
+
+export type AuditEntry = {
+  id: string
+  at: number
+  serverId: string
+  user: string
+  /** connect, reconnect, disconnect, trustHostKey, openTerminal, sudoOn, sudoOff */
+  action: string
+  command: string
+  ok: boolean
+  detail?: string
+}
+
 export type ConnectOptions = {
   password?: string
   passphrase?: string
@@ -176,7 +190,12 @@ type Api = {
   generateKey(input: GenerateKeyInput): Promise<SshKey>
   setPinned(id: string, pinned: boolean): Promise<Server>
   connect(serverId: string, user: string, opts?: ConnectOptions): Promise<ConnectResult>
+  /** Reopen a dropped session with the credential it was opened with. */
+  reconnect(serverId: string, user: string): Promise<ConnectResult>
   disconnect(serverId: string, user: string): Promise<void>
+  sudo(serverId: string, user: string, password?: string): Promise<SudoResult>
+  sudoOff(serverId: string, user: string): Promise<void>
+  auditList(serverId: string | null, limit: number): Promise<AuditEntry[]>
   disconnectAll(): Promise<void>
   stats(serverId: string, user: string): Promise<Stats>
   processes(serverId: string, user: string): Promise<Processes>
@@ -199,7 +218,11 @@ const tauriApi: Api = {
   generateKey: (input) => invoke('ssh_key_generate', { input }),
   setPinned: (id, pinned) => invoke('server_set_pinned', { id, pinned }),
   connect: (serverId, user, opts = {}) => invoke('ssh_connect', { serverId, user, ...opts }),
+  reconnect: (serverId, user) => invoke('ssh_reconnect', { serverId, user }),
   disconnect: (serverId, user) => invoke('ssh_disconnect', { serverId, user }),
+  sudo: (serverId, user, password) => invoke('ssh_sudo', { serverId, user, password }),
+  sudoOff: (serverId, user) => invoke('ssh_sudo_off', { serverId, user }),
+  auditList: (serverId, limit) => invoke('audit_list', { serverId, limit }),
   disconnectAll: () => invoke('ssh_disconnect_all'),
   stats: (serverId, user) => invoke('server_stats', { serverId, user }),
   processes: (serverId, user) => invoke('server_processes', { serverId, user }),
@@ -299,7 +322,17 @@ function browserApi(): Api {
     async connect() {
       return fail('needs_app')
     },
+    async reconnect() {
+      return fail('needs_app')
+    },
     async disconnect() {},
+    async sudo() {
+      return fail('needs_app')
+    },
+    async sudoOff() {},
+    async auditList() {
+      return []
+    },
     async disconnectAll() {},
     async stats() {
       return fail('needs_app')

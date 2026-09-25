@@ -161,7 +161,7 @@ function ServerMenu() {
  *  connecting or waiting for input, red when one failed. */
 function hostDot(statuses: Array<string | undefined>) {
   if (statuses.some((s) => s === 'failed' || s === undefined)) return 'var(--danger)'
-  if (statuses.some((s) => s === 'connecting' || s === 'prompt')) return 'var(--warn)'
+  if (statuses.some((s) => s === 'connecting' || s === 'prompt' || s === 'reconnecting')) return 'var(--warn)'
   return 'var(--success)'
 }
 

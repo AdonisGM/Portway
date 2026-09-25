@@ -3992,7 +3992,7 @@ dependencies = [
 
 [[package]]
 name = "portway"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "keyring",
  "objc2",

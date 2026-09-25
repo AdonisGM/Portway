@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use crate::error::{AppError, AppResult};
 use crate::paths::{expand_tilde, ssh_dir};
+use crate::audit::AuditLog;
 use crate::servers::{Auth, ServerStore};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -94,11 +95,22 @@ pub enum ConnectResult {
     NeedPassphrase { key_path: String, retry: bool },
 }
 
+/// How sudo works for a session, once the user turned it on.
+#[derive(Clone)]
+enum SudoMode {
+    /// sudo needs no password (NOPASSWD in sudoers).
+    NoPassword,
+    /// The user's sudo password, kept in memory for this session only.
+    Password(String),
+}
+
 struct Session {
     handle: Handle<Client>,
+    user: String,
     /// Limits channels open at once. OpenSSH allows 10 per connection
     /// (MaxSessions); the overview alone reads six things in parallel.
     channels: tokio::sync::Semaphore,
+    sudo: Mutex<Option<SudoMode>>,
     /// Previous counters, to turn totals into CPU % and network rates.
     last: Mutex<Option<(Instant, Counters)>>,
     /// Previous CPU ticks per pid, for per-process CPU %.
@@ -106,14 +118,29 @@ struct Session {
 }
 
 impl Session {
-    fn new(handle: Handle<Client>) -> Self {
-        Self { handle, channels: tokio::sync::Semaphore::new(CHANNELS_PER_SESSION), last: Mutex::new(None), last_procs: Mutex::new(None) }
+    fn new(handle: Handle<Client>, user: &str) -> Self {
+        Self {
+            handle,
+            user: user.to_string(),
+            channels: tokio::sync::Semaphore::new(CHANNELS_PER_SESSION),
+            sudo: Mutex::new(None),
+            last: Mutex::new(None),
+            last_procs: Mutex::new(None),
+        }
     }
+}
+
+/// How a session was opened, kept so it can be reopened after it drops.
+#[derive(Clone)]
+struct Saved {
+    target: Target,
+    credential: Credential,
 }
 
 #[derive(Default)]
 pub struct Sessions {
     map: Mutex<HashMap<String, Arc<Session>>>,
+    saved: Mutex<HashMap<String, Saved>>,
 }
 
 fn session_key(server_id: &str, user: &str) -> String {
@@ -155,7 +182,7 @@ fn map_connect_error(e: russh::Error, host: &str, port: u16) -> AppError {
     }
 }
 
-
+#[derive(Clone)]
 pub struct Target {
     pub host: String,
     pub port: u16,
@@ -163,6 +190,7 @@ pub struct Target {
     pub known_hosts: PathBuf,
 }
 
+#[derive(Clone)]
 pub enum Credential {
     Key(Arc<keys::PrivateKey>),
     Password(String),
@@ -229,11 +257,29 @@ async fn open(target: &Target, credential: Credential, trust: Option<String>) ->
     Ok(Opened::Ready(handle))
 }
 
+/// The ssh command line for an account, as shown to the user (not shell-quoted).
+fn display_ssh_command(target: &Target, key_path: Option<&str>) -> String {
+    let mut parts = vec!["ssh".to_string()];
+    if target.port != 22 {
+        parts.push(format!("-p {}", target.port));
+    }
+    if let Some(k) = key_path {
+        parts.push(format!("-i {k}"));
+    }
+    parts.push(format!("{}@{}", target.user, target.host));
+    parts.join(" ")
+}
+
+fn error_text(e: &AppError) -> String {
+    e.detail.clone().unwrap_or_else(|| e.code.to_string())
+}
+
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn ssh_connect(
     store: tauri::State<'_, ServerStore>,
     sessions: tauri::State<'_, Sessions>,
+    audit: tauri::State<'_, AuditLog>,
     server_id: String,
     user: String,
     password: Option<String>,
@@ -247,6 +293,10 @@ pub async fn ssh_connect(
 
     // Load the key before connecting, so a missing or encrypted key is reported
     // without touching the network.
+    let key_path = match &account.auth {
+        Auth::Key { path } => Some(path.clone()),
+        Auth::Password => None,
+    };
     let key = match &account.auth {
         Auth::Key { path } => {
             let file = expand_tilde(path);
@@ -268,14 +318,13 @@ pub async fn ssh_connect(
                 Err(keys::Error::KeyIsEncrypted) => {
                     return Ok(ConnectResult::NeedPassphrase { key_path: path.clone(), retry: false });
                 }
-                Err(e) if attempt.is_some() => {
+                Err(_) if attempt.is_some() => {
                     // Wrong passphrase: forget a stored one so it is not retried forever.
                     if passphrase.is_none() {
                         if let Some(entry) = keychain(&passphrase_account(path)) {
                             let _ = entry.delete_credential();
                         }
                     }
-                    let _ = e;
                     return Ok(ConnectResult::NeedPassphrase { key_path: path.clone(), retry: true });
                 }
                 Err(e) => return Err(AppError::detail("key_unreadable", e)),
@@ -300,10 +349,17 @@ pub async fn ssh_connect(
         (None, None) => unreachable!("either a key or a password is set above"),
     };
     let target = Target { host: server.host.clone(), port: server.port, user: user.clone(), known_hosts: ssh_dir().join("known_hosts") };
-    let handle = match open(&target, credential, trust_fingerprint).await? {
-        Opened::Ready(h) => h,
-        Opened::HostKey(issue) => return Ok(ConnectResult::HostKey { issue }),
-        Opened::Rejected => {
+    let command = display_ssh_command(&target, key_path.as_deref());
+    let trusted = trust_fingerprint.clone();
+    let handle = match open(&target, credential.clone(), trust_fingerprint).await {
+        Err(e) => {
+            audit.record(&server_id, &user, "connect", &command, false, Some(error_text(&e)));
+            return Err(e);
+        }
+        Ok(Opened::Ready(h)) => h,
+        Ok(Opened::HostKey(issue)) => return Ok(ConnectResult::HostKey { issue }),
+        Ok(Opened::Rejected) => {
+            audit.record(&server_id, &user, "connect", &command, false, Some("Permission denied".into()));
             if key.is_none() {
                 // Drop a stored password the server no longer accepts.
                 if password.is_none() {
@@ -321,21 +377,76 @@ pub async fn ssh_connect(
             let _ = entry.set_password(&p);
         }
     }
+    if let Some(fp) = trusted {
+        let host = if server.port == 22 { server.host.clone() } else { format!("[{}]:{}", server.host, server.port) };
+        audit.record(&server_id, &user, "trustHostKey", format!("~/.ssh/known_hosts += {host} {fp}"), true, None);
+    }
 
-    let session = Arc::new(Session::new(handle));
+    let session = Arc::new(Session::new(handle, &user));
     let info = read_host_info(&session).await?;
     if let Some(os) = &info.os {
         store.set_os(&server_id, os)?;
     }
-    sessions.map.lock().unwrap().insert(session_key(&server_id, &user), session);
+    audit.record(&server_id, &user, "connect", &command, true, Some(format!("{} · {}", info.os.as_deref().unwrap_or("?"), info.kernel)));
+    let key = session_key(&server_id, &user);
+    sessions.saved.lock().unwrap().insert(key.clone(), Saved { target, credential });
+    sessions.map.lock().unwrap().insert(key, session);
+    Ok(ConnectResult::Connected { info })
+}
+
+/// Reopen a session that dropped, with the credential it was opened with.
+/// Keeps its sudo setting.
+#[tauri::command]
+pub async fn ssh_reconnect(
+    store: tauri::State<'_, ServerStore>,
+    sessions: tauri::State<'_, Sessions>,
+    audit: tauri::State<'_, AuditLog>,
+    server_id: String,
+    user: String,
+) -> AppResult<ConnectResult> {
+    let key = session_key(&server_id, &user);
+    let saved = sessions.saved.lock().unwrap().get(&key).cloned().ok_or_else(|| AppError::new("not_connected"))?;
+    let sudo = sessions.map.lock().unwrap().get(&key).and_then(|s| s.sudo.lock().unwrap().clone());
+    let command = display_ssh_command(&saved.target, None);
+    let handle = match open(&saved.target, saved.credential.clone(), None).await {
+        Err(e) => {
+            audit.record(&server_id, &user, "reconnect", &command, false, Some(error_text(&e)));
+            return Err(e);
+        }
+        Ok(Opened::HostKey(issue)) => {
+            audit.record(&server_id, &user, "reconnect", &command, false, Some("Khoá máy chủ khác với lần kết nối trước".into()));
+            return Ok(ConnectResult::HostKey { issue });
+        }
+        Ok(Opened::Rejected) => {
+            audit.record(&server_id, &user, "reconnect", &command, false, Some("Permission denied".into()));
+            return Err(AppError::detail("auth_failed", format!("{user}@{}: Permission denied", saved.target.host)));
+        }
+        Ok(Opened::Ready(h)) => h,
+    };
+    let session = Arc::new(Session::new(handle, &user));
+    *session.sudo.lock().unwrap() = sudo;
+    let info = read_host_info(&session).await?;
+    if let Some(os) = &info.os {
+        store.set_os(&server_id, os)?;
+    }
+    audit.record(&server_id, &user, "reconnect", &command, true, None);
+    sessions.map.lock().unwrap().insert(key, session);
     Ok(ConnectResult::Connected { info })
 }
 
 #[tauri::command]
-pub async fn ssh_disconnect(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<()> {
-    let session = sessions.map.lock().unwrap().remove(&session_key(&server_id, &user));
+pub async fn ssh_disconnect(
+    sessions: tauri::State<'_, Sessions>,
+    audit: tauri::State<'_, AuditLog>,
+    server_id: String,
+    user: String,
+) -> AppResult<()> {
+    let key = session_key(&server_id, &user);
+    sessions.saved.lock().unwrap().remove(&key);
+    let session = sessions.map.lock().unwrap().remove(&key);
     if let Some(s) = session {
         let _ = s.handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+        audit.record(&server_id, &user, "disconnect", "exit", true, None);
     }
     Ok(())
 }
@@ -344,6 +455,7 @@ pub async fn ssh_disconnect(sessions: tauri::State<'_, Sessions>, server_id: Str
 /// webview no longer knows about sessions opened before.
 #[tauri::command]
 pub async fn ssh_disconnect_all(sessions: tauri::State<'_, Sessions>) -> AppResult<()> {
+    sessions.saved.lock().unwrap().clear();
     let all: Vec<Arc<Session>> = sessions.map.lock().unwrap().drain().map(|(_, s)| s).collect();
     for s in all {
         let _ = s.handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
@@ -361,6 +473,70 @@ pub fn ssh_forget_secret(server_id: String, user: String, key_path: Option<Strin
     if let Some(e) = keychain(&account) {
         let _ = e.delete_credential();
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SudoResult {
+    Enabled,
+    /// `retry` when the last password was wrong.
+    NeedPassword { retry: bool },
+    /// The user may not use sudo (not in sudoers, sudo missing…).
+    NotAllowed { detail: String },
+}
+
+fn sudo_refused(stderr: &str) -> bool {
+    ["not in the sudoers", "may not run sudo", "is not allowed to", "sudo: not found", "command not found"].iter().any(|m| stderr.contains(m))
+}
+
+/// Turn on sudo for a session: privileged reads (UFW, Docker, other users'
+/// processes) then run through sudo. The password stays in memory only.
+#[tauri::command]
+pub async fn ssh_sudo(
+    sessions: tauri::State<'_, Sessions>,
+    audit: tauri::State<'_, AuditLog>,
+    server_id: String,
+    user: String,
+    password: Option<String>,
+) -> AppResult<SudoResult> {
+    let session = sessions.get(&server_id, &user)?;
+    if session.user == "root" {
+        return Ok(SudoResult::Enabled);
+    }
+    let probe = run_channel(&session, "sudo -n true", None, EXEC_TIMEOUT).await?;
+    if probe.code == Some(0) {
+        *session.sudo.lock().unwrap() = Some(SudoMode::NoPassword);
+        audit.record(&server_id, &user, "sudoOn", "sudo -n true", true, Some("NOPASSWD".into()));
+        return Ok(SudoResult::Enabled);
+    }
+    if sudo_refused(&probe.stderr) {
+        audit.record(&server_id, &user, "sudoOn", "sudo -n true", false, Some(probe.stderr.trim().to_string()));
+        return Ok(SudoResult::NotAllowed { detail: probe.stderr.trim().to_string() });
+    }
+    let Some(pw) = password.filter(|p| !p.is_empty()) else {
+        return Ok(SudoResult::NeedPassword { retry: false });
+    };
+    // -k: ignore a cached timestamp so the password is really checked.
+    let check = run_channel(&session, "sudo -S -k -p '' true", Some(format!("{pw}\n")), EXEC_TIMEOUT).await?;
+    if check.code == Some(0) {
+        *session.sudo.lock().unwrap() = Some(SudoMode::Password(pw));
+        audit.record(&server_id, &user, "sudoOn", "sudo -v", true, None);
+        return Ok(SudoResult::Enabled);
+    }
+    audit.record(&server_id, &user, "sudoOn", "sudo -v", false, Some(check.stderr.trim().to_string()));
+    if sudo_refused(&check.stderr) {
+        return Ok(SudoResult::NotAllowed { detail: check.stderr.trim().to_string() });
+    }
+    Ok(SudoResult::NeedPassword { retry: true })
+}
+
+#[tauri::command]
+pub fn ssh_sudo_off(sessions: tauri::State<'_, Sessions>, audit: tauri::State<'_, AuditLog>, server_id: String, user: String) -> AppResult<()> {
+    let session = sessions.get(&server_id, &user)?;
+    if session.sudo.lock().unwrap().take().is_some() {
+        audit.record(&server_id, &user, "sudoOff", "sudo -k", true, None);
+    }
+    Ok(())
 }
 
 pub struct ExecOutput {
@@ -382,7 +558,12 @@ impl ExecOutput {
 
 /// Run a script in a new channel and collect its output, with the default timeout.
 async fn exec(session: &Session, command: &str) -> AppResult<ExecOutput> {
-    exec_with(session, command, EXEC_TIMEOUT).await
+    exec_with(session, command, EXEC_TIMEOUT, false).await
+}
+
+/// Like `exec`, but through sudo when the user turned it on for this session.
+async fn exec_priv(session: &Session, command: &str, timeout: Duration) -> AppResult<ExecOutput> {
+    exec_with(session, command, timeout, true).await
 }
 
 /// Run a script on the server.
@@ -392,18 +573,35 @@ async fn exec(session: &Session, command: &str) -> AppResult<ExecOutput> {
 /// (the process list) cannot be confused by another Portway script running at
 /// the same time. Everything runs with PORTWAY_PROBE=1 in its environment, so
 /// Portway's own commands can be left out of the process list.
-async fn exec_with(session: &Session, command: &str, timeout: Duration) -> AppResult<ExecOutput> {
+async fn exec_with(session: &Session, command: &str, timeout: Duration, privileged: bool) -> AppResult<ExecOutput> {
+    let token = format!("@@PW{}@@", uuid::Uuid::new_v4().simple());
+    let inner = format!("env PORTWAY_PROBE=1 sh -c {}", shell_quote(&command.replace(MARK, &token)));
+    let sudo = if privileged && session.user != "root" { session.sudo.lock().unwrap().clone() } else { None };
+    let (line, stdin) = match sudo {
+        None => (inner, None),
+        Some(SudoMode::NoPassword) => (format!("sudo -n {inner}"), None),
+        Some(SudoMode::Password(p)) => (format!("sudo -S -p '' {inner}"), Some(format!("{p}\n"))),
+    };
+    let mut out = run_channel(session, &line, stdin, timeout).await?;
+    out.stdout = out.stdout.replace(&token, MARK);
+    Ok(out)
+}
+
+/// Open a channel, run `line` as is, optionally feed stdin, collect the output.
+async fn run_channel(session: &Session, line: &str, stdin: Option<String>, timeout: Duration) -> AppResult<ExecOutput> {
     let handle = &session.handle;
     // Waiting for a free channel counts towards the timeout too.
     let _permit = tokio::time::timeout(timeout, session.channels.acquire())
         .await
         .map_err(|_| AppError::new("exec_timeout"))?
         .map_err(|e| AppError::detail("ssh", e))?;
-    let token = format!("@@PW{}@@", uuid::Uuid::new_v4().simple());
-    let wrapped = format!("env PORTWAY_PROBE=1 sh -c {}", shell_quote(&command.replace(MARK, &token)));
     let run = async {
         let mut channel = handle.channel_open_session().await?;
-        channel.exec(true, wrapped.as_str()).await?;
+        channel.exec(true, line).await?;
+        if let Some(input) = stdin {
+            channel.data(input.as_bytes()).await?;
+            channel.eof().await?;
+        }
         let (mut out, mut err, mut code) = (Vec::new(), Vec::new(), None);
         while let Some(msg) = channel.wait().await {
             match msg {
@@ -414,7 +612,7 @@ async fn exec_with(session: &Session, command: &str, timeout: Duration) -> AppRe
             }
         }
         Ok::<_, russh::Error>(ExecOutput {
-            stdout: String::from_utf8_lossy(&out).replace(&token, MARK),
+            stdout: String::from_utf8_lossy(&out).into_owned(),
             stderr: String::from_utf8_lossy(&err).into_owned(),
             code,
         })
@@ -600,8 +798,8 @@ pub struct Processes {
 
 const TOP_N: usize = 6;
 
-/// `pid -> (utime + stime, rss pages, comm)` from concatenated /proc/<pid>/stat.
-fn parse_proc_stats(text: &str) -> HashMap<u32, (u64, u64, String)> {
+/// `pid -> (utime + stime, rss pages, comm, ppid)` from concatenated /proc/<pid>/stat.
+fn parse_proc_stats(text: &str) -> HashMap<u32, (u64, u64, String, u32)> {
     let mut out = HashMap::new();
     for line in text.lines() {
         // "pid (comm) state …": comm may contain spaces and parentheses.
@@ -609,9 +807,9 @@ fn parse_proc_stats(text: &str) -> HashMap<u32, (u64, u64, String)> {
         let Ok(pid) = line[..open].trim().parse::<u32>() else { continue };
         let comm = line[open + 1..close].to_string();
         let f: Vec<&str> = line[close + 1..].split_whitespace().collect();
-        // f[0] is field 3 (state); utime is field 14, stime 15, rss 24.
+        // f[0] is field 3 (state); ppid is field 4, utime 14, stime 15, rss 24.
         let num = |i: usize| f.get(i).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-        out.insert(pid, (num(11) + num(12), num(21), comm));
+        out.insert(pid, (num(11) + num(12), num(21), comm, num(1) as u32));
     }
     out
 }
@@ -626,25 +824,48 @@ fn container_id(cgroup: &str) -> Option<String> {
     })
 }
 
-/// `pid -> (uid, command line, container id)` from the per-pid detail lines.
-/// Portway's own probes and processes that exited come back without a uid.
-fn parse_proc_details(section: &str) -> HashMap<u32, (Option<u32>, String, Option<String>)> {
+/// What the detail pass learnt about one pid.
+#[derive(Debug, PartialEq)]
+enum ProcDetail {
+    /// One of Portway's own probes (marked by PORTWAY_PROBE=1).
+    Probe,
+    Process { uid: Option<u32>, cmdline: String, container: Option<String> },
+}
+
+/// Per-pid detail lines. Pids that exited in the meantime are absent.
+fn parse_proc_details(section: &str) -> HashMap<u32, ProcDetail> {
     section
         .lines()
         .filter_map(|l| {
             let f: Vec<&str> = l.strip_prefix("@@P ")?.splitn(4, '\t').collect();
             let pid = f.first()?.trim().parse().ok()?;
             if f.get(1) == Some(&"probe") {
-                return Some((pid, (None, String::new(), None)));
+                return Some((pid, ProcDetail::Probe));
             }
-            let uid = f.get(1).and_then(|u| u.trim().parse().ok());
+            let uid: Option<u32> = f.get(1).and_then(|u| u.trim().parse().ok());
+            // No uid: /proc/<pid> was gone, the process exited.
+            uid?;
             let cmdline = f.get(2).map(|c| c.trim().to_string()).unwrap_or_default();
-            Some((pid, (uid, cmdline, f.get(3).and_then(|g| container_id(g)))))
+            Some((pid, ProcDetail::Process { uid, cmdline, container: f.get(3).and_then(|g| container_id(g)) }))
         })
         .collect()
 }
 
-async fn sample_procs(session: &Session) -> AppResult<(Instant, u64, u64, HashMap<u32, (u64, u64, String)>)> {
+/// A pid and its ancestors (parent first), from the ppid column of /proc/<pid>/stat.
+fn ancestry(pid: u32, ppids: &HashMap<u32, u32>) -> Vec<u32> {
+    let mut chain = vec![pid];
+    let mut cur = pid;
+    while let Some(&parent) = ppids.get(&cur) {
+        if parent <= 1 || chain.contains(&parent) || chain.len() > 32 {
+            break;
+        }
+        chain.push(parent);
+        cur = parent;
+    }
+    chain
+}
+
+async fn sample_procs(session: &Session) -> AppResult<(Instant, u64, u64, HashMap<u32, (u64, u64, String, u32)>)> {
     let script = format!(
         "getconf CLK_TCK 2>/dev/null || echo 100; echo {MARK}; getconf PAGESIZE 2>/dev/null || echo 4096; echo {MARK}; cat /proc/[0-9]*/stat 2>/dev/null"
     );
@@ -671,7 +892,7 @@ async fn top_processes(session: &Session) -> AppResult<Processes> {
         None => {
             let (t, _, _, s) = sample_procs(session).await?;
             tokio::time::sleep(Duration::from_secs(1)).await;
-            (t, s.into_iter().map(|(pid, (ticks, _, _))| (pid, ticks)).collect())
+            (t, s.into_iter().map(|(pid, (ticks, _, _, _))| (pid, ticks)).collect())
         }
     };
     let (now, hz, page, current) = sample_procs(session).await?;
@@ -679,7 +900,7 @@ async fn top_processes(session: &Session) -> AppResult<Processes> {
 
     let mut ranked: Vec<(u32, f64, u64, String)> = current
         .iter()
-        .map(|(pid, (ticks, rss, comm))| {
+        .map(|(pid, (ticks, rss, comm, _))| {
             // A pid that was not there before started during the interval.
             let delta = ticks.saturating_sub(previous.1.get(pid).copied().unwrap_or(*ticks));
             (*pid, 100.0 * delta as f64 / hz as f64 / secs, rss * page, comm.clone())
@@ -689,15 +910,23 @@ async fn top_processes(session: &Session) -> AppResult<Processes> {
     // Take extra candidates: some are gone by the time details are read (the
     // short-lived shells of this very sampling, for one).
     ranked.truncate(TOP_N * 2);
-    *session.last_procs.lock().unwrap() = Some((now, current.iter().map(|(pid, (t, _, _))| (*pid, *t)).collect()));
+    *session.last_procs.lock().unwrap() = Some((now, current.iter().map(|(pid, (t, _, _, _))| (*pid, *t)).collect()));
 
-    // Details for the few rows shown: uid, command line, container.
-    let pids: Vec<String> = ranked.iter().map(|r| r.0.to_string()).collect();
+    // Details for the candidates and their ancestors: a process started by one
+    // of Portway's probes is a probe too, even when it runs as root under sudo
+    // and its environment cannot be read.
+    let ppids: HashMap<u32, u32> = current.iter().map(|(pid, v)| (*pid, v.3)).collect();
+    let chains: HashMap<u32, Vec<u32>> = ranked.iter().map(|r| (r.0, ancestry(r.0, &ppids))).collect();
+    let mut lookup: Vec<u32> = chains.values().flatten().copied().collect();
+    lookup.sort_unstable();
+    lookup.dedup();
+    let pids: Vec<String> = lookup.iter().map(|p| p.to_string()).collect();
     let detail = format!(
         r#"for p in {pids}; do
-  if tr '\000' '\n' < /proc/$p/environ 2>/dev/null | grep -q '^PORTWAY_PROBE=1$'; then printf '@@P %s\tprobe\n' "$p"; continue; fi
-  u=$(awk '/^Uid:/{{print $2}}' /proc/$p/status 2>/dev/null)
   c=$(tr '\000\t\n' '   ' < /proc/$p/cmdline 2>/dev/null)
+  if tr '\000' '\n' < /proc/$p/environ 2>/dev/null | grep -q '^PORTWAY_PROBE=1$'; then printf '@@P %s\tprobe\n' "$p"; continue; fi
+  case "$c" in *PORTWAY_PROBE=1*) printf '@@P %s\tprobe\n' "$p"; continue;; esac
+  u=$(awk '/^Uid:/{{print $2}}' /proc/$p/status 2>/dev/null)
   g=$(head -n 5 /proc/$p/cgroup 2>/dev/null | tr '\t\n' '  ')
   printf '@@P %s\t%s\t%s\t%s\n' "$p" "$u" "$c" "$g"
 done
@@ -722,11 +951,17 @@ echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --fo
         .filter_map(|l| l.trim().split_once(' ').map(|(id, name)| (id.to_string(), name.to_string())))
         .collect();
     let mut details = parse_proc_details(parts.first().unwrap_or(&""));
+    let is_probe = |pid: &u32| chains[pid].iter().any(|p| details.get(p) == Some(&ProcDetail::Probe));
+    let keep: Vec<u32> = ranked.iter().map(|r| r.0).filter(|pid| !is_probe(pid)).collect();
 
     let rows = ranked
         .into_iter()
-        // No uid: the process exited, or it is one of Portway's own probes.
-        .filter_map(|(pid, cpu, rss, comm)| Some((pid, cpu, rss, comm, details.remove(&pid).filter(|d| d.0.is_some())?)))
+        .filter(|r| keep.contains(&r.0))
+        // Absent: the process exited before its details were read.
+        .filter_map(|(pid, cpu, rss, comm)| match details.remove(&pid) {
+            Some(ProcDetail::Process { uid, cmdline, container }) => Some((pid, cpu, rss, comm, (uid, cmdline, container))),
+            _ => None,
+        })
         .take(TOP_N)
         .map(|(pid, cpu, rss, comm, (uid, cmdline, cid))| {
             ProcessRow {
@@ -905,7 +1140,7 @@ fn parse_updates(section: &str) -> UpdatesHealth {
 }
 
 async fn read_health(session: &Session) -> AppResult<Health> {
-    let out = exec(&session, HEALTH_SCRIPT).await?.stdout;
+    let out = exec_priv(session, HEALTH_SCRIPT, EXEC_TIMEOUT).await?.stdout;
     let parts: Vec<&str> = out.split(MARK).collect();
     Ok(Health {
         docker: parse_docker(parts.first().unwrap_or(&"")),
@@ -934,7 +1169,7 @@ pub async fn server_disks(sessions: tauri::State<'_, Sessions>, server_id: Strin
 #[tauri::command]
 pub async fn server_docker_disk(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::disks::DockerDisk> {
     let session = sessions.get(&server_id, &user)?;
-    let out = exec_with(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await?.stdout;
+    let out = exec_priv(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await?.stdout;
     Ok(crate::disks::parse_docker_df(out.trim_start()))
 }
 
@@ -942,7 +1177,7 @@ pub async fn server_docker_disk(sessions: tauri::State<'_, Sessions>, server_id:
 #[tauri::command]
 pub async fn server_ports(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::ports::Ports> {
     let session = sessions.get(&server_id, &user)?;
-    let out = exec(&session, crate::ports::PORTS_SCRIPT).await?.stdout;
+    let out = exec_priv(&session, crate::ports::PORTS_SCRIPT, EXEC_TIMEOUT).await?.stdout;
     Ok(crate::ports::parse_ports(&out))
 }
 
@@ -955,7 +1190,13 @@ fn shell_quote(s: &str) -> String {
 /// .command file so no Automation permission is needed. The command is built
 /// here with every argument quoted, never taken as a string from the UI.
 #[tauri::command]
-pub fn open_terminal(store: tauri::State<ServerStore>, server_id: String, user: String, tool: Option<String>) -> AppResult<()> {
+pub fn open_terminal(
+    store: tauri::State<ServerStore>,
+    audit: tauri::State<AuditLog>,
+    server_id: String,
+    user: String,
+    tool: Option<String>,
+) -> AppResult<()> {
     // Remote commands are fixed here; the UI only picks one by name.
     let remote = match tool.as_deref() {
         None => None,
@@ -989,9 +1230,12 @@ pub fn open_terminal(store: tauri::State<ServerStore>, server_id: String, user: 
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o700))?;
     }
     let status = std::process::Command::new("open").arg("-a").arg("Terminal").arg(&file).status()?;
+    let line = args.join(" ");
     if !status.success() {
+        audit.record(&server_id, &user, "openTerminal", &line, false, Some(format!("open exited with {status}")));
         return Err(AppError::detail("terminal", format!("open exited with {status}")));
     }
+    audit.record(&server_id, &user, "openTerminal", line, true, None);
     Ok(())
 }
 
@@ -1021,7 +1265,7 @@ mod tests {
             panic!("expected to connect after trusting the key");
         };
         assert!(std::fs::read_to_string(&known_hosts).unwrap().trim_start().starts_with("[127.0.0.1]:2201 "));
-        let session = Arc::new(Session::new(handle));
+        let session = Arc::new(Session::new(handle, "root"));
         let info = read_host_info(&session).await.unwrap();
         assert!(info.os.as_deref().unwrap().starts_with("Ubuntu 24.04"), "{:?}", info.os);
         assert_eq!(info.hostname, "pw-ubuntu");
@@ -1058,14 +1302,41 @@ mod tests {
         let disks = crate::disks::parse_disks(&out);
         assert_eq!(disks.mounts.first().map(|m| m.path.as_str()), Some("/"));
         assert!(disks.mounts.iter().all(|m| m.path != "/etc/hosts" && m.path != "/dev/shm"), "{:?}", disks.mounts);
-        let out = exec_with(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await.unwrap().stdout;
+        let out = exec_priv(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await.unwrap().stdout;
         assert!(matches!(crate::disks::parse_docker_df(out.trim_start()), crate::disks::DockerDisk::Ok { .. }), "root on pw-ubuntu reaches the host Docker");
 
         let health = read_health(&session).await.unwrap();
         assert!(matches!(health.systemd, SystemdHealth::NotSystemd), "containers do not run systemd");
 
         // A known host now connects without asking.
-        assert!(matches!(open(&target(2201, "deploy"), Credential::Key(key.clone()), None).await.unwrap(), Opened::Ready(_)));
+        let Opened::Ready(deploy) = open(&target(2201, "deploy"), Credential::Key(key.clone()), None).await.unwrap() else {
+            panic!("deploy should connect");
+        };
+
+        // sudo for deploy: needs a password; a wrong one fails, the right one runs as root.
+        let deploy = Arc::new(Session::new(deploy, "deploy"));
+        assert_ne!(run_channel(&deploy, "sudo -n true", None, EXEC_TIMEOUT).await.unwrap().code, Some(0));
+        let wrong = run_channel(&deploy, "sudo -S -k -p '' true", Some("nope\n".into()), EXEC_TIMEOUT).await.unwrap();
+        assert_ne!(wrong.code, Some(0));
+        assert!(!sudo_refused(&wrong.stderr), "{}", wrong.stderr);
+        let right = run_channel(&deploy, "sudo -S -k -p '' true", Some("portway\n".into()), EXEC_TIMEOUT).await.unwrap();
+        assert_eq!(right.code, Some(0), "{}", right.stderr);
+        assert_ne!(exec_priv(&deploy, "id -u", EXEC_TIMEOUT).await.unwrap().stdout.trim(), "0", "sudo is off until enabled");
+        *deploy.sudo.lock().unwrap() = Some(SudoMode::Password("portway".into()));
+        assert_eq!(exec_priv(&deploy, "id -u", EXEC_TIMEOUT).await.unwrap().stdout.trim(), "0");
+        assert_ne!(exec(&deploy, "id -u").await.unwrap().stdout.trim(), "0", "plain exec never uses sudo");
+
+        // A probe running as root under sudo stays out of the process list.
+        let bg = deploy.clone();
+        let probe = tokio::spawn(async move { exec_priv(&bg, "sleep 4; true", EXEC_TIMEOUT).await });
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let rows = top_processes(&deploy).await.unwrap().rows;
+        assert!(
+            rows.iter().all(|r| !r.command.contains("sleep 4") && !r.command.contains("PORTWAY_PROBE") && !r.command.starts_with("sudo ")),
+            "{:?}",
+            rows.iter().map(|r| &r.command).collect::<Vec<_>>()
+        );
+        probe.await.unwrap().unwrap();
 
         // Another host that reuses a recorded key line for its address: key changed.
         let ubuntu_line = std::fs::read_to_string(&known_hosts).unwrap();
@@ -1103,18 +1374,19 @@ mod tests {
 1234 (node server.js) R 1 1234 1234 0 -1 0 0 0 0 0 900 100 0 0 20 0 11 0 99 5000 5120 0\n\
 77 (weird) name)) S 1 77 77 0 -1 0 0 0 0 0 7 3 0 0 20 0 1 0 9 100 10 0\n";
         let m = parse_proc_stats(text);
-        assert_eq!(m[&1], (200, 300, "systemd".into()));
-        assert_eq!(m[&1234], (1000, 5120, "node server.js".into()));
-        assert_eq!(m[&77], (10, 10, "weird) name)".into()));
+        assert_eq!(m[&1], (200, 300, "systemd".into(), 0));
+        assert_eq!(m[&1234], (1000, 5120, "node server.js".into(), 1));
+        assert_eq!(m[&77], (10, 10, "weird) name)".into(), 1));
     }
 
     #[test]
     fn parses_process_details() {
         let d = parse_proc_details("@@P 12\t0\tnginx: master process\t0::/system.slice/nginx.service \n@@P 99\tprobe\n@@P 7\t\t\t\n");
-        assert_eq!(d[&12].0, Some(0));
-        assert_eq!(d[&12].1, "nginx: master process");
-        assert_eq!(d[&99].0, None, "Portway's own probe");
-        assert_eq!(d[&7].0, None, "exited");
+        assert_eq!(d[&12], ProcDetail::Process { uid: Some(0), cmdline: "nginx: master process".into(), container: None });
+        assert_eq!(d[&99], ProcDetail::Probe);
+        assert!(!d.contains_key(&7), "exited");
+        let ppids = HashMap::from([(50, 40), (40, 30), (30, 1)]);
+        assert_eq!(ancestry(50, &ppids), [50, 40, 30]);
     }
 
     #[test]

@@ -5,7 +5,9 @@ import { Button, cx } from '../../components/ui/primitives'
 import { StatStrip, StatStripSkeleton, type StatItem } from '../../components/ui/stat-strip'
 import { api, isAppError, type AppError, type Processes, type Server, type Stats } from '../../lib/api'
 import { formatBytes, formatDecimal, formatPercent, inUnit, unitName, unitOf } from './format'
+import { AuditCard } from './audit'
 import { HealthCard } from './health'
+import { useLive } from './refresh'
 import { PortsCard } from './ports'
 import { DisksCard } from './disks'
 
@@ -15,11 +17,13 @@ const POLL_MS = 5000
  *  lost; other errors are shown and retried on the next tick. */
 function usePoll<T>(serverId: string, user: string, load: (serverId: string, user: string) => Promise<T>) {
   const { markLost } = useConnections()
+  const { live } = useLive(serverId, user)
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<AppError | null>(null)
   const [at, setAt] = useState<Date | null>(null)
 
   useEffect(() => {
+    if (!live) return
     let alive = true
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
@@ -45,19 +49,19 @@ function usePoll<T>(serverId: string, user: string, load: (serverId: string, use
       alive = false
       clearTimeout(timer)
     }
-  }, [serverId, user, markLost, load])
+  }, [serverId, user, markLost, load, live])
 
-  return { data, error, at }
+  return { data, error, at, live }
 }
 
-function Live({ ok, error, at }: { ok: boolean; error: AppError | null; at: Date | null }) {
+function Live({ ok, error, at, live }: { ok: boolean; error: AppError | null; at: Date | null; live: boolean }) {
   return (
     <span
       className="inline-flex items-center gap-[5px] text-[11px] whitespace-nowrap text-muted"
       title={at ? `Cập nhật lúc ${at.toLocaleTimeString('vi-VN')}` : undefined}
     >
-      <span className={cx('size-1.5 rounded-full', error ? 'bg-warn' : ok ? 'bg-success' : 'bg-muted')} />
-      {error ? 'không đọc được, đang thử lại' : ok ? 'trực tiếp · 5 giây' : 'đang đọc…'}
+      <span className={cx('size-1.5 rounded-full', !live ? 'bg-muted' : error ? 'bg-warn' : ok ? 'bg-success' : 'bg-muted')} />
+      {!live ? 'tạm dừng' : error ? 'không đọc được, đang thử lại' : ok ? 'trực tiếp · 5 giây' : 'đang đọc…'}
     </span>
   )
 }
@@ -111,12 +115,12 @@ const loadStats = (s: string, u: string) => api.stats(s, u)
 const loadProcesses = (s: string, u: string) => api.processes(s, u)
 
 function Resources({ server, user }: { server: Server; user: string }) {
-  const { data, error, at } = usePoll<Stats>(server.id, user, loadStats)
+  const { data, error, at, live } = usePoll<Stats>(server.id, user, loadStats)
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <span className="flex-1 text-[13px] font-semibold">Tài nguyên</span>
-        <Live ok={!!data} error={error} at={at} />
+        <Live ok={!!data} error={error} at={at} live={live} />
       </div>
       {data ? <StatStrip items={resourceItems(data)} /> : <StatStripSkeleton />}
       <ErrorLine error={error} />
@@ -129,7 +133,7 @@ const PROC_COLS = 'minmax(140px,1.5fr) 96px 96px minmax(70px,1fr) 64px'
 const barColor = (v: number) => (v >= 85 ? 'var(--danger)' : v >= 70 ? 'var(--warn)' : 'var(--ink2)')
 
 function TopProcesses({ server, user }: { server: Server; user: string }) {
-  const { data, error, at } = usePoll<Processes>(server.id, user, loadProcesses)
+  const { data, error, at, live } = usePoll<Processes>(server.id, user, loadProcesses)
   const toast = useToast()
   const snapAt = data ? new Date(data.at).toLocaleTimeString('vi-VN') : null
 
@@ -143,7 +147,7 @@ function TopProcesses({ server, user }: { server: Server; user: string }) {
           <span className="text-[15px] font-semibold">Tiến trình dùng nhiều nhất</span>
           <span className="text-[11px] text-muted">{snapAt ? `Ảnh chụp lúc ${snapAt}` : 'Đang đọc danh sách tiến trình…'}</span>
         </div>
-        <Live ok={!!data} error={error} at={at} />
+        <Live ok={!!data} error={error} at={at} live={live} />
       </div>
 
       <div className="grid gap-3 px-0.5 text-[11px] text-muted" style={{ gridTemplateColumns: PROC_COLS }}>
@@ -209,6 +213,7 @@ export function Overview({ server, user }: { server: Server; user: string }) {
         <PortsCard server={server} user={user} />
         <DisksCard server={server} user={user} />
       </div>
+      <AuditCard server={server} />
     </div>
   )
 }

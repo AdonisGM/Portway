@@ -4,6 +4,7 @@ import { useNav, type ModuleId } from '../../app/nav'
 import { Chip, TONES, cx } from '../../components/ui/primitives'
 import { api, type Health, type Server } from '../../lib/api'
 import { ErrorLine, RefreshControl, useRefreshed } from './refresh'
+import { UseSudoButton } from './sudo'
 
 type ChipSpec = { text: string; tone: { fg: string; bg: string }; title?: string }
 type Row = { label: string; value: string; dim?: boolean; chips?: ChipSpec[]; note?: ReactNode; locked?: string; module?: ModuleId }
@@ -21,7 +22,7 @@ function rows(h: Health): Row[] {
   const d = h.docker
   if (d.kind === 'notInstalled') out.push({ label: 'Docker', value: 'Chưa cài trên server này', dim: true, chips: [{ text: 'Chưa cài', tone: TONES.neutral }] })
   else if (d.kind === 'noAccess')
-    out.push({ label: 'Docker', value: 'User này không có quyền dùng Docker', dim: true, locked: 'Cần quyền docker', note: 'Thêm user vào nhóm docker, hoặc kết nối bằng root.' })
+    out.push({ label: 'Docker', value: 'User này không có quyền dùng Docker', dim: true, locked: 'Cần quyền docker', note: 'Thêm user vào nhóm docker, dùng sudo, hoặc kết nối bằng root.' })
   else if (d.kind === 'daemonDown')
     out.push({ label: 'Docker', value: 'Docker daemon không chạy', chips: [{ text: 'Không chạy', tone: TONES.danger, title: d.detail }], module: 'docker' })
   else
@@ -85,13 +86,13 @@ const loadHealth = (s: string, u: string) => api.health(s, u)
 
 export function HealthCard({ server, user }: { server: Server; user: string }) {
   const nav = useNav()
-  const { data: health, error, at, busy, refresh } = useRefreshed<Health>(server.id, user, loadHealth)
+  const { data: health, error, at, busy, refresh, live } = useRefreshed<Health>(server.id, user, loadHealth)
 
   return (
     <div className="flex flex-col gap-1 rounded-xl border border-line bg-surface p-4">
       <div className="mb-1.5 flex items-start gap-2">
         <span className="flex-1 text-[15px] font-semibold">Tình trạng</span>
-        <RefreshControl at={at} busy={busy} error={error} onRefresh={refresh} />
+        <RefreshControl at={at} busy={busy} error={error} onRefresh={refresh} live={live} />
       </div>
       <ErrorLine error={error} />
 
@@ -114,10 +115,13 @@ export function HealthCard({ server, user }: { server: Server; user: string }) {
                   </span>
                 ))}
                 {r.locked && (
-                  <span className="flex items-center gap-[5px] text-[11px] text-muted">
-                    <Lock size={12} strokeWidth={1.9} />
-                    {r.locked}
-                  </span>
+                  <>
+                    <span className="flex items-center gap-[5px] text-[11px] text-muted">
+                      <Lock size={12} strokeWidth={1.9} />
+                      {r.locked}
+                    </span>
+                    <UseSudoButton server={server} user={user} />
+                  </>
                 )}
               </div>
               {r.note && <span className="-mt-1 pr-1 pb-[9px] pl-[106px] text-[11px] leading-snug text-muted">{r.note}</span>}

@@ -2,6 +2,7 @@ import { Lock } from 'lucide-react'
 import { api, type Disks, type DockerDisk, type DockerUsage, type Server } from '../../lib/api'
 import { formatBytes, formatPercent, inUnit, unitName, unitOf } from './format'
 import { ErrorLine, RefreshControl, useRefreshed } from './refresh'
+import { UseSudoButton } from './sudo'
 
 const loadDisks = (s: string, u: string) => api.disks(s, u)
 const loadDockerDisk = (s: string, u: string) => api.dockerDisk(s, u)
@@ -35,7 +36,7 @@ function reclaimText(r: DockerUsage) {
 
 /** "Ổ đĩa": mounted filesystems and Docker's share of the disk. */
 export function DisksCard({ server, user }: { server: Server; user: string }) {
-  const { data, error, at, busy, refresh: refreshMounts } = useRefreshed<Disks>(server.id, user, loadDisks)
+  const { data, error, at, busy, refresh: refreshMounts, live } = useRefreshed<Disks>(server.id, user, loadDisks)
   const docker = useRefreshed<DockerDisk>(server.id, user, loadDockerDisk, DOCKER_EVERY_MS)
   const refresh = () => {
     void refreshMounts()
@@ -47,7 +48,7 @@ export function DisksCard({ server, user }: { server: Server; user: string }) {
     <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start gap-2">
         <span className="flex-1 text-[15px] font-semibold">Ổ đĩa</span>
-        <RefreshControl at={at} busy={busy || docker.busy} error={error} onRefresh={refresh} />
+        <RefreshControl at={at} busy={busy || docker.busy} error={error} onRefresh={refresh} live={live} />
       </div>
       <ErrorLine error={error} />
 
@@ -80,7 +81,11 @@ export function DisksCard({ server, user }: { server: Server; user: string }) {
       {dd?.kind !== 'notInstalled' && (
         <div className="flex flex-col gap-1.5 border-t border-line pt-3">
           <span className="font-semibold">Docker</span>
-          {!dd && !docker.error && <span className="text-[11.5px] text-muted">Đang tính dung lượng Docker, có thể mất vài chục giây…</span>}
+          {docker.busy && !docker.error && (
+            <span className="text-[11.5px] text-muted">
+              {dd ? 'Đang tính lại dung lượng Docker…' : 'Đang tính dung lượng Docker, có thể mất vài chục giây…'}
+            </span>
+          )}
           <ErrorLine error={docker.error} />
           {dd?.kind === 'ok' &&
             dd.rows.map((r) => (
@@ -99,6 +104,7 @@ export function DisksCard({ server, user }: { server: Server; user: string }) {
                   User này không thuộc nhóm docker nên không đọc được dung lượng image, container, volume.
                 </span>
               </div>
+              <UseSudoButton server={server} user={user} />
             </div>
           )}
           {dd?.kind === 'daemonDown' && (

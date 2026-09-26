@@ -2,6 +2,7 @@ import { useNav } from '../app/nav'
 import { KeyListScreen } from '../screens/keys/key-list'
 import { ServerScreen } from '../screens/server/server-screen'
 import { ServerListScreen } from '../screens/servers/server-list'
+import { SettingsScreen } from '../screens/settings/settings-screen'
 import { TransferScreen } from '../screens/transfer/transfer-screen'
 import { TunnelsScreen } from '../screens/tunnels/tunnels-screen'
 import { Menu } from './menu'
@@ -32,6 +33,8 @@ export function AppShell() {
               <ServerScreen key={`${screen.serverId}|${screen.user}`} serverId={screen.serverId} user={screen.user} module={screen.module} />
             ) : screen.kind === 'transfer' ? (
               <TransferScreen />
+            ) : screen.kind === 'settings' ? (
+              <SettingsScreen />
             ) : (
               <TunnelsScreen />
             )}

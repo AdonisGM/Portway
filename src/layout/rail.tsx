@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Bug, FolderSync, LayoutGrid, Server, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, Bug, FolderSync, LayoutGrid, Server, Settings, type LucideIcon } from 'lucide-react'
 import { useTrace } from '../app/trace'
 import { useTransfers } from '../app/transfers'
 import { useTunnels } from '../app/tunnels'
@@ -48,6 +48,17 @@ export function Rail() {
         )
       })}
       <span className="flex-1" />
+      <button
+        type="button"
+        title="Cài đặt"
+        aria-current={nav.rail === 'settings' ? 'page' : undefined}
+        onClick={() => nav.goRail('settings')}
+        className={`flex size-10 cursor-pointer items-center justify-center rounded-[11px] border hover:border-muted ${
+          nav.rail === 'settings' ? 'border-ink2 bg-raised text-ink' : 'border-line2 text-ink2'
+        }`}
+      >
+        <Settings size={18} strokeWidth={1.75} />
+      </button>
       <DebugButton />
     </nav>
   )

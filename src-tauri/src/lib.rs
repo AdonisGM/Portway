@@ -11,6 +11,7 @@ mod paths;
 mod ports;
 mod servers;
 mod services;
+mod settings;
 mod ssh;
 mod ssh_config;
 mod trace;
@@ -158,12 +159,18 @@ pub fn run() {
             docker::docker_volumes,
             docker::docker_volume_sizes,
             docker::docker_volume_remove,
+            settings::settings_get,
+            settings::settings_set,
+            settings::app_data_path,
+            servers::servers_export,
+            servers::servers_import_file,
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let store = servers::ServerStore::load(data_dir.join("servers.json"))
                 .map_err(|e| format!("cannot load servers.json: {} {}", e.code, e.detail.unwrap_or_default()))?;
             app.manage(store);
+            app.manage(settings::SettingsStore::load(data_dir.join("settings.json")));
             app.manage(ssh::Sessions::default());
             app.manage(audit::AuditLog::load(data_dir.join("audit.jsonl")));
             app.manage(std::sync::Arc::new(transfers::Transfers::new(app.handle().clone())));

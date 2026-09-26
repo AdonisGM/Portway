@@ -9,9 +9,11 @@ import '@fontsource/roboto-mono/400.css'
 /** Wordmark font for the AdonisGM lockup, self-hosted by the logo package. */
 import '@adonisgm/logo/styles.css'
 import './styles/app.css'
+import { followTheme } from './lib/theme'
 
 // The same bundle serves the main window and the debug trace window.
 const isDebug = new URLSearchParams(window.location.search).get('window') === 'debug'
+followTheme()
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>{isDebug ? <DebugWindow /> : <App />}</React.StrictMode>,

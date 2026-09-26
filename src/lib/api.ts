@@ -60,6 +60,13 @@ export type GenerateKeyInput = {
 
 export type ImportReport = { found: number; added: Server[]; skipped: string[] }
 
+export type Theme = 'dark' | 'light' | 'system'
+export type Settings = {
+  /** Save downloads here without asking; null asks every time. */
+  downloadDir: string | null
+  theme: Theme
+}
+
 export type AppError = { code: string; field?: string; detail?: string }
 
 export type HostKeyIssue =
@@ -429,6 +436,11 @@ type Api = {
   saveServer(input: ServerInput): Promise<Server>
   deleteServer(id: string): Promise<void>
   importSshConfig(): Promise<ImportReport>
+  exportServers(path: string): Promise<number>
+  importServersFile(path: string): Promise<ImportReport>
+  settings(): Promise<Settings>
+  setSettings(settings: Settings): Promise<Settings>
+  appDataPath(): Promise<string>
   listKeys(): Promise<SshKey[]>
   publicKey(path: string): Promise<string>
   generateKey(input: GenerateKeyInput): Promise<SshKey>
@@ -513,6 +525,11 @@ const tauriApi: Api = {
   saveServer: (input) => invoke('server_save', { input }),
   deleteServer: (id) => invoke('server_delete', { id }),
   importSshConfig: () => invoke('servers_import_ssh_config'),
+  exportServers: (path) => invoke('servers_export', { path }),
+  importServersFile: (path) => invoke('servers_import_file', { path }),
+  settings: () => invoke('settings_get'),
+  setSettings: (settings) => invoke('settings_set', { settings }),
+  appDataPath: () => invoke('app_data_path'),
   listKeys: () => invoke('ssh_keys_list'),
   publicKey: (path) => invoke('ssh_key_public', { path }),
   generateKey: (input) => invoke('ssh_key_generate', { input }),
@@ -637,6 +654,15 @@ function browserApi(): Api {
     async importSshConfig() {
       return { found: 0, added: [], skipped: [] }
     },
+    exportServers: async () => fail('needs_app'),
+    importServersFile: async () => fail('needs_app'),
+    async settings() {
+      return { downloadDir: null, theme: 'dark' }
+    },
+    async setSettings(s) {
+      return s
+    },
+    appDataPath: async () => fail('needs_app'),
     async listKeys() {
       return [...keys]
     },

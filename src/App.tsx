@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ConnectionsProvider } from './app/connections'
 import { NavProvider } from './app/nav'
 import { ServersProvider } from './app/servers'
+import { SettingsProvider } from './app/settings'
 import { SplashScreen } from './components/splash'
 import { ToastProvider } from './components/toast'
 import { TraceProvider } from './app/trace'
@@ -16,21 +17,23 @@ export default function App() {
   useEffect(() => setReady(true), [])
 
   return (
-    <ServersProvider>
-      <ConnectionsProvider>
-        <NavProvider>
-          <ToastProvider>
-            <TransfersProvider>
-              <TraceProvider>
-                <TunnelsProvider>
-                  <AppShell />
-                  <SplashScreen ready={ready} />
-                </TunnelsProvider>
-              </TraceProvider>
-            </TransfersProvider>
-          </ToastProvider>
-        </NavProvider>
-      </ConnectionsProvider>
-    </ServersProvider>
+    <SettingsProvider>
+      <ServersProvider>
+        <ConnectionsProvider>
+          <NavProvider>
+            <ToastProvider>
+              <TransfersProvider>
+                <TraceProvider>
+                  <TunnelsProvider>
+                    <AppShell />
+                    <SplashScreen ready={ready} />
+                  </TunnelsProvider>
+                </TraceProvider>
+              </TransfersProvider>
+            </ToastProvider>
+          </NavProvider>
+        </ConnectionsProvider>
+      </ServersProvider>
+    </SettingsProvider>
   )
 }

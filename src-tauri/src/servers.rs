@@ -220,6 +220,40 @@ impl ServerStore {
         self.persist(&servers)
     }
 
+    /// Write the list to a JSON file the user picked. Passwords and key
+    /// passphrases stay in the Keychain; only key file paths are included.
+    pub fn export(&self, path: &std::path::Path) -> AppResult<usize> {
+        let servers = self.list();
+        let file = StoreFile { version: 1, servers: servers.clone() };
+        fs::write(path, serde_json::to_vec_pretty(&file)?)?;
+        Ok(servers.len())
+    }
+
+    /// Add servers from an exported file, skipping names already in the list.
+    pub fn import_file(&self, path: &std::path::Path) -> AppResult<ImportReport> {
+        let text = fs::read_to_string(path)?;
+        let file: StoreFile = serde_json::from_str(&text).map_err(|e| AppError::detail("invalid_file", e))?;
+        let mut servers = self.servers.lock().unwrap();
+        let found = file.servers.len();
+        let (mut added, mut skipped) = (Vec::new(), Vec::new());
+        let now = now_ms();
+        for mut s in file.servers {
+            if s.accounts.is_empty() || s.host.trim().is_empty() || servers.iter().any(|x| x.name.eq_ignore_ascii_case(&s.name)) {
+                skipped.push(s.name);
+                continue;
+            }
+            s.id = uuid::Uuid::new_v4().to_string();
+            s.created_at = now;
+            s.updated_at = now;
+            servers.push(s.clone());
+            added.push(s);
+        }
+        if !added.is_empty() {
+            self.persist(&servers)?;
+        }
+        Ok(ImportReport { found, added, skipped })
+    }
+
     /// Add hosts that are not in the list yet. A host counts as present when a
     /// server has the same name, or the same host, port and a matching user.
     pub fn import(&self, hosts: Vec<ConfigHost>) -> AppResult<ImportReport> {
@@ -343,6 +377,16 @@ pub struct ImportReport {
 }
 
 #[tauri::command]
+pub fn servers_export(store: tauri::State<ServerStore>, path: String) -> AppResult<usize> {
+    store.export(std::path::Path::new(&path))
+}
+
+#[tauri::command]
+pub fn servers_import_file(store: tauri::State<ServerStore>, path: String) -> AppResult<ImportReport> {
+    store.import_file(std::path::Path::new(&path))
+}
+
+#[tauri::command]
 pub fn servers_list(store: tauri::State<ServerStore>) -> Vec<Server> {
     store.list()
 }
@@ -449,5 +493,24 @@ mod tests {
         assert_eq!(report.added.len(), 1);
         assert_eq!(store.list().len(), 2);
         fs::remove_file(&store.path).ok();
+    }
+
+    #[test]
+    fn export_then_import_skips_same_names() {
+        let a = temp_store("export-a");
+        a.save(input("web-01", "10.0.0.1")).unwrap();
+        a.save(input("db-01", "10.0.0.2")).unwrap();
+        let file = a.path.with_extension("export.json");
+        assert_eq!(a.export(&file).unwrap(), 2);
+        let b = temp_store("export-b");
+        b.save(input("WEB-01", "10.9.9.9")).unwrap();
+        let report = b.import_file(&file).unwrap();
+        assert_eq!((report.found, report.skipped.clone(), report.added.len()), (2, vec!["web-01".to_string()], 1));
+        assert_ne!(report.added[0].id, a.list()[1].id);
+        assert_eq!(b.list().len(), 2);
+        assert_eq!(b.import_file(&a.path.with_extension("missing")).err().map(|e| e.code), Some("io"));
+        for p in [&a.path, &b.path, &file] {
+            fs::remove_file(p).ok();
+        }
     }
 }

@@ -12,6 +12,8 @@
     "opener:default",
     "opener:allow-reveal-item-in-dir",
     "clipboard-manager:allow-write-text",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "core:window:allow-set-theme"
   ]
 }

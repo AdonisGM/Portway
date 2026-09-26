@@ -1,5 +1,6 @@
 import { downloadDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
+import { api } from './api'
 
 const LAST_KEY = 'portway.lastDownloadDir'
 
@@ -11,10 +12,11 @@ function readLast(): string | null {
   }
 }
 
-/** Ask where to save a download. Opens at the folder picked last time (or
- *  ~/Downloads). Returns null when the user cancels. A default folder from
- *  the settings screen will be able to skip this question later. */
+/** Where to save a download: the folder set in Cài đặt, or ask, opening at
+ *  the folder picked last time (or ~/Downloads). Null when the user cancels. */
 export async function chooseDownloadDir(count: number): Promise<string | null> {
+  const fixed = (await api.settings().catch(() => null))?.downloadDir
+  if (fixed) return fixed
   const picked = await open({
     directory: true,
     canCreateDirectories: true,

@@ -6,7 +6,10 @@ import {
   ChevronRight,
   Clock,
   Database,
+  Download,
   Folder,
+  Info,
+  Palette,
   FolderSync,
   KeyRound,
   Layers,
@@ -35,6 +38,7 @@ export function Menu() {
       {nav.rail === 'server' && <ServerMenu />}
       {nav.rail === 'transfer' && <TransferMenu />}
       {nav.rail === 'tunnels' && <TunnelMenu />}
+      {nav.rail === 'settings' && <SettingsMenu />}
     </aside>
   )
 }
@@ -80,6 +84,31 @@ function TransferMenu() {
         active={nav.screen.kind === 'transfer'}
         onClick={() => nav.go({ kind: 'transfer' })}
       />
+    </>
+  )
+}
+
+/** Sections of the settings page; a click scrolls to one. */
+export const SETTINGS_SECTIONS = [
+  { id: 'download', label: 'Tải xuống', icon: Download },
+  { id: 'appearance', label: 'Giao diện', icon: Palette },
+  { id: 'data', label: 'Dữ liệu', icon: Database },
+  { id: 'about', label: 'Giới thiệu', icon: Info },
+] as const
+
+function SettingsMenu() {
+  return (
+    <>
+      <MenuTitle>Cài đặt</MenuTitle>
+      {SETTINGS_SECTIONS.map((s) => (
+        <MenuItem
+          key={s.id}
+          icon={s.icon}
+          label={s.label}
+          active={false}
+          onClick={() => document.getElementById(`settings-${s.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        />
+      ))}
     </>
   )
 }

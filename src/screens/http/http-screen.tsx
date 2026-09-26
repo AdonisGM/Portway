@@ -190,7 +190,7 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
                 active={false}
                 method={h.request.method}
                 title={shortUrl(h.request.url)}
-                sub={`${new Date(h.at).toLocaleTimeString(locale())} · ${ms(h.ms)}`}
+                sub={`${new Date(h.at).toLocaleTimeString(locale())} · ${ms(h.ms)}` + (h.redacted ? ' · ' + t('không lưu token') : '')}
                 onClick={() => open(h.request, null)}
               >
                 <span className="num flex-none text-[11px] font-semibold" style={{ color: h.error ? 'var(--danger)' : statusColor(h.status) }}>
@@ -694,7 +694,7 @@ function SaveDialog({ current, serverId, request, onClose, onSaved }: { current:
       <Checkbox checked={everywhere} onChange={setEverywhere}>
         {t('Dùng cho mọi server (không chỉ server này)')}
       </Checkbox>
-      <span className="text-[11px] text-muted">{t('Lưu trên máy này cùng header, body và token của request.')}</span>
+      <span className="text-[11px] text-muted">{t('Token, mật khẩu và header bí mật được cất trong Keychain của máy; phần còn lại lưu trên máy này.')}</span>
     </Modal>
   )
 }

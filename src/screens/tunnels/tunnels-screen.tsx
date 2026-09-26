@@ -116,6 +116,15 @@ export function TunnelsScreen() {
                   <span className="flex items-center gap-2">
                     <span className="truncate font-semibold">{tn.name}</span>
                     <span className="rounded-[4px] bg-sunken px-1.5 py-px text-[10.5px] text-ink2">{KIND_LABELS[tn.kind]}</span>
+                    {tn.kind !== 'remote' && tn.bind !== '127.0.0.1' && (
+                      <span
+                        title={tn.socksLogin ? t('Máy khác trong mạng dùng được tunnel này, bằng user và mật khẩu SOCKS') : t('Mọi máy trong cùng mạng (LAN) với máy bạn đều dùng được tunnel này.')}
+                        className="rounded-[4px] px-1.5 py-px text-[10.5px] text-warn"
+                        style={{ background: 'var(--warn-soft)' }}
+                      >
+                        LAN
+                      </span>
+                    )}
                   </span>
                   <span className="truncate font-mono text-[11.5px] text-ink2" title={tn.command}>
                     {describe(tn, g.server?.name ?? tn.serverId)}
@@ -154,6 +163,19 @@ export function TunnelsScreen() {
                       { label: t('Sửa'), run: () => setDialog({ editing: tn }) },
                       { label: t('Nhân bản'), run: () => void duplicate(tn) },
                       { label: t('Sao chép lệnh ssh'), run: () => void copyText(tn.command).then(() => toast({ title: t('Đã sao chép lệnh'), detail: tn.command })) },
+                      ...(tn.socksLogin
+                        ? [
+                            {
+                              label: t('Sao chép user và mật khẩu SOCKS'),
+                              run: () => {
+                                const [u, p] = tn.socksLogin!
+                                void copyText('socks5://' + u + ':' + p + '@' + t('IP-của-máy-này') + ':' + tn.port).then(() =>
+                                  toast({ title: t('Đã sao chép thông tin SOCKS'), detail: t('User {user} · mật khẩu trong clipboard', { user: u }) }),
+                                )
+                              },
+                            },
+                          ]
+                        : []),
                       { label: t('Xoá'), danger: true, run: () => void remove(tn.id).then(() => toast({ title: t('Đã xoá tunnel'), detail: tn.name })) },
                     ]}
                   />

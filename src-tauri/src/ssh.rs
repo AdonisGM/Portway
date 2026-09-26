@@ -211,7 +211,7 @@ impl Sessions {
     }
 }
 
-fn keychain(account: &str) -> Option<keyring::Entry> {
+pub(crate) fn keychain(account: &str) -> Option<keyring::Entry> {
     keyring::Entry::new(KEYCHAIN_SERVICE, account).ok()
 }
 fn password_account(server_id: &str, user: &str) -> String {
@@ -475,6 +475,10 @@ pub(crate) fn ssh_target_args(store: &ServerStore, server_id: &str, user: &str) 
 fn terminal_args(store: &ServerStore, server_id: &str, user: &str, depth: u8) -> AppResult<Vec<String>> {
     let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
     let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
+    // Checked again here for lists saved before these checks existed.
+    if !crate::servers::valid_host(&server.host) || !crate::servers::valid_user(&account.user) {
+        return Err(AppError::detail("invalid_host", format!("{}@{}", account.user, server.host)));
+    }
     let mut args = Vec::new();
     if server.port != 22 {
         args.push(format!("-p {}", server.port));
@@ -491,6 +495,8 @@ fn terminal_args(store: &ServerStore, server_id: &str, user: &str, depth: u8) ->
         inner.insert(1, "-W %h:%p".into());
         args.push(format!("-o {}", shell_quote(&format!("ProxyCommand={}", inner.join(" ")))));
     }
+    // `--` ends ssh's options: the destination can never be read as one.
+    args.push("--".into());
     args.push(shell_quote(&format!("{}@{}", account.user, server.host)));
     Ok(args)
 }
@@ -1643,6 +1649,62 @@ mod tests {
 
     /// Against the Docker test servers (scripts/test-servers.sh up):
     /// `cargo test -- --ignored live_`
+    /// Saving an edited file and stopping a log follow, against pw-ubuntu:
+    /// `cargo test -- --ignored live_edit_and_tail --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn live_edit_and_tail() {
+        let known_hosts = std::env::temp_dir().join(format!("portway-known-hosts-edit-{}", std::process::id()));
+        let _ = std::fs::remove_file(&known_hosts);
+        let key = Arc::new(keys::load_secret_key(expand_tilde("~/.ssh/id_ed25519"), None).expect("~/.ssh/id_ed25519"));
+        let target = Target { host: "127.0.0.1".into(), port: 2201, user: "deploy".into(), known_hosts: known_hosts.clone(), via: None };
+        let Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) = open(&target, Credential::Key(key.clone()), None).await.unwrap() else { panic!("host key") };
+        let Opened::Ready(conn) = open(&target, Credential::Key(key), Some(fingerprint)).await.unwrap() else { panic!("connect") };
+        let session = Session::new(conn, "test", "deploy");
+        let stat = |p: &str| format!("stat -c '%i %a %U' {p}");
+        let path = "/home/deploy/pw-edit.txt";
+        exec(&session, &format!("printf 'old\\n' > {path} && chmod 640 {path}")).await.unwrap();
+        let before = exec(&session, &stat(path)).await.unwrap().stdout;
+
+        // A save replaces the content in place: same inode, mode and owner.
+        crate::editing::write_remote(&session, path, b"new content\n", false).await.unwrap();
+        assert_eq!(exec(&session, &format!("cat {path}")).await.unwrap().stdout, "new content\n");
+        assert_eq!(exec(&session, &stat(path)).await.unwrap().stdout, before);
+        assert_eq!(exec(&session, "ls /tmp | grep -c '^tmp\\.' || true").await.unwrap().stdout.trim(), "0", "temp file left behind");
+
+        // An upload that stopped short never reaches the file.
+        let partial = exec(&session, "t=$(mktemp) && printf 'abc' > $t && echo $t").await.unwrap().stdout.trim().to_string();
+        let out = exec(&session, &crate::editing::finish_script(&shell_quote(&partial), path, 10)).await.unwrap();
+        assert_eq!(out.code, Some(3));
+        assert_eq!(exec(&session, &format!("cat {path}")).await.unwrap().stdout, "new content\n");
+        assert!(!exec(&session, &format!("test -e {partial} && echo there || true")).await.unwrap().stdout.contains("there"));
+
+        // A follow on a quiet file: closing the channel leaves tail running
+        // (nothing makes it write), so stopping kills it by its pid.
+        let (line, _, _) = wrap_command(&session, &format!("echo $$; exec tail -n 0 -F -- {path}"), false);
+        let mut ch = session.handle.channel_open_session().await.unwrap();
+        ch.exec(true, line).await.unwrap();
+        let mut first = String::new();
+        while let Some(msg) = ch.wait().await {
+            if let ChannelMsg::Data { data } = msg {
+                first.push_str(&String::from_utf8_lossy(&data));
+                if first.contains('\n') {
+                    break;
+                }
+            }
+        }
+        let pid: u32 = first.trim().parse().expect("pid on the first line");
+        let _ = ch.close().await;
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        let alive = |pid: u32| format!("kill -0 {pid} 2>/dev/null && echo alive || echo gone");
+        println!("after closing the channel: tail is {}", exec(&session, &alive(pid)).await.unwrap().stdout.trim());
+        exec(&session, &format!("kill {pid} 2>/dev/null || true")).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(exec(&session, &alive(pid)).await.unwrap().stdout.trim(), "gone");
+        exec(&session, &format!("rm -f {path}")).await.unwrap();
+        let _ = std::fs::remove_file(&known_hosts);
+    }
+
     #[tokio::test]
     #[ignore]
     async fn live_docker_servers() {
@@ -1953,7 +2015,7 @@ mod tests {
             let (hh, st) = (h.clone(), stats.clone());
             tokio::spawn(async move {
                 let (sock, peer) = l.accept().await.unwrap();
-                serve_socks(sock, peer, &hh, &st).await.unwrap();
+                serve_socks(sock, peer, &hh, &st, None).await.unwrap();
             });
             let mut s = TcpStream::connect(addr).await.unwrap();
             s.write_all(&[5, 1, 0]).await.unwrap();

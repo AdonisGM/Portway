@@ -19,6 +19,8 @@ function subText(tr: Transfer) {
   if (tr.status === 'error') return tr.error ?? t('Lỗi')
   if (tr.status === 'cancelled') return t('Đã huỷ')
   if (tr.status === 'queued') return t('Đang chờ · {route}', { route: shortRoute(tr) })
+  // Links are never followed: one pointing back up would copy forever.
+  if (tr.skipped) return t('{route} · bỏ qua {n} liên kết hoặc tệp đặc biệt', { route: shortRoute(tr), n: tr.skipped })
   return shortRoute(tr)
 }
 

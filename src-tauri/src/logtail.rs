@@ -13,7 +13,7 @@ use tokio::sync::watch;
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
 use crate::i18n::tr;
-use crate::ssh::{shell_quote, wrap_command, Sessions};
+use crate::ssh::{exec, exec_priv, shell_quote, wrap_command, Sessions};
 use crate::trace;
 
 /// Lines sent per batch at most; a flood beyond that is counted, not sent.
@@ -93,7 +93,10 @@ pub async fn log_tail_start(
             return Err(AppError::detail("too_many_tails", PER_SESSION));
         }
     }
-    let command = format!("tail -n {} -F -- {}", lines.min(5000), shell_quote(&path));
+    // `echo $$; exec tail` prints tail's own pid first (exec keeps the pid), so
+    // stopping can kill it: without a terminal, closing the channel alone
+    // leaves `tail -F` running on a quiet file until it next writes.
+    let command = format!("echo $$; exec tail -n {} -F -- {}", lines.min(5000), shell_quote(&path));
     let (line, stdin, shown) = wrap_command(&session, &command, sudo);
     let mut channel = session.handle.channel_open_session().await.map_err(|e| AppError::detail("ssh", e))?;
     channel.exec(true, line).await.map_err(|e| AppError::detail("ssh", e))?;
@@ -115,6 +118,8 @@ pub async fn log_tail_start(
         let (mut pending, mut notes, mut dropped) = (Vec::<String>::new(), Vec::<String>::new(), 0usize);
         let mut tick = tokio::time::interval(BATCH_EVERY);
         let mut code = None;
+        let mut pid: Option<u32> = None;
+        let mut first = true;
         let emit = |lines: Vec<String>, dropped: usize, notes: Vec<String>, ended: bool, error: Option<String>| {
             let _ = app.emit("logtail", Batch { id: tail_id.clone(), lines, dropped, notes, ended, error });
         };
@@ -130,6 +135,12 @@ pub async fn log_tail_start(
                     Some(ChannelMsg::Data { data }) => {
                         out.extend_from_slice(&data);
                         for l in take_lines(&mut out) {
+                            // The first line is the pid, not part of the log.
+                            if first {
+                                first = false;
+                                pid = l.trim().parse().ok();
+                                continue;
+                            }
                             if pending.len() < BATCH_LINES { pending.push(l) } else { dropped += 1 }
                         }
                     }
@@ -145,6 +156,11 @@ pub async fn log_tail_start(
         }
         let _ = channel.close().await;
         let stopped = *stop_rx.borrow();
+        if let (true, Some(pid)) = (stopped, pid) {
+            // Same privileges as the tail itself (it may run through sudo).
+            let kill = format!("kill {pid} 2>/dev/null || true");
+            let _ = if sudo { exec_priv(&session, &kill, Duration::from_secs(10)).await } else { exec(&session, &kill).await };
+        }
         let error = if stopped {
             None
         } else if session.handle.is_closed() {

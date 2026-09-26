@@ -82,7 +82,8 @@ const en: Dict = {
   'Lưu thành bản mới': 'Save as new',
   'Cập nhật': 'Update',
   'Dùng cho mọi server (không chỉ server này)': 'Use on every server (not only this one)',
-  'Lưu trên máy này cùng header, body và token của request.': 'Saved on this Mac along with the request’s headers, body and token.',
+  'Token, mật khẩu và header bí mật được cất trong Keychain của máy; phần còn lại lưu trên máy này.': 'Tokens, passwords and secret headers go to this Mac’s Keychain; the rest is saved on this Mac.',
+  'không lưu token': 'token not kept',
 }
 
 export default en

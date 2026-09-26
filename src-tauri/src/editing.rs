@@ -26,7 +26,7 @@ use crate::error::{AppError, AppResult};
 use crate::i18n::tr;
 use crate::files::{sftp, sftp_err};
 use crate::servers::ServerStore;
-use crate::ssh::{exec_input, exec_priv, shell_quote, Session, Sessions};
+use crate::ssh::{exec, exec_input, exec_priv, shell_quote, Session, Sessions};
 
 /// Bigger files are not text anyone edits by hand.
 const MAX_SIZE: u64 = 20 * 1024 * 1024;
@@ -191,24 +191,57 @@ async fn read_remote(session: &Session, path: &str, sudo: bool) -> AppResult<Vec
     Ok(buf)
 }
 
-/// Replace the file's content in place, so its owner, group and mode stay.
-async fn write_remote(session: &Session, path: &str, data: &[u8], sudo: bool) -> AppResult<()> {
+/// Replace the file's content, keeping its owner, group and mode (the file is
+/// rewritten in place, not replaced). The new content first goes, over the
+/// network, into a private temporary file on the server; only once all of it
+/// arrived (size checked) is it copied over the file, on the server's own disk.
+/// A connection that drops mid-upload leaves the file untouched.
+pub(crate) async fn write_remote(session: &Session, path: &str, data: &[u8], sudo: bool) -> AppResult<()> {
+    let size = data.len();
+    let finish = |tmp: &str| finish_script(tmp, path, size);
     if sudo {
         let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-        let out = exec_input(session, &format!("base64 -d > {}", shell_quote(path)), &format!("{b64}\n"), true, Duration::from_secs(60)).await?;
+        let script = format!(r#"t=$(mktemp) || exit 1; base64 -d > "$t" || {{ rm -f "$t"; exit 1; }}; {}"#, finish(r#""$t""#));
+        let out = exec_input(session, &script, &format!("{b64}\n"), true, Duration::from_secs(60)).await?;
         if out.code != Some(0) {
             return Err(AppError::detail("remote_command", out.stderr.trim()));
         }
         return Ok(());
     }
+    let tmp = exec(session, "mktemp").await?.stdout_or_err()?.trim().to_string();
+    if !tmp.starts_with('/') || tmp.contains(char::is_whitespace) {
+        return Err(AppError::detail("remote_command", format!("mktemp: {tmp}")));
+    }
     let s = sftp(session).await?;
-    let mut f = match s.open_with_flags(path, OpenFlags::WRITE | OpenFlags::TRUNCATE).await {
-        Ok(f) => f,
-        Err(e) => return Err(sftp_err(e, session, path).await),
-    };
-    f.write_all(data).await.map_err(|e| AppError::detail("sftp", e))?;
-    f.shutdown().await.map_err(|e| AppError::detail("sftp", e))?;
+    let uploaded: AppResult<()> = async {
+        let mut f = match s.open_with_flags(&tmp, OpenFlags::WRITE | OpenFlags::TRUNCATE).await {
+            Ok(f) => f,
+            Err(e) => return Err(sftp_err(e, session, &tmp).await),
+        };
+        f.write_all(data).await.map_err(|e| AppError::detail("sftp", e))?;
+        f.shutdown().await.map_err(|e| AppError::detail("sftp", e))?;
+        Ok(())
+    }
+    .await;
+    if let Err(e) = uploaded {
+        let _ = s.remove_file(&tmp).await;
+        return Err(e);
+    }
+    let out = exec(session, &finish(&shell_quote(&tmp))).await?;
+    if out.code != Some(0) {
+        return Err(AppError::detail("remote_command", out.stderr.trim()));
+    }
     Ok(())
+}
+
+/// Copy a fully uploaded temporary file over `path` (in place, so owner and
+/// mode stay), or refuse when it is not `size` bytes long. `tmp` is already
+/// shell-quoted (or a quoted "$t").
+pub(crate) fn finish_script(tmp: &str, path: &str, size: usize) -> String {
+    format!(
+        r#"if [ "$(wc -c < {tmp} | tr -d ' ')" = "{size}" ]; then cat {tmp} > {path}; rc=$?; else echo "incomplete upload" >&2; rc=3; fi; rm -f {tmp}; exit $rc"#,
+        path = shell_quote(path)
+    )
 }
 
 /// Open the local copy in `app` (a .app path) or the default text editor.
@@ -357,14 +390,37 @@ pub async fn edit_open(
             return Err(AppError::detail("too_big", a.size.unwrap_or(0)));
         }
     }
-    let plain = match s.open(&path).await {
-        Ok(_) => true,
-        Err(russh_sftp::client::error::Error::Status(st)) if st.status_code == russh_sftp::protocol::StatusCode::PermissionDenied => false,
+    // Opening for writing without truncating changes nothing and answers the
+    // question exactly (ACLs, read-only mounts included).
+    let can = |flags| {
+        let s = s.clone();
+        let path = path.clone();
+        async move {
+            match s.open_with_flags(&path, flags).await {
+                Ok(_) => Ok(true),
+                Err(russh_sftp::client::error::Error::Status(st))
+                    if matches!(st.status_code, russh_sftp::protocol::StatusCode::PermissionDenied | russh_sftp::protocol::StatusCode::Failure) =>
+                {
+                    Ok(false)
+                }
+                Err(e) => Err(e),
+            }
+        }
+    };
+    let readable = match can(OpenFlags::READ).await {
+        Ok(r) => r,
         Err(e) => return Err(sftp_err(e, &session, &path).await),
     };
-    let sudo = !plain;
+    let writable = readable
+        && match can(OpenFlags::WRITE).await {
+            Ok(w) => w,
+            Err(e) => return Err(sftp_err(e, &session, &path).await),
+        };
+    // A file the user may read but not write (root's /etc configs) is edited
+    // through sudo too, or saving would fail every time.
+    let sudo = !(readable && writable);
     if sudo && !session.sudo_on() {
-        return Err(AppError::detail("permission_denied", &path));
+        return Err(AppError::detail(if readable { "read_only" } else { "permission_denied" }, &path));
     }
     let remote = remote_stat(&session, &path, sudo).await?.ok_or_else(|| AppError::detail("not_found", &path))?;
     if remote.1 > MAX_SIZE {

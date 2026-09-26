@@ -417,6 +417,83 @@ pub struct HistoryItem {
     pub status: u16,
     pub ms: f64,
     pub error: bool,
+    /// Tokens, passwords or secret headers were blanked before storing.
+    #[serde(default)]
+    pub redacted: bool,
+}
+
+// ------------------------------------------------------------ secrets
+
+/// Headers that carry credentials; their values never go to http.json.
+fn secret_header(name: &str) -> bool {
+    let n = name.trim().to_ascii_lowercase();
+    matches!(n.as_str(), "authorization" | "proxy-authorization" | "cookie" | "set-cookie")
+        || ["token", "secret", "api-key", "apikey", "password", "passwd", "session", "auth"].iter().any(|w| n.contains(w))
+}
+
+/// The secret parts of a request, kept in the Keychain for saved requests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+struct Secrets {
+    token: Option<String>,
+    password: Option<String>,
+    /// (index in `headers`, value)
+    headers: Vec<(usize, String)>,
+}
+
+impl Secrets {
+    fn is_empty(&self) -> bool {
+        self.token.is_none() && self.password.is_none() && self.headers.is_empty()
+    }
+}
+
+/// The request with its secrets blanked, and the secrets.
+fn split_secrets(r: &Request) -> (Request, Secrets) {
+    let mut clean = r.clone();
+    let mut s = Secrets::default();
+    match &mut clean.auth {
+        Auth::Bearer { token } if !token.is_empty() => s.token = Some(std::mem::take(token)),
+        Auth::Basic { password, .. } if !password.is_empty() => s.password = Some(std::mem::take(password)),
+        _ => {}
+    }
+    for (i, h) in clean.headers.iter_mut().enumerate() {
+        if secret_header(&h.name) && !h.value.is_empty() {
+            s.headers.push((i, std::mem::take(&mut h.value)));
+        }
+    }
+    (clean, s)
+}
+
+fn join_secrets(r: &mut Request, s: Secrets) {
+    match &mut r.auth {
+        Auth::Bearer { token } => *token = s.token.unwrap_or_default(),
+        Auth::Basic { password, .. } => *password = s.password.unwrap_or_default(),
+        Auth::None => {}
+    }
+    for (i, v) in s.headers {
+        if let Some(h) = r.headers.get_mut(i) {
+            h.value = v;
+        }
+    }
+}
+
+fn secrets_account(saved_id: &str) -> String {
+    format!("http-request:{saved_id}")
+}
+
+fn load_secrets(saved_id: &str) -> Option<Secrets> {
+    let text = crate::ssh::keychain(&secrets_account(saved_id))?.get_password().ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Store (or, when there are none, remove) a saved request's secrets.
+fn store_secrets(saved_id: &str, s: &Secrets) -> AppResult<()> {
+    let entry = crate::ssh::keychain(&secrets_account(saved_id)).ok_or_else(|| AppError::new("keychain"))?;
+    if s.is_empty() {
+        let _ = entry.delete_credential();
+        return Ok(());
+    }
+    entry.set_password(&serde_json::to_string(s)?).map_err(|e| AppError::detail("keychain", e))
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -435,8 +512,29 @@ pub struct HttpStore {
 
 impl HttpStore {
     pub fn load(path: PathBuf) -> Self {
-        let data = fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Self { path, data: Mutex::new(data) }
+        let mut data: StoreFile = fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        // Files written before secrets moved to the Keychain: move them now.
+        let mut changed = false;
+        for s in &mut data.saved {
+            let (clean, secrets) = split_secrets(&s.request);
+            if !secrets.is_empty() && store_secrets(&s.id, &secrets).is_ok() {
+                s.request = clean;
+                changed = true;
+            }
+        }
+        for item in data.history.values_mut().flatten() {
+            let (clean, secrets) = split_secrets(&item.request);
+            if !secrets.is_empty() {
+                item.request = clean;
+                item.redacted = true;
+                changed = true;
+            }
+        }
+        let store = Self { path, data: Mutex::new(data) };
+        if changed {
+            let _ = store.persist(&store.data.lock().unwrap());
+        }
+        store
     }
 
     fn persist(&self, data: &StoreFile) -> AppResult<()> {
@@ -477,7 +575,12 @@ pub async fn http_send(
     let resp = r?;
     let mut data = store.data.lock().unwrap();
     let list = data.history.entry(server_id).or_default();
-    list.insert(0, HistoryItem { id: uuid::Uuid::new_v4().to_string(), at: now_ms(), request, status: resp.status, ms: resp.timings.total, error: resp.error.is_some() });
+    // History keeps the request without its secrets (they would sit in plain text).
+    let (clean, secrets) = split_secrets(&request);
+    list.insert(
+        0,
+        HistoryItem { id: uuid::Uuid::new_v4().to_string(), at: now_ms(), request: clean, status: resp.status, ms: resp.timings.total, error: resp.error.is_some(), redacted: !secrets.is_empty() },
+    );
     list.truncate(HISTORY);
     let _ = store.persist(&data);
     Ok(resp)
@@ -485,7 +588,15 @@ pub async fn http_send(
 
 #[tauri::command]
 pub fn http_saved(store: tauri::State<'_, HttpStore>, server_id: String) -> Vec<Saved> {
-    store.data.lock().unwrap().saved.iter().filter(|s| s.server_id.as_deref().is_none_or(|id| id == server_id)).cloned().collect()
+    let list: Vec<Saved> = store.data.lock().unwrap().saved.iter().filter(|s| s.server_id.as_deref().is_none_or(|id| id == server_id)).cloned().collect();
+    list.into_iter()
+        .map(|mut s| {
+            if let Some(secrets) = load_secrets(&s.id) {
+                join_secrets(&mut s.request, secrets);
+            }
+            s
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -509,12 +620,16 @@ pub fn http_save(store: tauri::State<'_, HttpStore>, saved: Saved) -> AppResult<
     let mut data = store.data.lock().unwrap();
     let mut item = saved;
     item.name = item.name.trim().to_string();
-    match data.saved.iter_mut().find(|s| s.id == item.id && !item.id.is_empty()) {
-        Some(s) => *s = item.clone(),
-        None => {
-            item.id = uuid::Uuid::new_v4().to_string();
-            data.saved.push(item.clone());
-        }
+    if item.id.is_empty() || !data.saved.iter().any(|s| s.id == item.id) {
+        item.id = uuid::Uuid::new_v4().to_string();
+    }
+    // Tokens, passwords and secret headers go to the Keychain, the rest to http.json.
+    let (clean, secrets) = split_secrets(&item.request);
+    store_secrets(&item.id, &secrets)?;
+    let stored = Saved { request: clean, ..item.clone() };
+    match data.saved.iter_mut().find(|s| s.id == item.id) {
+        Some(s) => *s = stored,
+        None => data.saved.push(stored),
     }
     store.persist(&data)?;
     Ok(item)
@@ -524,6 +639,9 @@ pub fn http_save(store: tauri::State<'_, HttpStore>, saved: Saved) -> AppResult<
 pub fn http_delete(store: tauri::State<'_, HttpStore>, id: String) -> AppResult<()> {
     let mut data = store.data.lock().unwrap();
     data.saved.retain(|s| s.id != id);
+    if let Some(entry) = crate::ssh::keychain(&secrets_account(&id)) {
+        let _ = entry.delete_credential();
+    }
     store.persist(&data)
 }
 
@@ -591,5 +709,24 @@ mod tests {
         assert_eq!(f.status, 0);
         assert_eq!(f.error.as_deref(), Some("curl: (7) Failed to connect"));
         assert_eq!(parse_output("NOCURL\n", String::new()).unwrap_err().code, "no_curl");
+    }
+
+    #[test]
+    fn secrets_are_split_out_and_put_back() {
+        let mut r = req();
+        r.auth = Auth::Bearer { token: "s3cr3t-token".into() };
+        r.headers.push(Pair { name: "Authorization".into(), value: "Bearer abc".into(), enabled: true });
+        r.headers.push(Pair { name: "X-Api-Key".into(), value: "k1".into(), enabled: true });
+        let (clean, secrets) = split_secrets(&r);
+        assert_eq!(clean.auth, Auth::Bearer { token: String::new() });
+        assert_eq!(clean.headers.iter().map(|h| h.value.as_str()).collect::<Vec<_>>(), ["a \"b\" \\ c", "no", "", ""]);
+        let text = serde_json::to_string(&clean).unwrap();
+        assert!(!text.contains("s3cr3t") && !text.contains("abc") && !text.contains("k1"), "{text}");
+        let mut back = clean.clone();
+        join_secrets(&mut back, secrets);
+        assert_eq!(back, r);
+        let basic = Request { auth: Auth::Basic { user: "u".into(), password: "p".into() }, ..req() };
+        let (c, s) = split_secrets(&basic);
+        assert_eq!((c.auth, s.password.as_deref()), (Auth::Basic { user: "u".into(), password: String::new() }, Some("p")));
     }
 }

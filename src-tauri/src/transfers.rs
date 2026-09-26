@@ -64,6 +64,8 @@ pub struct Transfer {
     pub target: String,
     /// Still walking the source to find what to copy; size is not known yet.
     pub counting: bool,
+    /// Symlinks and odd entries inside a copied folder that were left out.
+    pub skipped: u32,
     pub size: u64,
     pub done: u64,
     /// Bytes per second over the last second.
@@ -130,49 +132,104 @@ fn unique_local(dir: &Path, name: &str) -> PathBuf {
     (1..).map(|n| dir.join(format!("{stem} ({n}){ext}"))).find(|p| !p.exists()).unwrap()
 }
 
-/// Files under a remote path, as (remote path, path relative to the root, size,
-/// permission bits), plus directories to create.
-fn walk_remote<'a>(
-    s: &'a SftpSession,
-    path: &'a str,
-    rel: &'a str,
-    files: &'a mut Vec<(String, String, u64, Option<u32>)>,
-    dirs: &'a mut Vec<String>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), russh_sftp::client::error::Error>> + Send + 'a>> {
-    Box::pin(async move {
-        let a = s.metadata(path).await?;
-        if a.is_dir() {
-            dirs.push(rel.to_string());
-            for item in s.read_dir(path).await? {
-                let name = item.file_name();
-                if name == "." || name == ".." {
-                    continue;
-                }
-                let child_rel = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
-                walk_remote(s, &join(path, &name), &child_rel, files, dirs).await?;
-            }
-        } else {
-            files.push((path.to_string(), rel.to_string(), a.size.unwrap_or(0), a.permissions));
-        }
-        Ok(())
-    })
+/// What a directory walk found: files as (source path, path relative to the
+/// root, size, permission bits), directories to create, and what it left out.
+#[derive(Default)]
+struct Walk<P> {
+    files: Vec<(P, String, u64, Option<u32>)>,
+    dirs: Vec<String>,
+    /// Symlinks inside the tree (not followed: one pointing back up would loop
+    /// forever, one to / would pull in everything) and entries with names that
+    /// are not a single path component.
+    skipped: u32,
 }
 
-fn walk_local(path: &Path, rel: &str, files: &mut Vec<(PathBuf, String, u64, u32)>, dirs: &mut Vec<String>) -> std::io::Result<()> {
-    let meta = std::fs::metadata(path)?;
-    if meta.is_dir() {
-        dirs.push(rel.to_string());
-        let mut children: Vec<_> = std::fs::read_dir(path)?.flatten().collect();
+/// Deeper trees are almost surely a loop the checks above did not catch.
+const MAX_DEPTH: usize = 64;
+
+/// A name a server may send in a directory listing that is safe to use as one
+/// path component here: not empty, not `.`/`..`, no `/` or NUL. Anything else
+/// could write outside the destination folder.
+pub(crate) fn safe_component(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\0'])
+}
+
+/// Walk a remote path. The path itself is followed if it is a link (the user
+/// picked it); links below it are skipped.
+async fn walk_remote(s: &SftpSession, root: &str) -> Result<Walk<String>, russh_sftp::client::error::Error> {
+    let mut w = Walk::default();
+    let top = s.metadata(root).await?;
+    if !top.is_dir() {
+        w.files.push((root.to_string(), String::new(), top.size.unwrap_or(0), top.permissions));
+        return Ok(w);
+    }
+    w.dirs.push(String::new());
+    // (remote dir, its path relative to the root, depth)
+    let mut stack = vec![(root.to_string(), String::new(), 0usize)];
+    while let Some((dir, rel, depth)) = stack.pop() {
+        for item in s.read_dir(&dir).await? {
+            let name = item.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            let a = item.metadata();
+            if !safe_component(&name) || a.is_symlink() || (a.is_dir() && depth + 1 > MAX_DEPTH) {
+                w.skipped += 1;
+                continue;
+            }
+            let child_rel = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+            let child = join(&dir, &name);
+            if a.is_dir() {
+                w.dirs.push(child_rel.clone());
+                stack.push((child, child_rel, depth + 1));
+            } else if a.is_regular() {
+                w.files.push((child, child_rel, a.size.unwrap_or(0), a.permissions));
+            } else {
+                // Sockets, devices, FIFOs: reading one could block forever.
+                w.skipped += 1;
+            }
+        }
+    }
+    w.dirs.sort();
+    Ok(w)
+}
+
+/// Walk a local path, the same way: the path itself is followed, links below it are not.
+fn walk_local(root: &Path) -> std::io::Result<Walk<PathBuf>> {
+    let mut w = Walk::default();
+    let top = std::fs::metadata(root)?;
+    if !top.is_dir() {
+        w.files.push((root.to_path_buf(), String::new(), top.len(), Some(std::os::unix::fs::PermissionsExt::mode(&top.permissions()))));
+        return Ok(w);
+    }
+    w.dirs.push(String::new());
+    let mut stack = vec![(root.to_path_buf(), String::new(), 0usize)];
+    while let Some((dir, rel, depth)) = stack.pop() {
+        let mut children: Vec<_> = std::fs::read_dir(&dir)?.flatten().collect();
         children.sort_by_key(|e| e.file_name());
         for e in children {
             let name = e.file_name().to_string_lossy().into_owned();
+            let Ok(meta) = std::fs::symlink_metadata(e.path()) else {
+                w.skipped += 1;
+                continue;
+            };
+            if meta.file_type().is_symlink() || (meta.is_dir() && depth + 1 > MAX_DEPTH) {
+                w.skipped += 1;
+                continue;
+            }
             let child_rel = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
-            walk_local(&e.path(), &child_rel, files, dirs)?;
+            if meta.is_dir() {
+                w.dirs.push(child_rel.clone());
+                stack.push((e.path(), child_rel, depth + 1));
+            } else if meta.is_file() {
+                w.files.push((e.path(), child_rel, meta.len(), Some(std::os::unix::fs::PermissionsExt::mode(&meta.permissions()))));
+            } else {
+                w.skipped += 1;
+            }
         }
-    } else {
-        files.push((path.to_path_buf(), rel.to_string(), meta.len(), std::os::unix::fs::PermissionsExt::mode(&meta.permissions())));
     }
-    Ok(())
+    w.dirs.sort();
+    Ok(w)
 }
 
 struct Progress<'a> {
@@ -215,24 +272,32 @@ async fn run(t: &Transfers, session: &Session, dest: Option<&Session>, id: &str,
     let mut buf = vec![0u8; CHUNK];
     match job {
         Job::Download { remote, local_dir, name, overwrite } => {
-            let (mut files, mut dirs) = (Vec::new(), Vec::new());
-            if let Err(e) = walk_remote(&s, remote, "", &mut files, &mut dirs).await {
-                return Err(sftp_err(e, session, remote).await);
-            }
-            let size: u64 = files.iter().map(|f| f.2).sum();
+            let w = match walk_remote(&s, remote).await {
+                Ok(w) => w,
+                Err(e) => return Err(sftp_err(e, session, remote).await),
+            };
+            let size: u64 = w.files.iter().map(|f| f.2).sum();
             let name = name.clone().unwrap_or_else(|| base_name(remote));
+            if !safe_component(&name) {
+                return Err(AppError::detail("invalid_name", &name));
+            }
             let root = if *overwrite { local_dir.join(&name) } else { unique_local(local_dir, &name) };
             t.update(id, |x| {
                 x.size = size;
+                x.skipped = w.skipped;
                 x.counting = false;
                 x.target = root.to_string_lossy().into_owned();
                 x.to = crate::paths::contract_tilde(&root);
             });
-            for d in &dirs {
+            for d in &w.dirs {
                 std::fs::create_dir_all(if d.is_empty() { root.clone() } else { root.join(d) })?;
             }
-            for (rpath, rel, _, _) in files {
+            for (rpath, rel, _, _) in w.files {
                 let local = if rel.is_empty() { root.clone() } else { root.join(&rel) };
+                // Every component was checked in the walk; this is a last guard.
+                if !local.starts_with(&root) {
+                    return Err(AppError::detail("invalid_name", &rel));
+                }
                 let mut src = match s.open(&rpath).await {
                     Ok(f) => f,
                     Err(e) => return Err(sftp_err(e, session, &rpath).await),
@@ -255,21 +320,24 @@ async fn run(t: &Transfers, session: &Session, dest: Option<&Session>, id: &str,
             }
         }
         Job::Upload { local, remote_dir, name, overwrite } => {
-            let (mut files, mut dirs) = (Vec::new(), Vec::new());
-            walk_local(local, "", &mut files, &mut dirs)?;
-            let size: u64 = files.iter().map(|f| f.2).sum();
+            let w = walk_local(local)?;
+            let size: u64 = w.files.iter().map(|f| f.2).sum();
             let name = name.clone().unwrap_or_else(|| local.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+            if !safe_component(&name) {
+                return Err(AppError::detail("invalid_name", &name));
+            }
             let root = join(remote_dir, &name);
             t.update(id, |x| {
                 x.size = size;
+                x.skipped = w.skipped;
                 x.counting = false;
                 x.target = root.clone();
             });
             if !*overwrite && s.try_exists(&root).await.unwrap_or(false) {
                 return Err(AppError::detail("exists", &root));
             }
-            make_dirs(&s, session, &root, &dirs).await?;
-            for (lpath, rel, _, mode) in files {
+            make_dirs(&s, session, &root, &w.dirs).await?;
+            for (lpath, rel, _, mode) in w.files {
                 let remote = if rel.is_empty() { root.clone() } else { join(&root, &rel) };
                 let mut dst = create_remote(&s, session, &remote, *overwrite).await?;
                 let mut src = tokio::fs::File::open(&lpath).await?;
@@ -287,29 +355,33 @@ async fn run(t: &Transfers, session: &Session, dest: Option<&Session>, id: &str,
                     p.add(n);
                 }
                 dst.shutdown().await.map_err(|e| AppError::detail("sftp", e))?;
-                keep_mode(&s, &remote, Some(mode)).await;
+                keep_mode(&s, &remote, mode).await;
             }
         }
         Job::Copy { remote, dest_dir, name, overwrite } => {
             let dest = dest.ok_or_else(|| AppError::new("not_connected"))?;
             let d = sftp(dest).await?;
-            let (mut files, mut dirs) = (Vec::new(), Vec::new());
-            if let Err(e) = walk_remote(&s, remote, "", &mut files, &mut dirs).await {
-                return Err(sftp_err(e, session, remote).await);
-            }
-            let size: u64 = files.iter().map(|f| f.2).sum();
+            let w = match walk_remote(&s, remote).await {
+                Ok(w) => w,
+                Err(e) => return Err(sftp_err(e, session, remote).await),
+            };
+            let size: u64 = w.files.iter().map(|f| f.2).sum();
             let name = name.clone().unwrap_or_else(|| base_name(remote));
+            if !safe_component(&name) {
+                return Err(AppError::detail("invalid_name", &name));
+            }
             let root = join(dest_dir, &name);
             t.update(id, |x| {
                 x.size = size;
+                x.skipped = w.skipped;
                 x.counting = false;
                 x.target = root.clone();
             });
             if !*overwrite && d.try_exists(&root).await.unwrap_or(false) {
                 return Err(AppError::detail("exists", &root));
             }
-            make_dirs(&d, dest, &root, &dirs).await?;
-            for (rpath, rel, _, mode) in files {
+            make_dirs(&d, dest, &root, &w.dirs).await?;
+            for (rpath, rel, _, mode) in w.files {
                 let target = if rel.is_empty() { root.clone() } else { join(&root, &rel) };
                 let mut src = match s.open(&rpath).await {
                     Ok(f) => f,
@@ -480,6 +552,7 @@ fn enqueue(state: &Arc<Transfers>, session: Arc<Session>, audit: AuditLog, n: Ne
         to: n.to,
         target: String::new(),
         counting: false,
+        skipped: 0,
         size: 0,
         done: 0,
         speed: 0.0,
@@ -720,6 +793,26 @@ mod tests {
         assert_eq!(unique_local(&dir, "a.tar.gz"), dir.join("a.tar (1).gz"));
         std::fs::write(dir.join("notes"), "").unwrap();
         assert_eq!(unique_local(&dir, "notes"), dir.join("notes (1)"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn walks_skip_links_and_unsafe_names() {
+        for bad in ["", ".", "..", "a/b", "../x", "/etc/passwd", "a\0b"] {
+            assert!(!safe_component(bad), "{bad:?}");
+        }
+        assert!(safe_component("report (1).pdf") && safe_component(".env"));
+
+        // A link back up would loop forever; it is skipped, not followed.
+        let dir = std::env::temp_dir().join(format!("portway-walk-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/a.txt"), "a").unwrap();
+        std::os::unix::fs::symlink("..", dir.join("sub/loop")).unwrap();
+        std::os::unix::fs::symlink("/", dir.join("root")).unwrap();
+        let w = walk_local(&dir).unwrap();
+        assert_eq!(w.files.iter().map(|f| f.1.as_str()).collect::<Vec<_>>(), ["sub/a.txt"]);
+        assert_eq!(w.dirs, ["", "sub"]);
+        assert_eq!(w.skipped, 2);
         std::fs::remove_dir_all(dir).ok();
     }
 }

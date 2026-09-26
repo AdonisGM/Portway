@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.2.0"
+version = "0.2.1"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"

@@ -26,6 +26,8 @@ function editError(e: unknown): string {
       return e.detail
         ? t('Không có quyền đọc {path}. Bật sudo cho phiên này để sửa tệp của root.', { path: e.detail })
         : t('Không có quyền đọc tệp này. Bật sudo cho phiên này để sửa tệp của root.')
+    case 'read_only':
+      return t('Bạn đọc được nhưng không ghi được {path}. Bật sudo cho phiên này để sửa.', { path: e.detail ?? '' })
     case 'too_big':
       return t('Tệp lớn hơn 20 MB, không mở để sửa.')
     case 'not_a_file':

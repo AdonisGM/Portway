@@ -1,6 +1,7 @@
 import { plural, type Dict } from '..'
 
 const en: Dict = {
+  'Bạn đọc được nhưng không ghi được {path}. Bật sudo cho phiên này để sửa.': 'You can read {path} but not write it. Turn on sudo for this session to edit it.',
   // app/edits
   'Không có quyền đọc {path}. Bật sudo cho phiên này để sửa tệp của root.': 'No permission to read {path}. Turn on sudo for this session to edit files owned by root.',
   'Không có quyền đọc tệp này. Bật sudo cho phiên này để sửa tệp của root.': 'No permission to read this file. Turn on sudo for this session to edit files owned by root.',

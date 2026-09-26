@@ -498,8 +498,12 @@ pub async fn sftp_chmod(
     r
 }
 
+/// A user or group name as useradd accepts it: letters, digits, `_ - .`, not
+/// starting with '-' (chown would read it as an option), and `$` only at the
+/// end (Samba machine accounts). It is quoted in the command anyway.
 fn valid_account(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 32 && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '$'))
+    let body = name.strip_suffix('$').unwrap_or(name);
+    !body.is_empty() && name.len() <= 32 && !name.starts_with('-') && body.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
 /// Change owner and group. Only root can; runs chown as root or through sudo.
@@ -524,7 +528,7 @@ pub async fn sftp_chown(
             return Err(AppError::new("needs_root"));
         }
         let quoted: Vec<String> = paths.iter().map(|p| shell_quote(p)).collect();
-        let cmd = format!("chown {}{owner}:{group} -- {}", if recursive { "-R " } else { "" }, quoted.join(" "));
+        let cmd = format!("chown {}{} -- {}", if recursive { "-R " } else { "" }, shell_quote(&format!("{owner}:{group}")), quoted.join(" "));
         let out = exec_priv(&session, &cmd, Duration::from_secs(60)).await?;
         let ok = out.code == Some(0);
         // Logged as it ran: through sudo unless the session is root.
@@ -606,5 +610,15 @@ mod tests {
         assert_eq!((i.uid, i.gids.clone()), (1001, vec![1001, 27]));
         assert_eq!(i.users[&1001], "deploy");
         assert_eq!(i.groups[&27], "sudo");
+    }
+
+    #[test]
+    fn account_names_cannot_become_options_or_expansions() {
+        for ok in ["www-data", "deploy", "svc.web", "HOST$", "_apt"] {
+            assert!(valid_account(ok), "{ok}");
+        }
+        for bad in ["", "-R", "www$HOME", "a$IFS-R", "a b", "a;b", "$", "a/b"] {
+            assert!(!valid_account(bad), "{bad}");
+        }
     }
 }

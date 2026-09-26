@@ -1,13 +1,14 @@
 import { plural, type Dict } from '..'
 
 const en: Dict = {
+  'Host chỉ gồm chữ, số và . - _ : [ ], không bắt đầu bằng dấu -': 'A host may only contain letters, digits and . - _ : [ ], and cannot start with -',
+  'User {user} không hợp lệ: chỉ gồm chữ, số và . _ - @, không bắt đầu bằng dấu -': 'User {user} is not valid: only letters, digits and . _ - @, and it cannot start with -',
   // format.ts
   'Chưa phân nhóm': 'Ungrouped',
   'Mật khẩu': 'Password',
   'Nhập tên hiển thị': 'Enter a display name',
   'Nhập host hoặc IP': 'Enter a host or IP',
   'Đã có server trùng tên này': 'A server with this name already exists',
-  'Host không được có khoảng trắng': 'The host can’t contain spaces',
   'Cổng phải từ 1 đến 65535': 'The port must be between 1 and 65535',
   'Cần ít nhất một tài khoản có tên user': 'At least one account with a user name is needed',
   'User {user} bị lặp': 'User {user} is listed twice',

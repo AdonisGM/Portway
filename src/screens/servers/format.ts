@@ -41,7 +41,9 @@ export function errorMessage(e: AppError): string {
     case 'name_taken':
       return t('Đã có server trùng tên này')
     case 'invalid_host':
-      return t('Host không được có khoảng trắng')
+      return t('Host chỉ gồm chữ, số và . - _ : [ ], không bắt đầu bằng dấu -')
+    case 'invalid_user':
+      return t('User {user} không hợp lệ: chỉ gồm chữ, số và . _ - @, không bắt đầu bằng dấu -', { user: e.detail ?? '' })
     case 'invalid_port':
       return t('Cổng phải từ 1 đến 65535')
     case 'no_account':

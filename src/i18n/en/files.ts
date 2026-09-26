@@ -1,6 +1,7 @@
 import { plural, type Dict } from '..'
 
 const en: Dict = {
+  '{route} · bỏ qua {n} liên kết hoặc tệp đặc biệt': (v) => `${v.route} · skipped ${v.n} ${Number(v.n) === 1 ? 'link or special file' : 'links or special files'}`,
   // Files screen: toolbar and list
   'Không mở được thư mục': "Couldn't open the folder",
   'Đã mở Terminal': 'Opened Terminal',

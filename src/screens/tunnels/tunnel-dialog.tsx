@@ -220,8 +220,15 @@ export function TunnelDialog({ editing, initial, onClose }: { editing: Tunnel | 
           </Field>
         )}
       </div>
-      {form.bind === '0.0.0.0' && form.kind !== 'remote' && (
-        <span className="rounded-lg bg-warn-soft px-3 py-2 text-[11.5px] text-ink2">{t('Mọi máy trong cùng mạng (LAN) với máy bạn đều dùng được tunnel này.')}</span>
+      {form.bind === '0.0.0.0' && form.kind === 'socks' && (
+        <span className="rounded-lg bg-warn-soft px-3 py-2 text-[11.5px] text-ink2">
+          {t('SOCKS mở ra LAN luôn cần đăng nhập: Portway tạo user portway và một mật khẩu ngẫu nhiên, cất trong Keychain. Chép chúng từ menu ⋯ của tunnel.')}
+        </span>
+      )}
+      {form.bind === '0.0.0.0' && form.kind === 'local' && (
+        <span className="rounded-lg bg-warn-soft px-3 py-2 text-[11.5px] text-ink2">
+          {t('Mọi máy trong cùng mạng (LAN) với máy bạn đều vào được {dest} qua cổng này, không cần mật khẩu. Chỉ chọn khi đang ở mạng tin cậy.', { dest: form.dest || t('đích') })}
+        </span>
       )}
 
       {form.kind !== 'socks' && (

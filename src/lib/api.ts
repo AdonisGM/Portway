@@ -423,7 +423,8 @@ export type TunnelRun =
   | { state: 'running'; since: number; active: number; total: number; rx: number; tx: number }
   | { state: 'retrying'; attempt: number; error: string; nextAt: number }
   | { state: 'error'; code: string; detail: string | null }
-export type Tunnel = TunnelSpec & { run: TunnelRun; command: string }
+/** `socksLogin`: [user, password] a SOCKS tunnel open to the LAN asks for. */
+export type Tunnel = TunnelSpec & { run: TunnelRun; command: string; socksLogin: [string, string] | null }
 
 export type TraceKind = 'exec' | 'sftp' | 'connect' | 'transfer'
 export type TraceStatus = 'waiting' | 'running' | 'ok' | 'error'
@@ -464,6 +465,8 @@ export type Transfer = {
   target: string
   /** Still walking the source; size is not known yet. */
   counting: boolean
+  /** Symlinks and special entries inside a copied folder that were left out. */
+  skipped: number
   size: number
   done: number
   speed: number
@@ -506,7 +509,8 @@ export type HttpResponse = {
   command: string
 }
 export type HttpSaved = { id: string; serverId: string | null; name: string; request: HttpRequest }
-export type HttpHistoryItem = { id: string; at: number; request: HttpRequest; status: number; ms: number; error: boolean }
+/** `redacted`: tokens, passwords and secret headers were blanked before storing. */
+export type HttpHistoryItem = { id: string; at: number; request: HttpRequest; status: number; ms: number; error: boolean; redacted: boolean }
 
 /** A batch of lines from a followed log (`logtail` event). */
 export type LogBatch = { id: string; lines: string[]; dropped: number; notes: string[]; ended: boolean; error: string | null }

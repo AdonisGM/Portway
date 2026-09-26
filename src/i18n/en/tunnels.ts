@@ -1,6 +1,15 @@
 import { plural, type Dict } from '..'
 
 const en: Dict = {
+  'Thiếu mật khẩu SOCKS trong Keychain: lưu lại tunnel để tạo mật khẩu mới': 'The SOCKS password is missing from the Keychain: save the tunnel again to create a new one',
+  'Máy khác trong mạng dùng được tunnel này, bằng user và mật khẩu SOCKS': 'Other machines on the network can use this tunnel with the SOCKS user and password',
+  'Sao chép user và mật khẩu SOCKS': 'Copy SOCKS user and password',
+  'IP-của-máy-này': 'this-Mac-IP',
+  'Đã sao chép thông tin SOCKS': 'SOCKS login copied',
+  'User {user} · mật khẩu trong clipboard': 'User {user} · password in the clipboard',
+  'SOCKS mở ra LAN luôn cần đăng nhập: Portway tạo user portway và một mật khẩu ngẫu nhiên, cất trong Keychain. Chép chúng từ menu ⋯ của tunnel.': 'A SOCKS tunnel open to the LAN always needs a login: Portway creates the user portway and a random password, kept in the Keychain. Copy them from the tunnel’s ⋯ menu.',
+  'Mọi máy trong cùng mạng (LAN) với máy bạn đều vào được {dest} qua cổng này, không cần mật khẩu. Chỉ chọn khi đang ở mạng tin cậy.': 'Every machine on your network (LAN) can reach {dest} through this port without a password. Only choose this on a network you trust.',
+  'đích': 'the destination',
   // Shared words
   'Huỷ': 'Cancel',
   'Sao chép': 'Copy',

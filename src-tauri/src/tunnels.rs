@@ -71,6 +71,39 @@ pub struct Spec {
     pub auto_reconnect: bool,
 }
 
+/// User name of the SOCKS login for tunnels open to the LAN.
+pub(crate) const SOCKS_USER: &str = "portway";
+
+/// A SOCKS tunnel reachable from other machines needs a login, or anyone on
+/// the network gets a proxy into the server's network.
+fn needs_login(spec: &Spec) -> bool {
+    spec.kind == Kind::Socks && spec.bind != "127.0.0.1"
+}
+
+fn socks_account(id: &str) -> String {
+    format!("tunnel-socks:{id}")
+}
+
+/// The SOCKS password of a tunnel, from the Keychain.
+fn socks_password(id: &str) -> Option<String> {
+    crate::ssh::keychain(&socks_account(id))?.get_password().ok()
+}
+
+/// Make sure a LAN SOCKS tunnel has a password (random, kept in the
+/// Keychain), and that a loopback one has none left over.
+fn settle_socks_password(spec: &Spec) -> AppResult<()> {
+    let entry = crate::ssh::keychain(&socks_account(&spec.id)).ok_or_else(|| AppError::new("keychain"))?;
+    if !needs_login(spec) {
+        let _ = entry.delete_credential();
+        return Ok(());
+    }
+    if entry.get_password().is_ok() {
+        return Ok(());
+    }
+    let password: String = uuid::Uuid::new_v4().simple().to_string().chars().take(24).collect();
+    entry.set_password(&password).map_err(|e| AppError::detail("keychain", e))
+}
+
 fn loopback() -> String {
     "127.0.0.1".into()
 }
@@ -99,6 +132,8 @@ pub struct TunnelView {
     pub run: RunState,
     /// `ssh …` doing the same, for copying and the action log.
     pub command: String,
+    /// Login a LAN SOCKS tunnel asks for (user, password); None otherwise.
+    pub socks_login: Option<(String, String)>,
 }
 
 #[derive(Default)]
@@ -179,6 +214,10 @@ impl Tunnels {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e.into()),
         };
+        // LAN SOCKS tunnels saved before logins existed get one now.
+        for s in specs.iter().filter(|s| needs_login(s)) {
+            let _ = settle_socks_password(s);
+        }
         Ok(Self { app, path, specs: Mutex::new(specs), runs: Mutex::new(HashMap::new()) })
     }
 
@@ -200,7 +239,8 @@ impl Tunnels {
 
     fn view(&self, spec: &Spec) -> TunnelView {
         let run = self.runs.lock().unwrap().get(&spec.id).map(|r| self.live_state(r)).unwrap_or(RunState::Off);
-        TunnelView { command: self.command(spec), spec: spec.clone(), run }
+        let socks_login = needs_login(spec).then(|| socks_password(&spec.id).map(|p| (SOCKS_USER.to_string(), p))).flatten();
+        TunnelView { command: self.command(spec), spec: spec.clone(), run, socks_login }
     }
 
     /// The stored state with the live counters filled in.
@@ -281,6 +321,19 @@ impl Tunnels {
         let audit = self.app.state::<AuditLog>().inner().clone();
         let command = self.command(&spec);
 
+        // A LAN SOCKS tunnel never runs without its login.
+        let login = if needs_login(&spec) {
+            match socks_password(&spec.id) {
+                Some(p) => Some(Arc::new((SOCKS_USER.to_string(), p))),
+                None => {
+                    self.set_state(&id, RunState::Error { code: "socks_login_missing".into(), detail: None });
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
         // Local listeners are bound once and survive reconnects, so a busy
         // port is reported at once and apps pointed at it keep working.
         let listener = match spec.kind {
@@ -300,7 +353,7 @@ impl Tunnels {
             let slot = handle_slot.clone();
             let stats = stats.clone();
             let spec = spec.clone();
-            tauri::async_runtime::spawn(accept_loop(l, spec, slot, stats))
+            tauri::async_runtime::spawn(accept_loop(l, spec, slot, stats, login.clone()))
         });
 
         let mut attempt = 0u32;
@@ -430,6 +483,7 @@ impl Tunnels {
             }
             self.persist(&specs)?;
         }
+        settle_socks_password(&spec)?;
         // A running tunnel picks up its new settings.
         let running = self.runs.lock().unwrap().contains_key(&spec.id);
         if restart && running {
@@ -441,6 +495,9 @@ impl Tunnels {
 
     pub fn delete(&self, id: &str) -> AppResult<()> {
         self.stop(id);
+        if let Some(entry) = crate::ssh::keychain(&socks_account(id)) {
+            let _ = entry.delete_credential();
+        }
         let mut specs = self.specs.lock().unwrap();
         specs.retain(|s| s.id != id);
         self.persist(&specs)
@@ -455,7 +512,7 @@ async fn sleep_or_stop(stop: &mut watch::Receiver<bool>, secs: u64) -> bool {
     }
 }
 
-async fn accept_loop(listener: TcpListener, spec: Spec, slot: Arc<Mutex<Option<Arc<Conn>>>>, stats: Arc<Stats>) {
+async fn accept_loop(listener: TcpListener, spec: Spec, slot: Arc<Mutex<Option<Arc<Conn>>>>, stats: Arc<Stats>, login: Option<Arc<(String, String)>>) {
     loop {
         let (sock, peer) = match listener.accept().await {
             Ok(x) => x,
@@ -469,12 +526,13 @@ async fn accept_loop(listener: TcpListener, spec: Spec, slot: Arc<Mutex<Option<A
         let Some(handle) = slot.lock().unwrap().clone() else { continue };
         let stats = stats.clone();
         let spec = spec.clone();
+        let login = login.clone();
         tauri::async_runtime::spawn(async move {
             stats.active.fetch_add(1, Ordering::Relaxed);
             stats.total.fetch_add(1, Ordering::Relaxed);
             let _ = match spec.kind {
                 Kind::Local => serve_local(sock, peer, &spec.dest, &handle, &stats).await,
-                Kind::Socks => serve_socks(sock, peer, &handle, &stats).await,
+                Kind::Socks => serve_socks(sock, peer, &handle, &stats, login.as_deref()).await,
                 Kind::Remote => Ok(()),
             };
             stats.active.fetch_sub(1, Ordering::Relaxed);
@@ -491,8 +549,24 @@ pub(crate) async fn serve_local(sock: TcpStream, peer: SocketAddr, dest: &str, h
     pipe(sock, channel.into_stream(), stats).await
 }
 
-/// Minimal SOCKS5: no authentication, CONNECT only.
-pub(crate) async fn serve_socks(mut sock: TcpStream, peer: SocketAddr, handle: &russh::client::Handle<Client>, stats: &Arc<Stats>) -> std::io::Result<()> {
+/// Equal-length-independent comparison, so a wrong password takes as long as a right one.
+fn same(a: &[u8], b: &[u8]) -> bool {
+    let mut diff = a.len() ^ b.len();
+    for (i, x) in a.iter().enumerate() {
+        diff |= (*x ^ b.get(i).copied().unwrap_or(0)) as usize;
+    }
+    diff == 0
+}
+
+/// Minimal SOCKS5, CONNECT only. With a login (LAN tunnels) only the
+/// user/password method (RFC 1929) is accepted; otherwise no authentication.
+pub(crate) async fn serve_socks(
+    mut sock: TcpStream,
+    peer: SocketAddr,
+    handle: &russh::client::Handle<Client>,
+    stats: &Arc<Stats>,
+    login: Option<&(String, String)>,
+) -> std::io::Result<()> {
     let mut head = [0u8; 2];
     sock.read_exact(&mut head).await?;
     if head[0] != 5 {
@@ -500,11 +574,27 @@ pub(crate) async fn serve_socks(mut sock: TcpStream, peer: SocketAddr, handle: &
     }
     let mut methods = vec![0u8; head[1] as usize];
     sock.read_exact(&mut methods).await?;
-    if !methods.contains(&0) {
+    let method = if login.is_some() { 2 } else { 0 };
+    if !methods.contains(&method) {
         sock.write_all(&[5, 0xff]).await?;
         return Ok(());
     }
-    sock.write_all(&[5, 0]).await?;
+    sock.write_all(&[5, method]).await?;
+    if let Some((user, password)) = login {
+        let mut ver = [0u8; 2];
+        sock.read_exact(&mut ver).await?;
+        let mut u = vec![0u8; ver[1] as usize];
+        sock.read_exact(&mut u).await?;
+        let mut plen = [0u8; 1];
+        sock.read_exact(&mut plen).await?;
+        let mut p = vec![0u8; plen[0] as usize];
+        sock.read_exact(&mut p).await?;
+        let ok = ver[0] == 1 && same(&u, user.as_bytes()) & same(&p, password.as_bytes());
+        sock.write_all(&[1, if ok { 0 } else { 1 }]).await?;
+        if !ok {
+            return Ok(());
+        }
+    }
     let mut req = [0u8; 4];
     sock.read_exact(&mut req).await?;
     let host = match req[3] {
@@ -733,5 +823,16 @@ mod tests {
         drop(a);
         let _ = piping.await;
         assert_eq!((stats.tx.load(Ordering::Relaxed), stats.rx.load(Ordering::Relaxed)), (5, 4));
+    }
+
+    #[test]
+    fn lan_socks_needs_a_login() {
+        let mut s = spec(Kind::Socks, "");
+        assert!(!needs_login(&s));
+        s.bind = "0.0.0.0".into();
+        assert!(needs_login(&s));
+        s.kind = Kind::Local;
+        assert!(!needs_login(&s));
+        assert!(same(b"abc", b"abc") && !same(b"abc", b"abd") && !same(b"abc", b"ab") && !same(b"", b"a"));
     }
 }

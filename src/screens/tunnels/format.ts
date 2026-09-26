@@ -55,6 +55,8 @@ export function errorText(code: string, detail: string | null): string {
       return t('Cổng đang bị chiếm trên máy bạn')
     case 'bind_failed':
       return t('Không mở được cổng trên máy bạn')
+    case 'socks_login_missing':
+      return t('Thiếu mật khẩu SOCKS trong Keychain: lưu lại tunnel để tạo mật khẩu mới')
     case 'needs_secret':
       return detail === 'passphrase'
         ? t('Cần passphrase của khoá: kết nối server một lần và chọn lưu vào Keychain')

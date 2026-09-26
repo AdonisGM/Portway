@@ -54,7 +54,7 @@ export function TransferQueue() {
   const Chev = open ? ChevronDown : ChevronUp
 
   return (
-    <div className="sticky bottom-0 z-[6] mt-auto pt-1.5">
+    <div className="flex-none">
       <div className="overflow-hidden rounded-xl border border-line2 bg-surface shadow-pop">
         {open && (
           <>

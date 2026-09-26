@@ -3,7 +3,7 @@ import { useNav, type ModuleId } from '../../app/nav'
 import { useServers } from '../../app/servers'
 import { OsBadge } from '../../components/os-badge'
 import { useToast } from '../../components/toast'
-import { Button, Chip, TONES } from '../../components/ui/primitives'
+import { Button, Chip, cx, TONES } from '../../components/ui/primitives'
 import { MODULE_LABELS } from '../../layout/meta'
 import { isAppError, api, type Server } from '../../lib/api'
 import { copyText } from '../../lib/clipboard'
@@ -25,8 +25,12 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
     return <div className="rounded-xl border border-line bg-surface p-8 text-center text-muted">Server này không còn trong danh sách.</div>
   }
 
+  // Modules that manage their own scrolling (the file browser) get exactly the
+  // height left under the header instead of growing the page.
+  const fill = module === 'files'
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className={cx('flex flex-col gap-4', fill && 'min-h-0 flex-1')}>
       <ServerHeader server={server} user={user} conn={conn} />
 
       {(!conn || conn.status === 'failed') && <Failed server={server} user={user} conn={conn} />}
@@ -39,7 +43,7 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
           {conn.status === 'reconnecting' && <Reconnecting server={server} user={user} conn={conn} />}
           <SudoBanner server={server} user={user} sudo={conn.sudo} />
           {/* Last numbers stay on screen, dimmed, while reconnecting. */}
-          <div className="flex flex-col gap-4 transition-opacity duration-200" style={{ opacity: conn.status === 'reconnecting' ? 0.55 : 1 }}>
+          <div className={cx('flex flex-col gap-4 transition-opacity duration-200', fill && 'min-h-0 flex-1')} style={{ opacity: conn.status === 'reconnecting' ? 0.55 : 1 }}>
             {module === 'overview' ? (
               <Overview server={server} user={user} />
             ) : module === 'files' ? (

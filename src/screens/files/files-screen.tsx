@@ -20,7 +20,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useConnections } from '../../app/connections'
 import { useNav } from '../../app/nav'
 import { readCache, writeCache } from '../../app/session-cache'
@@ -262,7 +262,9 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
         </Button>
       </div>
     ) : (
-      <Table loading />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Table loading />
+      </div>
     )
   }
 
@@ -270,7 +272,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   const match = filter.trim()
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex min-h-0 flex-1 flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <PathBar path={path} go={go} />
         <Button size="sm" onClick={() => void pickUpload()} disabled={!canWrite}>
@@ -310,10 +312,21 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
         )}
       </div>
 
-      <div className="flex flex-wrap items-start gap-3">
+      <div className="flex min-h-[260px] flex-1 gap-3">
         <Table
           loading={false}
           dim={loading}
+          overlay={
+            dropping && (
+              <div className="pointer-events-none absolute inset-1.5 flex flex-col items-center justify-center gap-1.5 rounded-[10px] border-2 border-dashed border-accent bg-[color-mix(in_srgb,var(--surface)_80%,transparent)]">
+                <Upload size={24} strokeWidth={1.8} />
+                <span className="text-[14px] font-semibold">Thả để tải lên {path}</span>
+                <span className="text-[11.5px] text-ink2">
+                  {user}@{server.name}
+                </span>
+              </div>
+            )
+          }
           head={
             <>
               <button type="button" title="Chọn tất cả" onClick={() => select(allOn ? [] : order, null)} className="flex cursor-pointer">
@@ -418,15 +431,6 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
             })
           )}
 
-          {dropping && (
-            <div className="pointer-events-none absolute inset-1.5 flex flex-col items-center justify-center gap-1.5 rounded-[10px] border-2 border-dashed border-accent bg-[color-mix(in_srgb,var(--surface)_80%,transparent)]">
-              <Upload size={24} strokeWidth={1.8} />
-              <span className="text-[14px] font-semibold">Thả để tải lên {path}</span>
-              <span className="text-[11.5px] text-ink2">
-                {user}@{server.name}
-              </span>
-            </div>
-          )}
         </Table>
 
         {panel && (
@@ -595,34 +599,50 @@ function PathBar({ path, go }: { path: string; go: (p: string) => Promise<boolea
   )
 }
 
-function Table({ loading, dim, head, children }: { loading: boolean; dim?: boolean; head?: ReactNode; children?: ReactNode }) {
+/** Fills the height it is given; rows scroll inside under a fixed header. */
+function Table({
+  loading,
+  dim,
+  head,
+  overlay,
+  children,
+}: {
+  loading: boolean
+  dim?: boolean
+  head?: ReactNode
+  overlay?: ReactNode
+  children?: ReactNode
+}) {
   return (
-    <div
-      className="relative min-w-0 flex-[999_1_440px] overflow-auto rounded-xl border border-line bg-surface transition-opacity"
-      style={{ opacity: dim ? 0.6 : 1 }}
-    >
-      <div className="grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted" style={{ gridTemplateColumns: GRID }}>
-        {head ?? (
-          <>
-            <span />
-            <span>Tên</span>
-            <span className="text-right">Kích thước</span>
-            <span>Sửa lần cuối</span>
-            <span>Quyền</span>
-          </>
-        )}
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain transition-opacity" style={{ opacity: dim ? 0.6 : 1 }}>
+        <div
+          className="sticky top-0 z-[1] grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted"
+          style={{ gridTemplateColumns: GRID }}
+        >
+          {head ?? (
+            <>
+              <span />
+              <span>Tên</span>
+              <span className="text-right">Kích thước</span>
+              <span>Sửa lần cuối</span>
+              <span>Quyền</span>
+            </>
+          )}
+        </div>
+        {loading
+          ? SKELETON.map((w, i) => (
+              <div key={i} className="grid items-center gap-3 border-t border-line px-3.5 py-2.5" style={{ gridTemplateColumns: GRID }}>
+                <span className="size-[15px] rounded bg-sunken" />
+                <span className="h-3 rounded-[5px] bg-sunken" style={{ width: w }} />
+                <span className="h-2.5 rounded-[5px] bg-sunken" />
+                <span className="h-2.5 rounded-[5px] bg-sunken" />
+                <span className="h-2.5 rounded-[5px] bg-sunken" />
+              </div>
+            ))
+          : children}
       </div>
-      {loading
-        ? SKELETON.map((w, i) => (
-            <div key={i} className="grid items-center gap-3 border-t border-line px-3.5 py-2.5" style={{ gridTemplateColumns: GRID }}>
-              <span className="size-[15px] rounded bg-sunken" />
-              <span className="h-3 rounded-[5px] bg-sunken" style={{ width: w }} />
-              <span className="h-2.5 rounded-[5px] bg-sunken" />
-              <span className="h-2.5 rounded-[5px] bg-sunken" />
-              <span className="h-2.5 rounded-[5px] bg-sunken" />
-            </div>
-          ))
-        : children}
+      {overlay}
     </div>
   )
 }
@@ -838,27 +858,9 @@ function Details({
       ]
     : []
 
-  // Fit the panel between its top and the transfer dock so the actions at its
-  // end stay reachable in a short window; it scrolls inside itself instead.
-  const box = useRef<HTMLDivElement>(null)
-  const [maxHeight, setMaxHeight] = useState<number>()
-  useLayoutEffect(() => {
-    const fit = () => {
-      const top = box.current?.getBoundingClientRect().top ?? 0
-      setMaxHeight(Math.max(240, window.innerHeight - Math.max(top, 0) - 76))
-    }
-    fit()
-    window.addEventListener('resize', fit)
-    window.addEventListener('scroll', fit, true)
-    return () => {
-      window.removeEventListener('resize', fit)
-      window.removeEventListener('scroll', fit, true)
-    }
-  }, [])
-
   const Chev = more ? ChevronDown : ChevronRight
   return (
-    <div ref={box} style={{ maxHeight }} className="sticky top-0 flex max-w-[380px] min-w-0 flex-[1_1_280px] flex-col gap-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 rounded-xl border border-line bg-surface p-3.5">
+    <div className="flex w-[340px] flex-none flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-3.5 [scrollbar-width:thin] [&>*]:shrink-0">
       <div className="flex items-center gap-2.5">
         <Tag text={head.tag} colors={head.colors} large />
         <div className="flex min-w-0 flex-1 flex-col gap-px">

@@ -5,11 +5,16 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useServers } from '../../app/servers'
+import { useEdits } from '../../app/edits'
 import { asksDownload, useSettings } from '../../app/settings'
 import { useToast } from '../../components/toast'
+import { SelectField } from '../../components/ui/form-controls'
 import { Button } from '../../components/ui/primitives'
 import { SegmentedControl } from '../../components/ui/segmented'
 import { api, isAppError, type Theme } from '../../lib/api'
+
+/** Select value for "no app chosen" (the select treats '' as nothing chosen). */
+const DEFAULT_EDITOR = 'default'
 
 /** "~/Downloads" for a folder under the home folder. */
 const shownDir = (dir: string, home: string) => (home && dir.startsWith(home + '/') ? '~' + dir.slice(home.length) : dir)
@@ -20,6 +25,7 @@ const errText = (e: unknown) => (isAppError(e) ? (e.code === 'not_a_dir' ? `${e.
 export function SettingsScreen() {
   const { settings, update } = useSettings()
   const { servers, refresh } = useServers()
+  const { apps } = useEdits()
   const toast = useToast()
   const [dataPath, setDataPath] = useState('')
   const [version, setVersion] = useState('')
@@ -109,6 +115,20 @@ export function SettingsScreen() {
               { id: 'ask', label: 'Hỏi mỗi lần' },
               { id: 'direct', label: 'Lưu thẳng' },
             ]}
+          />
+        </Row>
+      </Section>
+
+      <Section id="editor" title="Sửa tệp">
+        <Row
+          label="Mở tệp của server bằng"
+          hint="Tệp được tải về thư mục tạm riêng cho từng server và user; mỗi lần lưu trong app, Portway tải lên lại. Bấm đúp một tệp trong màn Tệp để mở."
+        >
+          <SelectField
+            value={settings.editor ?? DEFAULT_EDITOR}
+            onChange={(v) => void run(() => update({ editor: v === DEFAULT_EDITOR ? null : v }), 'Không lưu được')}
+            options={[{ value: DEFAULT_EDITOR, label: 'Editor mặc định của macOS' }, ...apps.map((a) => ({ value: a.path, label: a.name }))]}
+            className="w-56"
           />
         </Row>
       </Section>

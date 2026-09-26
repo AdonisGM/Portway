@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ConnectionsProvider } from './app/connections'
+import { EditsProvider } from './app/edits'
 import { NavProvider } from './app/nav'
 import { ServersProvider } from './app/servers'
 import { SettingsProvider } from './app/settings'
@@ -25,8 +26,10 @@ export default function App() {
               <TransfersProvider>
                 <TraceProvider>
                   <TunnelsProvider>
-                    <AppShell />
-                    <SplashScreen ready={ready} />
+                    <EditsProvider>
+                      <AppShell />
+                      <SplashScreen ready={ready} />
+                    </EditsProvider>
                   </TunnelsProvider>
                 </TraceProvider>
               </TransfersProvider>

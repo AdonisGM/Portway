@@ -878,6 +878,14 @@ pub(crate) fn wrap_command(session: &Session, command: &str, privileged: bool) -
     }
 }
 
+/// Run `command` with `input` on its stdin (through sudo when asked and on).
+pub(crate) async fn exec_input(session: &Session, command: &str, input: &str, privileged: bool, timeout: Duration) -> AppResult<ExecOutput> {
+    let (line, stdin, shown) = wrap_command(session, command, privileged);
+    // The sudo password, when there is one, comes first on stdin.
+    let stdin = Some(format!("{}{input}", stdin.unwrap_or_default()));
+    run_channel(session, &line, &shown, stdin, timeout).await
+}
+
 /// Open a channel, run `line` as is, optionally feed stdin, collect the output.
 /// Traced as `shown` (the command without Portway's wrapper; stdin, which can
 /// hold the sudo password, is never recorded).

@@ -1,6 +1,7 @@
-import { FileText, FolderOpen, Globe, Lock, RotateCw, ScrollText } from 'lucide-react'
+import { FilePen, FileText, FolderOpen, Globe, Lock, RotateCw, ScrollText } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useConnections } from '../../app/connections'
+import { useEdits } from '../../app/edits'
 import { useNav } from '../../app/nav'
 import { readCache, writeCache } from '../../app/session-cache'
 import { useToast } from '../../components/toast'
@@ -65,6 +66,7 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
   const conns = useConnections()
   const nav = useNav()
   const toast = useToast()
+  const edits = useEdits()
   const conn = conns.get(server.id, user)
   const sudo = conn?.status === 'connected' && conn.sudo && user !== 'root'
   const [state, setState] = useState<NginxState | null>(() => readCache<NginxState>(server.id, user, 'nginx')?.data ?? null)
@@ -245,6 +247,7 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
               onSource={() => setSource(current)}
               onFiles={openInFiles}
               onTail={setTail}
+              onEdit={(path) => void edits.open(server.id, user, path)}
             />
           ) : (
             <div />
@@ -288,6 +291,7 @@ function Details({
   onSource,
   onFiles,
   onTail,
+  onEdit,
 }: {
   site: NginxSite
   user: string
@@ -295,6 +299,7 @@ function Details({
   onSource: () => void
   onFiles: (path: string) => void
   onTail: (path: string) => void
+  onEdit: (path: string) => void
 }) {
   const t = toggleOf(s)
   const cl = certLine(s)
@@ -385,6 +390,10 @@ function Details({
           <Button size="xs" onClick={onSource}>
             <FileText size={12} strokeWidth={1.8} />
             Xem cấu hình
+          </Button>
+          <Button size="xs" onClick={() => onEdit(s.available ?? s.file)} title="Mở bằng editor trên máy; lưu là tải lên. Sau khi sửa, bấm Kiểm tra cấu hình rồi Reload.">
+            <FilePen size={12} strokeWidth={1.8} />
+            Sửa trên máy
           </Button>
           <Button size="xs" onClick={() => onFiles(s.available ?? s.file)}>
             <FolderOpen size={12} strokeWidth={1.8} />

@@ -5,6 +5,7 @@ import { ServerListScreen } from '../screens/servers/server-list'
 import { SettingsScreen } from '../screens/settings/settings-screen'
 import { TransferScreen } from '../screens/transfer/transfer-screen'
 import { TunnelsScreen } from '../screens/tunnels/tunnels-screen'
+import { EditsDock } from './edits-dock'
 import { Menu } from './menu'
 import { Rail } from './rail'
 import { Titlebar } from './titlebar'
@@ -39,6 +40,7 @@ export function AppShell() {
               <TunnelsScreen />
             )}
           </main>
+          <EditsDock />
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ import {
   Clock,
   Database,
   Download,
+  FilePen,
   Folder,
   Globe,
   Info,
@@ -92,6 +93,7 @@ function TransferMenu() {
 /** Sections of the settings page; a click scrolls to one. */
 export const SETTINGS_SECTIONS = [
   { id: 'download', label: 'Tải xuống', icon: Download },
+  { id: 'editor', label: 'Sửa tệp', icon: FilePen },
   { id: 'appearance', label: 'Giao diện', icon: Palette },
   { id: 'data', label: 'Dữ liệu', icon: Database },
   { id: 'about', label: 'Giới thiệu', icon: Info },

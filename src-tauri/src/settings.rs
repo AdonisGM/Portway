@@ -29,6 +29,9 @@ pub struct Settings {
     /// None for files from before this setting: they asked unless a folder was set.
     pub ask_download: Option<bool>,
     pub theme: Theme,
+    /// App (a .app path) that opens files edited on this Mac; None is the
+    /// default text editor.
+    pub editor: Option<String>,
 }
 
 pub struct SettingsStore {
@@ -75,6 +78,7 @@ pub fn settings_set(app: AppHandle, store: tauri::State<'_, SettingsStore>, sett
         }
     }
     next.ask_download = Some(next.ask_download.unwrap_or(next.download_dir.is_none()));
+    next.editor = next.editor.filter(|e| !e.trim().is_empty());
     let saved = store.save(next)?;
     let _ = app.emit("settings", saved.clone());
     Ok(saved)
@@ -97,12 +101,12 @@ mod tests {
         let path = std::env::temp_dir().join(format!("portway-settings-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         let store = SettingsStore::load(path.clone());
-        assert_eq!(store.get(), Settings { download_dir: None, ask_download: None, theme: Theme::Dark });
-        store.save(Settings { download_dir: Some("/tmp".into()), ask_download: Some(false), theme: Theme::System }).unwrap();
+        assert_eq!(store.get(), Settings { download_dir: None, ask_download: None, theme: Theme::Dark, editor: None });
+        store.save(Settings { download_dir: Some("/tmp".into()), ask_download: Some(false), theme: Theme::System, editor: None }).unwrap();
         assert_eq!(SettingsStore::load(path.clone()).get().theme, Theme::System);
         // Unknown or missing fields fall back to defaults.
         fs::write(&path, r#"{"theme":"light","extra":1}"#).unwrap();
-        assert_eq!(SettingsStore::load(path.clone()).get(), Settings { download_dir: None, ask_download: None, theme: Theme::Light });
+        assert_eq!(SettingsStore::load(path.clone()).get(), Settings { download_dir: None, ask_download: None, theme: Theme::Light, editor: None });
         fs::remove_file(path).ok();
     }
 }

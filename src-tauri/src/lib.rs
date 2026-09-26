@@ -1,6 +1,7 @@
 mod audit;
 mod disks;
 mod docker;
+mod editing;
 mod error;
 mod files;
 mod firewall;
@@ -161,6 +162,12 @@ pub fn run() {
             docker::docker_volumes,
             docker::docker_volume_sizes,
             docker::docker_volume_remove,
+            editing::edit_open,
+            editing::edit_stop,
+            editing::edit_resolve,
+            editing::edit_reopen,
+            editing::edit_list,
+            editing::editor_apps,
             logtail::log_tail_start,
             nginx::nginx_state,
             nginx::nginx_action,
@@ -179,6 +186,9 @@ pub fn run() {
             app.manage(store);
             app.manage(settings::SettingsStore::load(data_dir.join("settings.json")));
             app.manage(ssh::Sessions::default());
+            let edits = std::sync::Arc::new(editing::Edits::new(app.handle().clone()));
+            edits.clean_stale();
+            app.manage(edits);
             app.manage(std::sync::Arc::new(logtail::LogTails::default()));
             app.manage(audit::AuditLog::load(data_dir.join("audit.jsonl")));
             app.manage(std::sync::Arc::new(transfers::Transfers::new(app.handle().clone())));

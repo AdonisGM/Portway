@@ -72,7 +72,26 @@ export type Settings = {
   /** Ask where to save each download; null (older settings) asks unless a folder is set. */
   askDownload: boolean | null
   theme: Theme
+  /** App (.app path) that opens files edited on this Mac; null is the default text editor. */
+  editor: string | null
 }
+
+/** A server file open in an app on this Mac, uploaded again on each save. */
+export type Edit = {
+  id: string
+  serverId: string
+  user: string
+  serverName: string
+  remotePath: string
+  localPath: string
+  app: string | null
+  sudo: boolean
+  status: 'synced' | 'uploading' | 'pending' | 'conflict' | 'error'
+  uploads: number
+  syncedAt: number
+  error: string | null
+}
+export type EditorApp = { name: string; path: string }
 
 export type AppError = { code: string; field?: string; detail?: string }
 
@@ -573,6 +592,12 @@ type Api = {
   localMkdir(dir: string, name: string): Promise<string>
   localTerminal(path: string): Promise<void>
   transfers(): Promise<Transfer[]>
+  editOpen(serverId: string, user: string, path: string, app?: string | null): Promise<Edit>
+  editStop(id: string): Promise<void>
+  editResolve(id: string, overwrite: boolean): Promise<void>
+  editReopen(id: string, app?: string | null): Promise<void>
+  edits(): Promise<Edit[]>
+  editorApps(): Promise<EditorApp[]>
   nginxState(serverId: string, user: string): Promise<NginxState>
   nginxAction(serverId: string, user: string, action: NginxAction): Promise<NginxResult>
   nginxPreview(action: NginxAction): Promise<string>
@@ -658,6 +683,12 @@ const tauriApi: Api = {
   localMkdir: (dir, name) => invoke('local_mkdir', { dir, name }),
   localTerminal: (path) => invoke('local_terminal', { path }),
   transfers: () => invoke('transfer_list'),
+  editOpen: (serverId, user, path, app) => invoke('edit_open', { serverId, user, path, app: app ?? null }),
+  editStop: (id) => invoke('edit_stop', { id }),
+  editResolve: (id, overwrite) => invoke('edit_resolve', { id, overwrite }),
+  editReopen: (id, app) => invoke('edit_reopen', { id, app: app ?? null }),
+  edits: () => invoke('edit_list'),
+  editorApps: () => invoke('editor_apps'),
   nginxState: (serverId, user) => invoke('nginx_state', { serverId, user }),
   nginxAction: (serverId, user, action) => invoke('nginx_action', { serverId, user, action }),
   nginxPreview: (action) => invoke('nginx_action_preview', { action }),
@@ -725,7 +756,7 @@ function browserApi(): Api {
     exportServers: async () => fail('needs_app'),
     importServersFile: async () => fail('needs_app'),
     async settings() {
-      return { downloadDir: null, askDownload: null, theme: 'dark' }
+      return { downloadDir: null, askDownload: null, theme: 'dark', editor: null }
     },
     async setSettings(s) {
       return s
@@ -844,6 +875,12 @@ function browserApi(): Api {
     localMkdir: async () => fail('needs_app'),
     localTerminal: async () => fail('needs_app'),
     transfers: async () => [],
+    editOpen: async () => fail('needs_app'),
+    editStop: async () => {},
+    editResolve: async () => {},
+    editReopen: async () => {},
+    edits: async () => [],
+    editorApps: async () => [],
     nginxState: async () => fail('needs_app'),
     nginxAction: async () => fail('needs_app'),
     nginxPreview: async () => fail('needs_app'),

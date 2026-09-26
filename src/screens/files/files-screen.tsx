@@ -11,6 +11,8 @@ import {
   Download,
   Folder,
   Lock,
+  AppWindow,
+  FilePen,
   Pencil,
   ScrollText,
   ShieldCheck,
@@ -23,6 +25,8 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useConnections } from '../../app/connections'
+import { useEdits } from '../../app/edits'
+import { useSettings } from '../../app/settings'
 import { useNav } from '../../app/nav'
 import { readCache, writeCache } from '../../app/session-cache'
 import { useTransfers } from '../../app/transfers'
@@ -65,6 +69,8 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   const conns = useConnections()
   const nav = useNav()
   const toast = useToast()
+  const edits = useEdits()
+  const [chooseApp, setChooseApp] = useState<FileEntry | null>(null)
   const conn = conns.get(id, user)
   const live = conn?.status === 'connected'
   const sudo = live && conn.sudo
@@ -244,6 +250,18 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
     if (fresh.some((t) => parentOf(t.target) === pathRef.current)) void reload()
   }, [transfers, id, user, reload])
 
+  // Files saved from an editor on this Mac: show their new size and time.
+  const editStamp = edits.list
+    .filter((e) => e.serverId === id && e.user === user && e.status === 'synced' && parentOf(e.remotePath) === path)
+    .map((e) => `${e.id}:${e.syncedAt}`)
+    .join()
+  const lastStamp = useRef(editStamp)
+  useEffect(() => {
+    if (editStamp === lastStamp.current) return
+    lastStamp.current = editStamp
+    if (editStamp) void reload()
+  }, [editStamp, reload])
+
   // Another open session of this server as root, to open a folder this user cannot.
   const rootAccount = !isRoot && server.accounts.some((a) => a.user === 'root')
   const openAsRoot = () => {
@@ -410,7 +428,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                   key={e.name}
                   selected={on}
                   onClick={(ev) => clickRow(ev, e.name)}
-                  onDoubleClick={() => isDirLike(e) && void go(e.path)}
+                  onDoubleClick={() => (isDirLike(e) ? void go(e.path) : e.kind === 'file' && void edits.open(id, user, e.path))}
                 >
                   <button
                     type="button"
@@ -479,6 +497,8 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
               },
               terminal: () => one && void terminalAt(isDirLike(one) ? one.path : path),
               follow: () => one && setTailing({ path: one.path, sudo: !isRoot && !one.readable && sudo }),
+              edit: () => one && void edits.open(id, user, one.path),
+              editWith: () => one && setChooseApp(one),
             }}
           />
         )}
@@ -488,6 +508,28 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
 
       {action && (
         <FileDialog action={action} serverId={id} user={user} dir={path} canChown={canChown} onClose={() => setAction(null)} onDone={onDone} />
+      )}
+
+      {chooseApp && (
+        <Modal open onClose={() => setChooseApp(null)} width={420} title={`Mở ${chooseApp.name} bằng…`} subtitle="Lưu trong app là Portway tự tải lên server">
+          <div className="flex flex-col gap-px">
+            {[{ name: 'Editor mặc định của macOS', path: '' }, ...edits.apps].map((a) => (
+              <button
+                key={a.path || 'default'}
+                type="button"
+                onClick={() => {
+                  setChooseApp(null)
+                  void edits.open(id, user, chooseApp.path, a.path || null)
+                }}
+                className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-raised"
+              >
+                <AppWindow size={15} strokeWidth={1.8} className="text-ink2" />
+                <span className="flex-1">{a.name}</span>
+                {a.path && <span className="truncate font-mono text-[10.5px] text-muted">{a.path.replace(/\/[^/]+$/, '')}</span>}
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {conflict && (
@@ -750,7 +792,7 @@ function Blank({ icon: Icon, title, children }: { icon: LucideIcon; title: strin
   )
 }
 
-type Acts = Record<'rename' | 'chmod' | 'chown' | 'remove' | 'download' | 'copy' | 'terminal' | 'follow', () => void>
+type Acts = Record<'rename' | 'chmod' | 'chown' | 'remove' | 'download' | 'copy' | 'terminal' | 'follow' | 'edit' | 'editWith', () => void>
 
 /** Right-hand panel: what this user may do with the selection, its details and the actions. */
 function Details({
@@ -785,6 +827,9 @@ function Details({
   padBottom: boolean
   act: Acts
 }) {
+  const { settings } = useSettings()
+  const { apps } = useEdits()
+  const editorName = settings.editor ? (apps.find((a) => a.path === settings.editor)?.name ?? settings.editor.split('/').pop()!.replace(/\.app$/, '')) : null
   const isRoot = user === 'root'
   const dir = listing.dir
   const path = listing.path
@@ -878,6 +923,21 @@ function Details({
         { label: 'Sửa quyền', icon: ShieldCheck, run: act.chmod, ok: ownsAll, why: 'Chỉ owner hoặc root mới đổi được quyền', meta: 'chmod' },
         { label: 'Đổi owner', icon: Users, run: act.chown, ok: canChown, why: 'Chỉ root mới đổi được owner. Bật sudo cho phiên này.', meta: 'chown' },
         { label: 'Tải xuống', icon: Download, run: act.download, ok: isRoot || sel.every((e) => e.readable), why: 'Có mục không đọc được', meta: 'chọn nơi lưu' },
+        {
+          label: 'Sửa trên máy',
+          icon: FilePen,
+          run: act.edit,
+          ok: !!one && one.kind === 'file' && (isRoot || one.readable || sudo),
+          why: !one || one.kind !== 'file' ? 'Chọn một tệp' : 'Không có quyền đọc. Bật sudo cho phiên này để sửa.',
+          meta: editorName ?? 'editor mặc định',
+        },
+        {
+          label: 'Mở bằng app khác…',
+          icon: AppWindow,
+          run: act.editWith,
+          ok: !!one && one.kind === 'file' && (isRoot || one.readable || sudo),
+          why: 'Chọn một tệp đọc được',
+        },
         {
           label: 'Theo dõi (tail -f)',
           icon: ScrollText,
@@ -991,7 +1051,7 @@ function Details({
         </>
       ) : (
         <span className="pt-1.5 pb-1 text-[12px] leading-[1.6] text-muted">
-          Bấm để chọn, Ctrl hoặc ⌘ + bấm để chọn thêm, Shift + bấm để chọn một dải. Bấm đúp thư mục để mở. Kéo tệp từ máy vào danh sách để tải lên.
+          Bấm để chọn, Ctrl hoặc ⌘ + bấm để chọn thêm, Shift + bấm để chọn một dải. Bấm đúp thư mục để mở, bấm đúp tệp để sửa bằng editor trên máy (lưu là tự tải lên). Kéo tệp từ máy vào danh sách để tải lên.
         </span>
       )}
     </div>

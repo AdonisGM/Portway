@@ -10,7 +10,7 @@ type Ctx = {
   update: (patch: Partial<Settings>) => Promise<Settings>
 }
 
-const DEFAULTS: Settings = { downloadDir: null, askDownload: null, theme: 'dark' }
+const DEFAULTS: Settings = { downloadDir: null, askDownload: null, theme: 'dark', editor: null }
 
 /** Whether downloads ask for a folder, with older settings files read as they worked. */
 export const asksDownload = (s: Settings) => s.askDownload ?? s.downloadDir === null

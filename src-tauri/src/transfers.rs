@@ -14,6 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::trace;
 use crate::files::{join, sftp, sftp_err};
 use crate::paths::home_dir;
 use crate::ssh::{shell_quote, Session, Sessions};
@@ -284,25 +285,34 @@ async fn run(t: &Transfers, session: &Session, id: &str, job: &Job) -> AppResult
 
 fn spawn(state: Arc<Transfers>, session: Arc<Session>, audit: AuditLog, id: String) {
     tauri::async_runtime::spawn(async move {
-        let Some(job) = state.list.lock().unwrap().iter().find(|t| t.id == id).map(|t| t.job.clone()) else { return };
+        let Some(first) = state.list.lock().unwrap().iter().find(|t| t.id == id).cloned() else { return };
+        let job = first.job.clone();
+        let (action, cmd, label) = match &job {
+            Job::Download { remote, .. } => ("download", format!("sftp get -r {} {}", shell_quote(remote), first.to), format!("Tải xuống {}", first.name)),
+            Job::Upload { local, remote_dir, .. } => (
+                "upload",
+                format!("sftp put -r {} {}", shell_quote(&local.to_string_lossy()), shell_quote(remote_dir)),
+                format!("Tải lên {}", first.name),
+            ),
+        };
+        // Waits here while the other transfers hold every slot.
+        let span = trace::start(&session.server_id, &session.user, trace::Kind::Transfer, Some(label), &cmd, true);
         let _permit = state.slots.clone().acquire_owned().await;
         if state.cancelled(&id) {
             state.update(&id, |t| {
                 t.status = Status::Cancelled;
                 t.finished_at = Some(now_ms());
             });
+            span.fail("Đã huỷ trước khi chạy", |_| {});
             return;
         }
+        span.running();
         state.update(&id, |t| {
             t.status = Status::Running;
             t.started_at = now_ms();
         });
         let result = run(&state, &session, &id, &job).await;
-        let snapshot = state.list.lock().unwrap().iter().find(|t| t.id == id).cloned();
-        let (action, cmd) = match &job {
-            Job::Download { remote, .. } => ("download", format!("sftp get -r {} {}", shell_quote(remote), snapshot.as_ref().map(|t| t.to.clone()).unwrap_or_default())),
-            Job::Upload { local, remote_dir, .. } => ("upload", format!("sftp put -r {} {}", shell_quote(&local.to_string_lossy()), shell_quote(remote_dir))),
-        };
+        let done = state.list.lock().unwrap().iter().find(|t| t.id == id).map(|t| t.done).unwrap_or(0);
         match result {
             Ok(()) => {
                 state.update(&id, |t| {
@@ -310,7 +320,8 @@ fn spawn(state: Arc<Transfers>, session: Arc<Session>, audit: AuditLog, id: Stri
                     t.speed = 0.0;
                     t.finished_at = Some(now_ms());
                 });
-                audit.record(&session_server(&snapshot), &session.user, action, cmd, true, None);
+                span.ok(|e| e.out_bytes = Some(done));
+                audit.record(&first.server_id, &session.user, action, cmd, true, None);
             }
             Err(e) => {
                 let cancelled = e.code == "cancelled";
@@ -321,8 +332,9 @@ fn spawn(state: Arc<Transfers>, session: Arc<Session>, audit: AuditLog, id: Stri
                     t.speed = 0.0;
                     t.finished_at = Some(now_ms());
                 });
+                span.fail(if cancelled { "Đã huỷ".to_string() } else { msg.clone() }, |e| e.out_bytes = Some(done));
                 if !cancelled {
-                    audit.record(&session_server(&snapshot), &session.user, action, cmd, false, Some(msg));
+                    audit.record(&first.server_id, &session.user, action, cmd, false, Some(msg));
                 }
             }
         }
@@ -330,9 +342,6 @@ fn spawn(state: Arc<Transfers>, session: Arc<Session>, audit: AuditLog, id: Stri
     });
 }
 
-fn session_server(t: &Option<Transfer>) -> String {
-    t.as_ref().map(|t| t.server_id.clone()).unwrap_or_default()
-}
 
 fn enqueue(state: &Arc<Transfers>, session: Arc<Session>, audit: AuditLog, server_id: &str, user: &str, direction: Direction, name: String, from: String, to: String, job: Job) -> Transfer {
     let t = Transfer {

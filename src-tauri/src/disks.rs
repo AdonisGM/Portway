@@ -42,7 +42,7 @@ pub struct Disks {
 
 pub const DISKS_SCRIPT: &str = r#"
 df -kP 2>/dev/null | tail -n +2 | while read -r fs total used avail cap mnt; do
-  [ -d "$mnt" ] && printf '%s\t%s\t%s\t%s\t%s\n' "$fs" "$total" "$used" "$avail" "$mnt"
+  if [ -d "$mnt" ]; then printf '%s\t%s\t%s\t%s\t%s\n' "$fs" "$total" "$used" "$avail" "$mnt"; fi
 done
 echo @@PORTWAY@@
 cat /proc/mounts 2>/dev/null

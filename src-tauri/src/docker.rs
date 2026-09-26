@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::trace;
 use crate::ssh::{exec_priv, shell_quote, Session, Sessions, MARK};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -102,7 +103,7 @@ echo @@PORTWAY@@
 ids=$(docker ps -aq --no-trunc 2>/dev/null)
 if [ -n "$ids" ]; then docker inspect $ids 2>/dev/null; else echo '[]'; fi
 echo @@PORTWAY@@
-[ -d /run/systemd/system ] && echo systemd
+if [ -d /run/systemd/system ]; then echo systemd; fi
 "#;
 
 /// Docker prints "0001-01-01T00:00:00Z" for times that never happened.
@@ -227,13 +228,17 @@ pub(crate) fn parse_overview(out: &str) -> DockerState {
 
 #[tauri::command]
 pub async fn docker_overview(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<DockerState> {
-    let session = sessions.get(&server_id, &user)?;
-    let out = exec_priv(&session, OVERVIEW_SCRIPT, READ_TIMEOUT).await?;
-    let mut state = parse_overview(&out.stdout);
-    if let DockerState::Ok { containers, .. } = &mut state {
-        mark_config_files(&session, containers).await?;
-    }
-    Ok(state)
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let out = exec_priv(&session, OVERVIEW_SCRIPT, READ_TIMEOUT).await?;
+        let mut state = parse_overview(&out.stdout);
+        if let DockerState::Ok { containers, .. } = &mut state {
+            mark_config_files(&session, containers).await?;
+        }
+        Ok(state)
+    };
+    let r: AppResult<DockerState> = trace::labelled("Docker · danh sách container", run).await;
+    r
 }
 
 /// Compose labels keep the paths the project was started from, which may have
@@ -246,7 +251,7 @@ pub(crate) async fn mark_config_files(session: &Session, containers: &mut [Conta
     if files.is_empty() {
         return Ok(());
     }
-    let script: String = files.iter().map(|f| format!("[ -f {q} ] && echo {q}\n", q = shell_quote(f))).collect();
+    let script: String = files.iter().map(|f| format!("if [ -f {q} ]; then echo {q}; fi\n", q = shell_quote(f))).collect();
     let out = exec_priv(session, &script, READ_TIMEOUT).await?;
     let found: std::collections::HashSet<&str> = out.stdout.lines().map(str::trim).collect();
     for c in containers.iter_mut() {
@@ -318,10 +323,14 @@ pub(crate) fn parse_stats(out: &str) -> Stats {
 /// seconds, so this is read apart from the container list.
 #[tauri::command]
 pub async fn docker_stats(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Stats> {
-    let session = sessions.get(&server_id, &user)?;
-    let script = "nproc 2>/dev/null || echo 1; echo @@PORTWAY@@; docker stats --no-stream --no-trunc --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null";
-    let out = exec_priv(&session, script, READ_TIMEOUT).await?;
-    Ok(parse_stats(&out.stdout))
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let script = "nproc 2>/dev/null || echo 1; echo @@PORTWAY@@; docker stats --no-stream --no-trunc --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null";
+        let out = exec_priv(&session, script, READ_TIMEOUT).await?;
+        Ok(parse_stats(&out.stdout))
+    };
+    let r: AppResult<Stats> = trace::labelled("Docker · CPU/RAM container", run).await;
+    r
 }
 
 // ------------------------------------------------------------------- actions
@@ -383,15 +392,19 @@ pub async fn docker_container(
     name: String,
     action: String,
 ) -> AppResult<()> {
-    let (verb, log) = match action.as_str() {
-        "start" => ("start", "dockerStart"),
-        "stop" => ("stop", "dockerStop"),
-        "restart" => ("restart", "dockerRestart"),
-        _ => return Err(AppError::new("unknown_action")),
+    let run = async move {
+        let (verb, log) = match action.as_str() {
+            "start" => ("start", "dockerStart"),
+            "stop" => ("stop", "dockerStop"),
+            "restart" => ("restart", "dockerRestart"),
+            _ => return Err(AppError::new("unknown_action")),
+        };
+        let session = sessions.get(&server_id, &user)?;
+        let cmd = format!("docker {verb} {}", shell_quote(&name));
+        run_logged(&session, &audit, &server_id, &user, log, &cmd, Duration::from_secs(120)).await.map(|_| ())
     };
-    let session = sessions.get(&server_id, &user)?;
-    let cmd = format!("docker {verb} {}", shell_quote(&name));
-    run_logged(&session, &audit, &server_id, &user, log, &cmd, Duration::from_secs(120)).await.map(|_| ())
+    let r: AppResult<()> = trace::labelled("Docker · thao tác container", run).await;
+    r
 }
 
 fn valid_project(p: &str) -> bool {
@@ -429,29 +442,37 @@ pub async fn docker_compose(
     working_dir: Option<String>,
     action: String,
 ) -> AppResult<String> {
-    if !valid_project(&project) {
-        return Err(AppError::detail("invalid_project", project));
-    }
-    let log = match action.as_str() {
-        "up" => "composeUp",
-        "pullUp" => "composePullUp",
-        "restart" => "composeRestart",
-        "down" => "composeDown",
-        _ => return Err(AppError::new("unknown_action")),
+    let run = async move {
+        if !valid_project(&project) {
+            return Err(AppError::detail("invalid_project", project));
+        }
+        let log = match action.as_str() {
+            "up" => "composeUp",
+            "pullUp" => "composePullUp",
+            "restart" => "composeRestart",
+            "down" => "composeDown",
+            _ => return Err(AppError::new("unknown_action")),
+        };
+        let cmd = compose_command(&project, &files, working_dir.as_deref(), &action).ok_or_else(|| AppError::new("unknown_action"))?;
+        let session = sessions.get(&server_id, &user)?;
+        run_logged(&session, &audit, &server_id, &user, log, &cmd, Duration::from_secs(600)).await
     };
-    let cmd = compose_command(&project, &files, working_dir.as_deref(), &action).ok_or_else(|| AppError::new("unknown_action"))?;
-    let session = sessions.get(&server_id, &user)?;
-    run_logged(&session, &audit, &server_id, &user, log, &cmd, Duration::from_secs(600)).await
+    let r: AppResult<String> = trace::labelled("Docker · compose", run).await;
+    r
 }
 
 /// Start the Docker daemon through systemd (needs root or sudo).
 #[tauri::command]
 pub async fn docker_start_daemon(sessions: tauri::State<'_, Sessions>, audit: tauri::State<'_, AuditLog>, server_id: String, user: String) -> AppResult<()> {
-    let session = sessions.get(&server_id, &user)?;
-    if !session.is_root() && !session.sudo_on() {
-        return Err(AppError::new("needs_root"));
-    }
-    run_logged(&session, &audit, &server_id, &user, "dockerDaemonStart", "systemctl start docker", Duration::from_secs(90)).await.map(|_| ())
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        if !session.is_root() && !session.sudo_on() {
+            return Err(AppError::new("needs_root"));
+        }
+        run_logged(&session, &audit, &server_id, &user, "dockerDaemonStart", "systemctl start docker", Duration::from_secs(90)).await.map(|_| ())
+    };
+    let r: AppResult<()> = trace::labelled("Docker · khởi động daemon", run).await;
+    r
 }
 
 // ---------------------------------------------------------------------- logs
@@ -486,27 +507,31 @@ pub async fn docker_logs(
     tail: u32,
     since: Option<String>,
 ) -> AppResult<Vec<LogLine>> {
-    let session = sessions.get(&server_id, &user)?;
-    let mut cmd = format!("docker logs --timestamps --tail {}", tail.clamp(1, 2000));
-    if let Some(ts) = since.as_deref() {
-        // Timestamps come from Docker itself; still keep them to their characters.
-        if !ts.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | ':' | '.' | '+')) {
-            return Err(AppError::detail("invalid_since", ts));
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let mut cmd = format!("docker logs --timestamps --tail {}", tail.clamp(1, 2000));
+        if let Some(ts) = since.as_deref() {
+            // Timestamps come from Docker itself; still keep them to their characters.
+            if !ts.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | ':' | '.' | '+')) {
+                return Err(AppError::detail("invalid_since", ts));
+            }
+            cmd.push_str(&format!(" --since {ts}"));
         }
-        cmd.push_str(&format!(" --since {ts}"));
-    }
-    cmd.push_str(&format!(" {}", shell_quote(&id)));
-    let out = exec_priv(&session, &cmd, READ_TIMEOUT).await?;
-    if out.code != Some(0) {
-        return Err(docker_error(&out.stderr));
-    }
-    let mut lines = parse_log_lines(&out.stdout, false);
-    lines.extend(parse_log_lines(&out.stderr, true));
-    lines.sort_by(|a, b| a.ts.cmp(&b.ts));
-    if let Some(ts) = since {
-        lines.retain(|l| l.ts > ts);
-    }
-    Ok(lines)
+        cmd.push_str(&format!(" {}", shell_quote(&id)));
+        let out = exec_priv(&session, &cmd, READ_TIMEOUT).await?;
+        if out.code != Some(0) {
+            return Err(docker_error(&out.stderr));
+        }
+        let mut lines = parse_log_lines(&out.stdout, false);
+        lines.extend(parse_log_lines(&out.stderr, true));
+        lines.sort_by(|a, b| a.ts.cmp(&b.ts));
+        if let Some(ts) = since {
+            lines.retain(|l| l.ts > ts);
+        }
+        Ok(lines)
+    };
+    let r: AppResult<Vec<LogLine>> = trace::labelled("Docker · đọc log", run).await;
+    r
 }
 
 // -------------------------------------------------------------------- images
@@ -528,10 +553,10 @@ pub(crate) const IMAGES_SCRIPT: &str = r#"
 out=$(docker image ls --no-trunc --format '{{.ID}}	{{.Repository}}	{{.Tag}}	{{.CreatedAt}}' 2>&1); echo "rc=$?"; echo "$out"
 echo @@PORTWAY@@
 ids=$(docker image ls -q --no-trunc 2>/dev/null | sort -u)
-[ -n "$ids" ] && docker image inspect --format '{{.Id}} {{.Size}}' $ids 2>/dev/null
+if [ -n "$ids" ]; then docker image inspect --format '{{.Id}} {{.Size}}' $ids 2>/dev/null; fi
 echo @@PORTWAY@@
 cs=$(docker ps -aq --no-trunc 2>/dev/null)
-[ -n "$cs" ] && docker inspect --format '{{.Image}} {{.Name}}' $cs 2>/dev/null
+if [ -n "$cs" ]; then docker inspect --format '{{.Image}} {{.Name}}' $cs 2>/dev/null; fi
 "#;
 
 pub(crate) fn parse_images(out: &str) -> AppResult<Vec<Image>> {
@@ -575,9 +600,13 @@ pub(crate) fn parse_images(out: &str) -> AppResult<Vec<Image>> {
 
 #[tauri::command]
 pub async fn docker_images(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Vec<Image>> {
-    let session = sessions.get(&server_id, &user)?;
-    let out = exec_priv(&session, IMAGES_SCRIPT, READ_TIMEOUT).await?;
-    parse_images(&out.stdout)
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let out = exec_priv(&session, IMAGES_SCRIPT, READ_TIMEOUT).await?;
+        parse_images(&out.stdout)
+    };
+    let r: AppResult<Vec<Image>> = trace::labelled("Docker · images", run).await;
+    r
 }
 
 /// "Total reclaimed space: 1.2GB" from `docker image prune`.
@@ -594,10 +623,14 @@ pub async fn docker_image_prune(
     user: String,
     all: bool,
 ) -> AppResult<String> {
-    let session = sessions.get(&server_id, &user)?;
-    let cmd = if all { "docker image prune -a -f" } else { "docker image prune -f" };
-    let out = run_logged(&session, &audit, &server_id, &user, "imagePrune", cmd, Duration::from_secs(300)).await?;
-    Ok(reclaimed(&out))
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let cmd = if all { "docker image prune -a -f" } else { "docker image prune -f" };
+        let out = run_logged(&session, &audit, &server_id, &user, "imagePrune", cmd, Duration::from_secs(300)).await?;
+        Ok(reclaimed(&out))
+    };
+    let r: AppResult<String> = trace::labelled("Docker · dọn image", run).await;
+    r
 }
 
 // ------------------------------------------------------------------- volumes
@@ -615,7 +648,7 @@ pub(crate) const VOLUMES_SCRIPT: &str = r#"
 out=$(docker volume ls --format '{{.Name}}	{{.Driver}}	{{.Mountpoint}}' 2>&1); echo "rc=$?"; echo "$out"
 echo @@PORTWAY@@
 cs=$(docker ps -aq --no-trunc 2>/dev/null)
-[ -n "$cs" ] && docker inspect --format '{{.Name}}{{range .Mounts}}{{if eq .Type "volume"}}	{{.Name}}{{end}}{{end}}' $cs 2>/dev/null
+if [ -n "$cs" ]; then docker inspect --format '{{.Name}}{{range .Mounts}}{{if eq .Type "volume"}}	{{.Name}}{{end}}{{end}}' $cs 2>/dev/null; fi
 "#;
 
 pub(crate) fn parse_volumes(out: &str) -> AppResult<Vec<Volume>> {
@@ -652,27 +685,35 @@ pub(crate) fn parse_volumes(out: &str) -> AppResult<Vec<Volume>> {
 
 #[tauri::command]
 pub async fn docker_volumes(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Vec<Volume>> {
-    let session = sessions.get(&server_id, &user)?;
-    let out = exec_priv(&session, VOLUMES_SCRIPT, READ_TIMEOUT).await?;
-    parse_volumes(&out.stdout)
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let out = exec_priv(&session, VOLUMES_SCRIPT, READ_TIMEOUT).await?;
+        parse_volumes(&out.stdout)
+    };
+    let r: AppResult<Vec<Volume>> = trace::labelled("Docker · volumes", run).await;
+    r
 }
 
 /// Volume sizes from `docker system df -v`, which walks every volume and can
 /// take a while on a busy server; read apart from the list.
 #[tauri::command]
 pub async fn docker_volume_sizes(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<HashMap<String, u64>> {
-    let session = sessions.get(&server_id, &user)?;
-    let out = exec_priv(&session, "docker system df -v --format '{{json .Volumes}}'", Duration::from_secs(180)).await?;
-    if out.code != Some(0) {
-        return Err(docker_error(&out.stderr));
-    }
-    let list: Value = serde_json::from_str(out.stdout.trim()).unwrap_or(Value::Null);
-    Ok(list
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|v| (s(&v["Name"]), crate::disks::docker_bytes(v["Size"].as_str().unwrap_or("0B"))))
-        .collect())
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let out = exec_priv(&session, "docker system df -v --format '{{json .Volumes}}'", Duration::from_secs(180)).await?;
+        if out.code != Some(0) {
+            return Err(docker_error(&out.stderr));
+        }
+        let list: Value = serde_json::from_str(out.stdout.trim()).unwrap_or(Value::Null);
+        Ok(list
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|v| (s(&v["Name"]), crate::disks::docker_bytes(v["Size"].as_str().unwrap_or("0B"))))
+            .collect())
+    };
+    let r: AppResult<HashMap<String, u64>> = trace::labelled("Docker · dung lượng volume", run).await;
+    r
 }
 
 #[tauri::command]
@@ -683,9 +724,13 @@ pub async fn docker_volume_remove(
     user: String,
     name: String,
 ) -> AppResult<()> {
-    let session = sessions.get(&server_id, &user)?;
-    let cmd = format!("docker volume rm {}", shell_quote(&name));
-    run_logged(&session, &audit, &server_id, &user, "volumeRemove", &cmd, Duration::from_secs(60)).await.map(|_| ())
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let cmd = format!("docker volume rm {}", shell_quote(&name));
+        run_logged(&session, &audit, &server_id, &user, "volumeRemove", &cmd, Duration::from_secs(60)).await.map(|_| ())
+    };
+    let r: AppResult<()> = trace::labelled("Docker · xoá volume", run).await;
+    r
 }
 
 #[cfg(test)]

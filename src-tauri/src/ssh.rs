@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::error::{AppError, AppResult};
+use crate::trace;
 use crate::paths::{expand_tilde, ssh_dir};
 use crate::audit::AuditLog;
 use crate::servers::{Auth, ServerStore};
@@ -108,6 +109,7 @@ enum SudoMode {
 
 pub(crate) struct Session {
     pub(crate) handle: Handle<Client>,
+    pub(crate) server_id: String,
     pub(crate) user: String,
     /// Limits channels open at once. OpenSSH allows 10 per connection
     /// (MaxSessions); the overview alone reads six things in parallel.
@@ -132,9 +134,10 @@ impl Session {
         self.sudo.lock().unwrap().is_some()
     }
 
-    fn new(handle: Handle<Client>, user: &str) -> Self {
+    fn new(handle: Handle<Client>, server_id: &str, user: &str) -> Self {
         Self {
             handle,
+            server_id: server_id.to_string(),
             user: user.to_string(),
             channels: tokio::sync::Semaphore::new(CHANNELS_PER_SESSION),
             sudo: Mutex::new(None),
@@ -367,7 +370,10 @@ pub async fn ssh_connect(
     let target = Target { host: server.host.clone(), port: server.port, user: user.clone(), known_hosts: ssh_dir().join("known_hosts") };
     let command = display_ssh_command(&target, key_path.as_deref());
     let trusted = trust_fingerprint.clone();
-    let handle = match open(&target, credential.clone(), trust_fingerprint).await {
+    let span = trace::start(&server_id, &user, trace::Kind::Connect, Some("Kết nối SSH".into()), &command, false);
+    let opened = open(&target, credential.clone(), trust_fingerprint).await;
+    trace_opened(span, &opened);
+    let handle = match opened {
         Err(e) => {
             audit.record(&server_id, &user, "connect", &command, false, Some(error_text(&e)));
             return Err(e);
@@ -398,8 +404,8 @@ pub async fn ssh_connect(
         audit.record(&server_id, &user, "trustHostKey", format!("~/.ssh/known_hosts += {host} {fp}"), true, None);
     }
 
-    let session = Arc::new(Session::new(handle, &user));
-    let info = read_host_info(&session).await?;
+    let session = Arc::new(Session::new(handle, &server_id, &user));
+    let info = trace::labelled("Đọc thông tin máy", read_host_info(&session)).await?;
     if let Some(os) = &info.os {
         store.set_os(&server_id, os)?;
     }
@@ -408,6 +414,16 @@ pub async fn ssh_connect(
     sessions.saved.lock().unwrap().insert(key.clone(), Saved { target, credential });
     sessions.map.lock().unwrap().insert(key, session);
     Ok(ConnectResult::Connected { info })
+}
+
+/// How the TCP connect, handshake and authentication went, for the trace.
+fn trace_opened(span: trace::Span, opened: &AppResult<Opened>) {
+    match opened {
+        Ok(Opened::Ready(_)) => span.ok(|_| {}),
+        Ok(Opened::HostKey(_)) => span.fail("Dừng lại để hỏi có tin khoá máy chủ không", |_| {}),
+        Ok(Opened::Rejected) => span.fail("Permission denied: server từ chối xác thực", |_| {}),
+        Err(e) => span.fail(error_text(e), |_| {}),
+    }
 }
 
 /// Reopen a session that dropped, with the credential it was opened with.
@@ -424,7 +440,10 @@ pub async fn ssh_reconnect(
     let saved = sessions.saved.lock().unwrap().get(&key).cloned().ok_or_else(|| AppError::new("not_connected"))?;
     let sudo = sessions.map.lock().unwrap().get(&key).and_then(|s| s.sudo.lock().unwrap().clone());
     let command = display_ssh_command(&saved.target, None);
-    let handle = match open(&saved.target, saved.credential.clone(), None).await {
+    let span = trace::start(&server_id, &user, trace::Kind::Connect, Some("Kết nối lại SSH".into()), &command, false);
+    let opened = open(&saved.target, saved.credential.clone(), None).await;
+    trace_opened(span, &opened);
+    let handle = match opened {
         Err(e) => {
             audit.record(&server_id, &user, "reconnect", &command, false, Some(error_text(&e)));
             return Err(e);
@@ -439,9 +458,9 @@ pub async fn ssh_reconnect(
         }
         Ok(Opened::Ready(h)) => h,
     };
-    let session = Arc::new(Session::new(handle, &user));
+    let session = Arc::new(Session::new(handle, &server_id, &user));
     *session.sudo.lock().unwrap() = sudo;
-    let info = read_host_info(&session).await?;
+    let info = trace::labelled("Đọc thông tin máy", read_host_info(&session)).await?;
     if let Some(os) = &info.os {
         store.set_os(&server_id, os)?;
     }
@@ -529,35 +548,39 @@ pub async fn ssh_sudo(
     user: String,
     password: Option<String>,
 ) -> AppResult<SudoResult> {
-    let session = sessions.get(&server_id, &user)?;
-    if session.user == "root" {
-        return Ok(SudoResult::Enabled);
-    }
-    let probe = run_channel(&session, "sudo -n true", None, EXEC_TIMEOUT).await?;
-    if probe.code == Some(0) {
-        *session.sudo.lock().unwrap() = Some(SudoMode::NoPassword);
-        audit.record(&server_id, &user, "sudoOn", "sudo -n true", true, Some("NOPASSWD".into()));
-        return Ok(SudoResult::Enabled);
-    }
-    if sudo_refused(&probe.stderr) {
-        audit.record(&server_id, &user, "sudoOn", "sudo -n true", false, Some(sudo_reason(&probe.stderr)));
-        return Ok(SudoResult::NotAllowed { detail: sudo_reason(&probe.stderr) });
-    }
-    let Some(pw) = password.filter(|p| !p.is_empty()) else {
-        return Ok(SudoResult::NeedPassword { retry: false });
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        if session.user == "root" {
+            return Ok(SudoResult::Enabled);
+        }
+        let probe = run_channel(&session, "sudo -n true", "sudo -n true", None, EXEC_TIMEOUT).await?;
+        if probe.code == Some(0) {
+            *session.sudo.lock().unwrap() = Some(SudoMode::NoPassword);
+            audit.record(&server_id, &user, "sudoOn", "sudo -n true", true, Some("NOPASSWD".into()));
+            return Ok(SudoResult::Enabled);
+        }
+        if sudo_refused(&probe.stderr) {
+            audit.record(&server_id, &user, "sudoOn", "sudo -n true", false, Some(sudo_reason(&probe.stderr)));
+            return Ok(SudoResult::NotAllowed { detail: sudo_reason(&probe.stderr) });
+        }
+        let Some(pw) = password.filter(|p| !p.is_empty()) else {
+            return Ok(SudoResult::NeedPassword { retry: false });
+        };
+        // -k: ignore a cached timestamp so the password is really checked.
+        let check = run_channel(&session, "sudo -S -k -p '' true", "sudo -S -k -p '' true", Some(format!("{pw}\n")), EXEC_TIMEOUT).await?;
+        if check.code == Some(0) {
+            *session.sudo.lock().unwrap() = Some(SudoMode::Password(pw));
+            audit.record(&server_id, &user, "sudoOn", "sudo -v", true, None);
+            return Ok(SudoResult::Enabled);
+        }
+        audit.record(&server_id, &user, "sudoOn", "sudo -v", false, Some(sudo_reason(&check.stderr)));
+        if sudo_refused(&check.stderr) {
+            return Ok(SudoResult::NotAllowed { detail: sudo_reason(&check.stderr) });
+        }
+        Ok(SudoResult::NeedPassword { retry: true })
     };
-    // -k: ignore a cached timestamp so the password is really checked.
-    let check = run_channel(&session, "sudo -S -k -p '' true", Some(format!("{pw}\n")), EXEC_TIMEOUT).await?;
-    if check.code == Some(0) {
-        *session.sudo.lock().unwrap() = Some(SudoMode::Password(pw));
-        audit.record(&server_id, &user, "sudoOn", "sudo -v", true, None);
-        return Ok(SudoResult::Enabled);
-    }
-    audit.record(&server_id, &user, "sudoOn", "sudo -v", false, Some(sudo_reason(&check.stderr)));
-    if sudo_refused(&check.stderr) {
-        return Ok(SudoResult::NotAllowed { detail: sudo_reason(&check.stderr) });
-    }
-    Ok(SudoResult::NeedPassword { retry: true })
+    let r: AppResult<SudoResult> = trace::labelled("Bật sudo", run).await;
+    r
 }
 
 #[tauri::command]
@@ -607,24 +630,36 @@ async fn exec_with(session: &Session, command: &str, timeout: Duration, privileg
     let token = format!("@@PW{}@@", uuid::Uuid::new_v4().simple());
     let inner = format!("env PORTWAY_PROBE=1 sh -c {}", shell_quote(&command.replace(MARK, &token)));
     let sudo = if privileged && session.user != "root" { session.sudo.lock().unwrap().clone() } else { None };
+    let shown = if sudo.is_some() { format!("sudo {command}") } else { command.to_string() };
     let (line, stdin) = match sudo {
         None => (inner, None),
         Some(SudoMode::NoPassword) => (format!("sudo -n {inner}"), None),
         Some(SudoMode::Password(p)) => (format!("sudo -S -p '' {inner}"), Some(format!("{p}\n"))),
     };
-    let mut out = run_channel(session, &line, stdin, timeout).await?;
+    let mut out = run_channel(session, &line, &shown, stdin, timeout).await?;
     out.stdout = out.stdout.replace(&token, MARK);
     Ok(out)
 }
 
 /// Open a channel, run `line` as is, optionally feed stdin, collect the output.
-async fn run_channel(session: &Session, line: &str, stdin: Option<String>, timeout: Duration) -> AppResult<ExecOutput> {
+/// Traced as `shown` (the command without Portway's wrapper; stdin, which can
+/// hold the sudo password, is never recorded).
+async fn run_channel(session: &Session, line: &str, shown: &str, stdin: Option<String>, timeout: Duration) -> AppResult<ExecOutput> {
+    let span = trace::start(&session.server_id, &session.user, trace::Kind::Exec, None, shown, true);
     let handle = &session.handle;
     // Waiting for a free channel counts towards the timeout too.
-    let _permit = tokio::time::timeout(timeout, session.channels.acquire())
-        .await
-        .map_err(|_| AppError::new("exec_timeout"))?
-        .map_err(|e| AppError::detail("ssh", e))?;
+    let _permit = match tokio::time::timeout(timeout, session.channels.acquire()).await {
+        Err(_) => {
+            span.fail("Hết thời gian chờ kênh SSH trống", |_| {});
+            return Err(AppError::new("exec_timeout"));
+        }
+        Ok(Err(e)) => {
+            span.fail(&e, |_| {});
+            return Err(AppError::detail("ssh", e));
+        }
+        Ok(Ok(p)) => p,
+    };
+    span.running();
     let run = async {
         let mut channel = handle.channel_open_session().await?;
         channel.exec(true, line).await?;
@@ -648,10 +683,33 @@ async fn run_channel(session: &Session, line: &str, stdin: Option<String>, timeo
         })
     };
     match tokio::time::timeout(timeout, run).await {
-        Err(_) => Err(AppError::new("exec_timeout")),
-        Ok(Err(e)) if handle.is_closed() => Err(AppError::detail("connection_lost", e)),
-        Ok(Err(e)) => Err(AppError::detail("ssh", e)),
-        Ok(Ok(o)) => Ok(o),
+        Err(_) => {
+            span.fail(format!("Hết thời gian ({} giây)", timeout.as_secs()), |_| {});
+            Err(AppError::new("exec_timeout"))
+        }
+        Ok(Err(e)) if handle.is_closed() => {
+            span.fail(format!("Mất kết nối: {e}"), |_| {});
+            Err(AppError::detail("connection_lost", e))
+        }
+        Ok(Err(e)) => {
+            span.fail(&e, |_| {});
+            Err(AppError::detail("ssh", e))
+        }
+        Ok(Ok(o)) => {
+            let fill = |e: &mut trace::Entry| {
+                e.exit_code = o.code;
+                e.out_bytes = Some(o.stdout.len() as u64);
+                e.err_bytes = Some(o.stderr.len() as u64);
+                e.stdout = trace::head(&o.stdout);
+                e.stderr = trace::head(&o.stderr);
+            };
+            if o.code == Some(0) {
+                span.ok(fill);
+            } else {
+                span.fail(format!("exit {}", o.code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())), fill);
+            }
+            Ok(o)
+        }
     }
 }
 
@@ -659,7 +717,7 @@ pub const MARK: &str = "@@PORTWAY@@";
 
 async fn read_host_info(session: &Session) -> AppResult<HostInfo> {
     let script = format!(
-        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null; echo {MARK}; command -v docker >/dev/null 2>&1 && echo docker"
+        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null; echo {MARK}; if command -v docker >/dev/null 2>&1; then echo docker; fi"
     );
     let out = exec(session, &script).await?.stdout_or_err()?;
     let parts: Vec<&str> = out.split(MARK).map(str::trim).collect();
@@ -776,28 +834,32 @@ async fn sample(session: &Session) -> AppResult<(Stats, Counters, Instant)> {
 /// second apart, so CPU % and network rates are available straight away.
 #[tauri::command]
 pub async fn server_stats(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Stats> {
-    let session = sessions.get(&server_id, &user)?;
-    let previous = *session.last.lock().unwrap();
-    let previous = match previous {
-        Some(p) => p,
-        None => {
-            let (_, c, t) = sample(&session).await?;
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            (t, c)
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let previous = *session.last.lock().unwrap();
+        let previous = match previous {
+            Some(p) => p,
+            None => {
+                let (_, c, t) = sample(&session).await?;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                (t, c)
+            }
+        };
+        let (mut stats, now_c, now_t) = sample(&session).await?;
+        let (prev_t, prev_c) = previous;
+        let secs = now_t.duration_since(prev_t).as_secs_f64().max(0.001);
+        let total = now_c.cpu_total.saturating_sub(prev_c.cpu_total);
+        let idle = now_c.cpu_idle.saturating_sub(prev_c.cpu_idle);
+        if total > 0 {
+            stats.cpu_percent = Some(100.0 * (total - idle.min(total)) as f64 / total as f64);
         }
+        stats.net_rx_rate = Some(now_c.net_rx.saturating_sub(prev_c.net_rx) as f64 / secs);
+        stats.net_tx_rate = Some(now_c.net_tx.saturating_sub(prev_c.net_tx) as f64 / secs);
+        *session.last.lock().unwrap() = Some((now_t, now_c));
+        Ok(stats)
     };
-    let (mut stats, now_c, now_t) = sample(&session).await?;
-    let (prev_t, prev_c) = previous;
-    let secs = now_t.duration_since(prev_t).as_secs_f64().max(0.001);
-    let total = now_c.cpu_total.saturating_sub(prev_c.cpu_total);
-    let idle = now_c.cpu_idle.saturating_sub(prev_c.cpu_idle);
-    if total > 0 {
-        stats.cpu_percent = Some(100.0 * (total - idle.min(total)) as f64 / total as f64);
-    }
-    stats.net_rx_rate = Some(now_c.net_rx.saturating_sub(prev_c.net_rx) as f64 / secs);
-    stats.net_tx_rate = Some(now_c.net_tx.saturating_sub(prev_c.net_tx) as f64 / secs);
-    *session.last.lock().unwrap() = Some((now_t, now_c));
-    Ok(stats)
+    let r: AppResult<Stats> = trace::labelled("Tổng quan · tài nguyên", run).await;
+    r
 }
 
 /// One row of the "top processes" table.
@@ -898,7 +960,7 @@ fn ancestry(pid: u32, ppids: &HashMap<u32, u32>) -> Vec<u32> {
 
 async fn sample_procs(session: &Session) -> AppResult<(Instant, u64, u64, HashMap<u32, (u64, u64, String, u32)>)> {
     let script = format!(
-        "getconf CLK_TCK 2>/dev/null || echo 100; echo {MARK}; getconf PAGESIZE 2>/dev/null || echo 4096; echo {MARK}; cat /proc/[0-9]*/stat 2>/dev/null"
+        "getconf CLK_TCK 2>/dev/null || echo 100; echo {MARK}; getconf PAGESIZE 2>/dev/null || echo 4096; echo {MARK}; cat /proc/[0-9]*/stat 2>/dev/null || true"
     );
     let out = exec(&session, &script).await?.stdout_or_err()?;
     let now = Instant::now();
@@ -912,8 +974,12 @@ async fn sample_procs(session: &Session) -> AppResult<(Instant, u64, u64, HashMa
 /// apart; later calls compare with the previous call.
 #[tauri::command]
 pub async fn server_processes(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Processes> {
-    let session = sessions.get(&server_id, &user)?;
-    top_processes(&session).await
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        top_processes(&session).await
+    };
+    let r: AppResult<Processes> = trace::labelled("Tổng quan · tiến trình", run).await;
+    r
 }
 
 async fn top_processes(session: &Session) -> AppResult<Processes> {
@@ -961,7 +1027,7 @@ async fn top_processes(session: &Session) -> AppResult<Processes> {
   g=$(head -n 5 /proc/$p/cgroup 2>/dev/null | tr '\t\n' '  ')
   printf '@@P %s\t%s\t%s\t%s\n' "$p" "$u" "$c" "$g"
 done
-echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --format '{{{{.ID}}}} {{{{.Names}}}}' 2>/dev/null"#,
+echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --format '{{{{.ID}}}} {{{{.Names}}}}' 2>/dev/null || true"#,
         pids = pids.join(" ")
     );
     let out = exec(&session, &detail).await?.stdout;
@@ -1183,33 +1249,49 @@ async fn read_health(session: &Session) -> AppResult<Health> {
 /// Docker, systemd and package-update status for the overview.
 #[tauri::command]
 pub async fn server_health(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Health> {
-    let session = sessions.get(&server_id, &user)?;
-    read_health(&session).await
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        read_health(&session).await
+    };
+    let r: AppResult<Health> = trace::labelled("Tổng quan · tình trạng", run).await;
+    r
 }
 
 /// Mounted filesystems and Docker disk usage for the overview.
 #[tauri::command]
 pub async fn server_disks(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::disks::Disks> {
-    let session = sessions.get(&server_id, &user)?;
-    let out = exec(&session, crate::disks::DISKS_SCRIPT).await?.stdout;
-    Ok(crate::disks::parse_disks(&out))
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let out = exec(&session, crate::disks::DISKS_SCRIPT).await?.stdout;
+        Ok(crate::disks::parse_disks(&out))
+    };
+    let r: AppResult<crate::disks::Disks> = trace::labelled("Tổng quan · ổ đĩa", run).await;
+    r
 }
 
 /// Docker disk usage. `docker system df` sizes every volume, which can take
 /// tens of seconds, so it gets its own call and a long timeout.
 #[tauri::command]
 pub async fn server_docker_disk(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::disks::DockerDisk> {
-    let session = sessions.get(&server_id, &user)?;
-    let out = exec_priv(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await?.stdout;
-    Ok(crate::disks::parse_docker_df(out.trim_start()))
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let out = exec_priv(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await?.stdout;
+        Ok(crate::disks::parse_docker_df(out.trim_start()))
+    };
+    let r: AppResult<crate::disks::DockerDisk> = trace::labelled("Tổng quan · dung lượng Docker", run).await;
+    r
 }
 
 /// Listening ports, UFW rules and exposure warnings for the overview.
 #[tauri::command]
 pub async fn server_ports(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<crate::ports::Ports> {
-    let session = sessions.get(&server_id, &user)?;
-    let out = exec_priv(&session, crate::ports::PORTS_SCRIPT, EXEC_TIMEOUT).await?.stdout;
-    Ok(crate::ports::parse_ports(&out))
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let out = exec_priv(&session, crate::ports::PORTS_SCRIPT, EXEC_TIMEOUT).await?.stdout;
+        Ok(crate::ports::parse_ports(&out))
+    };
+    let r: AppResult<crate::ports::Ports> = trace::labelled("Tổng quan · cổng mạng", run).await;
+    r
 }
 
 /// Quote a value for a POSIX shell.
@@ -1318,7 +1400,7 @@ mod tests {
             panic!("expected to connect after trusting the key");
         };
         assert!(std::fs::read_to_string(&known_hosts).unwrap().trim_start().starts_with("[127.0.0.1]:2201 "));
-        let session = Arc::new(Session::new(handle, "root"));
+        let session = Arc::new(Session::new(handle, "test", "root"));
         let info = read_host_info(&session).await.unwrap();
         assert!(info.os.as_deref().unwrap().starts_with("Ubuntu 24.04"), "{:?}", info.os);
         assert_eq!(info.hostname, "pw-ubuntu");
@@ -1367,12 +1449,12 @@ mod tests {
         };
 
         // sudo for deploy: needs a password; a wrong one fails, the right one runs as root.
-        let deploy = Arc::new(Session::new(deploy, "deploy"));
-        assert_ne!(run_channel(&deploy, "sudo -n true", None, EXEC_TIMEOUT).await.unwrap().code, Some(0));
-        let wrong = run_channel(&deploy, "sudo -S -k -p '' true", Some("nope\n".into()), EXEC_TIMEOUT).await.unwrap();
+        let deploy = Arc::new(Session::new(deploy, "test", "deploy"));
+        assert_ne!(run_channel(&deploy, "sudo -n true", "sudo -n true", None, EXEC_TIMEOUT).await.unwrap().code, Some(0));
+        let wrong = run_channel(&deploy, "sudo -S -k -p '' true", "sudo -S -k -p '' true", Some("nope\n".into()), EXEC_TIMEOUT).await.unwrap();
         assert_ne!(wrong.code, Some(0));
         assert!(!sudo_refused(&wrong.stderr), "{}", wrong.stderr);
-        let right = run_channel(&deploy, "sudo -S -k -p '' true", Some("portway\n".into()), EXEC_TIMEOUT).await.unwrap();
+        let right = run_channel(&deploy, "sudo -S -k -p '' true", "sudo -S -k -p '' true", Some("portway\n".into()), EXEC_TIMEOUT).await.unwrap();
         assert_eq!(right.code, Some(0), "{}", right.stderr);
         assert_ne!(exec_priv(&deploy, "id -u", EXEC_TIMEOUT).await.unwrap().stdout.trim(), "0", "sudo is off until enabled");
         *deploy.sudo.lock().unwrap() = Some(SudoMode::Password("portway".into()));
@@ -1383,8 +1465,8 @@ mod tests {
         let Opened::Ready(viewer) = open(&target(2201, "viewer"), Credential::Key(key.clone()), None).await.unwrap() else {
             panic!("viewer should connect");
         };
-        let viewer = Session::new(viewer, "viewer");
-        let refused = run_channel(&viewer, "sudo -S -k -p '' true", Some("portway\n".into()), EXEC_TIMEOUT).await.unwrap();
+        let viewer = Session::new(viewer, "test", "viewer");
+        let refused = run_channel(&viewer, "sudo -S -k -p '' true", "sudo -S -k -p '' true", Some("portway\n".into()), EXEC_TIMEOUT).await.unwrap();
         assert_ne!(refused.code, Some(0));
         assert!(sudo_refused(&refused.stderr), "{}", refused.stderr);
         assert!(sudo_reason(&refused.stderr).contains("not in the sudoers"));
@@ -1449,7 +1531,7 @@ mod tests {
         let Opened::Ready(d) = open(&target(2202, "deploy"), Credential::Key(key.clone()), None).await.unwrap() else {
             panic!("deploy@pw-debian should connect")
         };
-        let debian = Session::new(d, "deploy");
+        let debian = Session::new(d, "test", "deploy");
         assert!(read_host_info(&debian).await.unwrap().docker);
         let out = exec_priv(&debian, docker::OVERVIEW_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout;
         let DockerState::Ok { mut containers, compose, .. } = docker::parse_overview(&out) else { panic!("docker overview: {out}") };
@@ -1485,7 +1567,7 @@ mod tests {
 
         // viewer is not in the docker group: told apart from a stopped daemon.
         let Opened::Ready(v) = open(&target(2202, "viewer"), Credential::Key(key.clone()), None).await.unwrap() else { panic!("viewer@pw-debian") };
-        let out = exec_priv(&Session::new(v, "viewer"), docker::OVERVIEW_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout;
+        let out = exec_priv(&Session::new(v, "test", "viewer"), docker::OVERVIEW_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout;
         assert!(matches!(docker::parse_overview(&out), DockerState::NoAccess { .. }), "{out}");
 
         // Alpine has no Docker at all: the module is hidden there.
@@ -1494,7 +1576,7 @@ mod tests {
             _ => panic!("expected an unknown host key"),
         };
         let Opened::Ready(a) = open(&target(2203, "root"), Credential::Key(key.clone()), Some(fp)).await.unwrap() else { panic!("root@pw-alpine") };
-        let alpine = Session::new(a, "root");
+        let alpine = Session::new(a, "test", "root");
         assert!(!read_host_info(&alpine).await.unwrap().docker);
         assert!(matches!(docker::parse_overview(&exec_priv(&alpine, docker::OVERVIEW_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout), DockerState::NotInstalled));
 

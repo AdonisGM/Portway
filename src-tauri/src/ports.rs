@@ -87,7 +87,7 @@ id -u
 echo @@PORTWAY@@
 if command -v ufw >/dev/null 2>&1; then ufw status verbose 2>&1; else echo notinstalled; fi
 echo @@PORTWAY@@
-docker ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null
+docker ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null || true
 "#;
 
 /// Hex address from /proc/net: IPv4 is one little-endian u32, IPv6 four of them.

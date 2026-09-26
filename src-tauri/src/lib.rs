@@ -9,6 +9,7 @@ mod ports;
 mod servers;
 mod ssh;
 mod ssh_config;
+mod trace;
 mod transfers;
 
 use tauri::Manager;
@@ -21,6 +22,31 @@ fn set_window_controls_visible(window: tauri::WebviewWindow, visible: bool) {
     macos::set_window_controls_visible(&window, visible);
     #[cfg(not(target_os = "macos"))]
     let _ = (window, visible);
+}
+
+/// The debug trace in its own window, so it can stay open next to the app.
+/// Opening it again brings the existing one to the front.
+#[tauri::command]
+async fn open_debug_window(app: tauri::AppHandle) -> error::AppResult<()> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("debug") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    let builder = tauri::WebviewWindowBuilder::new(&app, "debug", tauri::WebviewUrl::App("index.html?window=debug".into()))
+        .title("AdonisGM | Portway — Nhật ký gỡ lỗi")
+        .inner_size(1240.0, 780.0)
+        .min_inner_size(760.0, 480.0)
+        .background_color(tauri::window::Color(0x14, 0x16, 0x17, 0xff));
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::LogicalPosition::new(14.0, 19.0));
+    builder.build().map_err(|e| error::AppError::detail("window", e))?;
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -56,6 +82,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             set_window_controls_visible,
+            open_debug_window,
             servers::servers_list,
             servers::server_save,
             servers::server_delete,
@@ -92,6 +119,8 @@ pub fn run() {
             ssh::server_disks,
             ssh::server_docker_disk,
             ssh::open_terminal,
+            trace::trace_list,
+            trace::trace_clear,
             docker::docker_overview,
             docker::docker_stats,
             docker::docker_container,
@@ -112,6 +141,7 @@ pub fn run() {
             app.manage(ssh::Sessions::default());
             app.manage(audit::AuditLog::load(data_dir.join("audit.jsonl")));
             app.manage(std::sync::Arc::new(transfers::Transfers::new(app.handle().clone())));
+            trace::init(app.handle().clone());
 
             // Hidden from the first frame; the splash shows them again when it fades.
             if let Some(window) = app.get_webview_window("main") {

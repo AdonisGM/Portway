@@ -232,6 +232,29 @@ export type DockerVolume = { name: string; driver: string; mountpoint: string; u
 export type ComposeAction = 'up' | 'pullUp' | 'restart' | 'down'
 export type TerminalTool = 'htop' | 'dockerExec' | 'dockerLogs' | 'dockerDaemonLog'
 
+export type TraceKind = 'exec' | 'sftp' | 'connect' | 'transfer'
+export type TraceStatus = 'waiting' | 'running' | 'ok' | 'error'
+/** One thing Portway did on a server, from the debug trace. */
+export type TraceEntry = {
+  id: number
+  /** ms since epoch */
+  at: number
+  serverId: string
+  user: string
+  kind: TraceKind
+  label: string
+  command: string
+  status: TraceStatus
+  waitMs: number | null
+  durationMs: number | null
+  exitCode: number | null
+  outBytes: number | null
+  errBytes: number | null
+  stdout: string | null
+  stderr: string | null
+  error: string | null
+}
+
 export type Transfer = {
   id: string
   serverId: string
@@ -305,6 +328,10 @@ type Api = {
   dockerDisk(serverId: string, user: string): Promise<DockerDisk>
   /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop), `cwd` starts in a directory. */
   openTerminal(serverId: string, user: string, tool?: TerminalTool, cwd?: string, container?: string): Promise<void>
+  /** Open (or bring to the front) the debug trace window. */
+  openDebugWindow(): Promise<void>
+  traceList(): Promise<TraceEntry[]>
+  traceClear(): Promise<void>
   dockerOverview(serverId: string, user: string): Promise<DockerState>
   dockerStats(serverId: string, user: string): Promise<DockerStats>
   dockerContainer(serverId: string, user: string, name: string, action: 'start' | 'stop' | 'restart'): Promise<void>
@@ -357,6 +384,9 @@ const tauriApi: Api = {
   disks: (serverId, user) => invoke('server_disks', { serverId, user }),
   dockerDisk: (serverId, user) => invoke('server_docker_disk', { serverId, user }),
   openTerminal: (serverId, user, tool, cwd, container) => invoke('open_terminal', { serverId, user, tool, cwd, container }),
+  openDebugWindow: () => invoke('open_debug_window'),
+  traceList: () => invoke('trace_list'),
+  traceClear: () => invoke('trace_clear'),
   dockerOverview: (serverId, user) => invoke('docker_overview', { serverId, user }),
   dockerStats: (serverId, user) => invoke('docker_stats', { serverId, user }),
   dockerContainer: (serverId, user, name, action) => invoke('docker_container', { serverId, user, name, action }),
@@ -507,6 +537,9 @@ function browserApi(): Api {
     async openTerminal() {
       fail('needs_app')
     },
+    openDebugWindow: async () => fail('needs_app'),
+    traceList: async () => [],
+    traceClear: async () => {},
     dockerOverview: async () => fail('needs_app'),
     dockerStats: async () => fail('needs_app'),
     dockerContainer: async () => fail('needs_app'),

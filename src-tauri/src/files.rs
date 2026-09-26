@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::trace;
 use crate::ssh::{exec, exec_priv, shell_quote, Session, Sessions, MARK};
 
 /// Who the session's user is on the server, and the uid/gid names.
@@ -61,9 +62,23 @@ pub(crate) async fn sftp(session: &Session) -> AppResult<Arc<SftpSession>> {
     if let Some(s) = slot.as_ref() {
         return Ok(s.clone());
     }
-    let channel = session.handle.channel_open_session().await.map_err(|e| lost_or(e, session))?;
-    channel.request_subsystem(true, "sftp").await.map_err(|e| lost_or(e, session))?;
-    let s = SftpSession::new(channel.into_stream()).await.map_err(|e| AppError::detail("sftp_unavailable", e))?;
+    let span = trace::start(&session.server_id, &session.user, trace::Kind::Sftp, Some("Mở kênh SFTP".into()), "sftp (subsystem)", false);
+    let opened = async {
+        let channel = session.handle.channel_open_session().await.map_err(|e| lost_or(e, session))?;
+        channel.request_subsystem(true, "sftp").await.map_err(|e| lost_or(e, session))?;
+        SftpSession::new(channel.into_stream()).await.map_err(|e| AppError::detail("sftp_unavailable", e))
+    }
+    .await;
+    let s = match opened {
+        Ok(s) => {
+            span.ok(|_| {});
+            s
+        }
+        Err(e) => {
+            span.fail(e.detail.clone().unwrap_or_else(|| e.code.to_string()), |_| {});
+            return Err(e);
+        }
+    };
     s.set_timeout(30);
     let s = Arc::new(s);
     *slot = Some(s.clone());
@@ -276,8 +291,18 @@ pub(crate) async fn list(session: &Session, path: &str) -> AppResult<Listing> {
 
 #[tauri::command]
 pub async fn sftp_list(sessions: tauri::State<'_, Sessions>, server_id: String, user: String, path: String) -> AppResult<Listing> {
-    let session = sessions.get(&server_id, &user)?;
-    list(&session, &path).await
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let span = trace::start(&server_id, &user, trace::Kind::Sftp, None, &format!("ls {}", shell_quote(&path)), false);
+        let r = list(&session, &path).await;
+        match &r {
+            Ok(l) => span.ok(|e| e.out_bytes = Some(l.entries.len() as u64)),
+            Err(err) => span.fail(err.detail.clone().unwrap_or_else(|| err.code.to_string()), |_| {}),
+        }
+        r
+    };
+    let r: AppResult<Listing> = trace::labelled("Tệp · mở thư mục", run).await;
+    r
 }
 
 fn check_name(name: &str) -> AppResult<()> {
@@ -297,13 +322,18 @@ pub async fn sftp_mkdir(
     dir: String,
     name: String,
 ) -> AppResult<String> {
-    check_name(&name)?;
-    let session = sessions.get(&server_id, &user)?;
-    let s = sftp(&session).await?;
-    let path = join(&dir, name.trim());
-    let cmd = format!("mkdir {}", shell_quote(&path));
-    let r = s.create_dir(&path).await;
-    finish(&session, &audit, &server_id, &user, "mkdir", cmd, r, &path).await.map(|_| path)
+    let run = async move {
+        check_name(&name)?;
+        let session = sessions.get(&server_id, &user)?;
+        let s = sftp(&session).await?;
+        let path = join(&dir, name.trim());
+        let cmd = format!("mkdir {}", shell_quote(&path));
+        let span = trace::start(&server_id, &user, trace::Kind::Sftp, None, &cmd, false);
+        let r = s.create_dir(&path).await;
+        finish(span, &session, &audit, &server_id, &user, "mkdir", cmd, r, &path).await.map(|_| path)
+    };
+    let r: AppResult<String> = trace::labelled("Tệp · tạo thư mục", run).await;
+    r
 }
 
 #[tauri::command]
@@ -315,20 +345,25 @@ pub async fn sftp_touch(
     dir: String,
     name: String,
 ) -> AppResult<String> {
-    check_name(&name)?;
-    let session = sessions.get(&server_id, &user)?;
-    let s = sftp(&session).await?;
-    let path = join(&dir, name.trim());
-    let cmd = format!("touch {}", shell_quote(&path));
-    // EXCLUDE: never truncate a file that is already there.
-    let r = match s.open_with_flags(&path, OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE).await {
-        Ok(f) => {
-            let _ = f.close().await;
-            Ok(())
-        }
-        Err(e) => Err(e),
+    let run = async move {
+        check_name(&name)?;
+        let session = sessions.get(&server_id, &user)?;
+        let s = sftp(&session).await?;
+        let path = join(&dir, name.trim());
+        let cmd = format!("touch {}", shell_quote(&path));
+        let span = trace::start(&server_id, &user, trace::Kind::Sftp, None, &cmd, false);
+        // EXCLUDE: never truncate a file that is already there.
+        let r = match s.open_with_flags(&path, OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE).await {
+            Ok(f) => {
+                let _ = f.close().await;
+                Ok(())
+            }
+            Err(e) => Err(e),
+        };
+        finish(span, &session, &audit, &server_id, &user, "touch", cmd, r, &path).await.map(|_| path)
     };
-    finish(&session, &audit, &server_id, &user, "touch", cmd, r, &path).await.map(|_| path)
+    let r: AppResult<String> = trace::labelled("Tệp · tạo tệp", run).await;
+    r
 }
 
 #[tauri::command]
@@ -340,17 +375,22 @@ pub async fn sftp_rename(
     path: String,
     name: String,
 ) -> AppResult<String> {
-    check_name(&name)?;
-    let session = sessions.get(&server_id, &user)?;
-    let s = sftp(&session).await?;
-    let (dir, _) = parent_and_name(&path);
-    let to = join(&dir, name.trim());
-    if s.try_exists(&to).await.unwrap_or(false) {
-        return Err(AppError::field("name_exists", "name"));
-    }
-    let cmd = format!("mv {} {}", shell_quote(&path), shell_quote(&to));
-    let r = s.rename(&path, &to).await;
-    finish(&session, &audit, &server_id, &user, "rename", cmd, r, &path).await.map(|_| to)
+    let run = async move {
+        check_name(&name)?;
+        let session = sessions.get(&server_id, &user)?;
+        let s = sftp(&session).await?;
+        let (dir, _) = parent_and_name(&path);
+        let to = join(&dir, name.trim());
+        if s.try_exists(&to).await.unwrap_or(false) {
+            return Err(AppError::field("name_exists", "name"));
+        }
+        let cmd = format!("mv {} {}", shell_quote(&path), shell_quote(&to));
+        let span = trace::start(&server_id, &user, trace::Kind::Sftp, None, &cmd, false);
+        let r = s.rename(&path, &to).await;
+        finish(span, &session, &audit, &server_id, &user, "rename", cmd, r, &path).await.map(|_| to)
+    };
+    let r: AppResult<String> = trace::labelled("Tệp · đổi tên", run).await;
+    r
 }
 
 /// Remove files, links and directories (recursively). Links are removed, never followed.
@@ -380,17 +420,24 @@ pub async fn sftp_remove(
     user: String,
     paths: Vec<String>,
 ) -> AppResult<()> {
-    let session = sessions.get(&server_id, &user)?;
-    let s = sftp(&session).await?;
-    let quoted: Vec<String> = paths.iter().map(|p| shell_quote(p)).collect();
-    let cmd = format!("rm -r {}", quoted.join(" "));
-    for p in &paths {
-        let r = remove_tree(&s, p).await;
-        if r.is_err() {
-            return finish(&session, &audit, &server_id, &user, "remove", cmd, r, p).await;
+    let run = async move {
+        let session = sessions.get(&server_id, &user)?;
+        let s = sftp(&session).await?;
+        let quoted: Vec<String> = paths.iter().map(|p| shell_quote(p)).collect();
+        let cmd = format!("rm -r {}", quoted.join(" "));
+        let span = trace::start(&server_id, &user, trace::Kind::Sftp, None, &cmd, false);
+        let (mut r, mut at) = (Ok(()), "");
+        for p in &paths {
+            r = remove_tree(&s, p).await;
+            if r.is_err() {
+                at = p;
+                break;
+            }
         }
-    }
-    finish(&session, &audit, &server_id, &user, "remove", cmd, Ok(()), "").await
+        finish(span, &session, &audit, &server_id, &user, "remove", cmd, r, at).await
+    };
+    let r: AppResult<()> = trace::labelled("Tệp · xoá", run).await;
+    r
 }
 
 fn chmod_tree<'a>(s: &'a SftpSession, path: &'a str, mode: u32, recursive: bool) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SftpError>> + Send + 'a>> {
@@ -427,20 +474,27 @@ pub async fn sftp_chmod(
     mode: u32,
     recursive: bool,
 ) -> AppResult<()> {
-    if mode > 0o7777 {
-        return Err(AppError::field("invalid_mode", "mode"));
-    }
-    let session = sessions.get(&server_id, &user)?;
-    let s = sftp(&session).await?;
-    let quoted: Vec<String> = paths.iter().map(|p| shell_quote(p)).collect();
-    let cmd = format!("chmod {}{:o} {}", if recursive { "-R " } else { "" }, mode, quoted.join(" "));
-    for p in &paths {
-        let r = chmod_tree(&s, p, mode, recursive).await;
-        if r.is_err() {
-            return finish(&session, &audit, &server_id, &user, "chmod", cmd, r, p).await;
+    let run = async move {
+        if mode > 0o7777 {
+            return Err(AppError::field("invalid_mode", "mode"));
         }
-    }
-    finish(&session, &audit, &server_id, &user, "chmod", cmd, Ok(()), "").await
+        let session = sessions.get(&server_id, &user)?;
+        let s = sftp(&session).await?;
+        let quoted: Vec<String> = paths.iter().map(|p| shell_quote(p)).collect();
+        let cmd = format!("chmod {}{:o} {}", if recursive { "-R " } else { "" }, mode, quoted.join(" "));
+        let span = trace::start(&server_id, &user, trace::Kind::Sftp, None, &cmd, false);
+        let (mut r, mut at) = (Ok(()), "");
+        for p in &paths {
+            r = chmod_tree(&s, p, mode, recursive).await;
+            if r.is_err() {
+                at = p;
+                break;
+            }
+        }
+        finish(span, &session, &audit, &server_id, &user, "chmod", cmd, r, at).await
+    };
+    let r: AppResult<()> = trace::labelled("Tệp · sửa quyền", run).await;
+    r
 }
 
 fn valid_account(name: &str) -> bool {
@@ -460,38 +514,55 @@ pub async fn sftp_chown(
     group: String,
     recursive: bool,
 ) -> AppResult<()> {
-    if !valid_account(&owner) || !valid_account(&group) {
-        return Err(AppError::field("invalid_owner", "owner"));
-    }
-    let session = sessions.get(&server_id, &user)?;
-    if !session.is_root() && !session.sudo_on() {
-        return Err(AppError::new("needs_root"));
-    }
-    let quoted: Vec<String> = paths.iter().map(|p| shell_quote(p)).collect();
-    let cmd = format!("chown {}{owner}:{group} -- {}", if recursive { "-R " } else { "" }, quoted.join(" "));
-    let out = exec_priv(&session, &cmd, Duration::from_secs(60)).await?;
-    let ok = out.code == Some(0);
-    // Logged as it ran: through sudo unless the session is root.
-    let shown = if session.is_root() { cmd } else { format!("sudo {cmd}") };
-    audit.record(&server_id, &user, "chown", &shown, ok, (!ok).then(|| out.stderr.trim().to_string()));
-    if ok {
-        Ok(())
-    } else {
-        Err(AppError::detail("remote_command", out.stderr.trim()))
-    }
+    let run = async move {
+        if !valid_account(&owner) || !valid_account(&group) {
+            return Err(AppError::field("invalid_owner", "owner"));
+        }
+        let session = sessions.get(&server_id, &user)?;
+        if !session.is_root() && !session.sudo_on() {
+            return Err(AppError::new("needs_root"));
+        }
+        let quoted: Vec<String> = paths.iter().map(|p| shell_quote(p)).collect();
+        let cmd = format!("chown {}{owner}:{group} -- {}", if recursive { "-R " } else { "" }, quoted.join(" "));
+        let out = exec_priv(&session, &cmd, Duration::from_secs(60)).await?;
+        let ok = out.code == Some(0);
+        // Logged as it ran: through sudo unless the session is root.
+        let shown = if session.is_root() { cmd } else { format!("sudo {cmd}") };
+        audit.record(&server_id, &user, "chown", &shown, ok, (!ok).then(|| out.stderr.trim().to_string()));
+        if ok {
+            Ok(())
+        } else {
+            Err(AppError::detail("remote_command", out.stderr.trim()))
+        }
+    };
+    let r: AppResult<()> = trace::labelled("Tệp · đổi owner", run).await;
+    r
 }
 
 /// Log a file operation and turn its SFTP result into the app's error.
 #[allow(clippy::too_many_arguments)]
-async fn finish(session: &Session, audit: &AuditLog, server_id: &str, user: &str, action: &str, cmd: String, r: Result<(), SftpError>, path: &str) -> AppResult<()> {
+async fn finish(
+    span: trace::Span,
+    session: &Session,
+    audit: &AuditLog,
+    server_id: &str,
+    user: &str,
+    action: &str,
+    cmd: String,
+    r: Result<(), SftpError>,
+    path: &str,
+) -> AppResult<()> {
     match r {
         Ok(()) => {
+            span.ok(|_| {});
             audit.record(server_id, user, action, cmd, true, None);
             Ok(())
         }
         Err(e) => {
             let err = sftp_err(e, session, path).await;
-            audit.record(server_id, user, action, cmd, false, Some(err.detail.clone().unwrap_or_else(|| err.code.to_string())));
+            let text = err.detail.clone().unwrap_or_else(|| err.code.to_string());
+            span.fail(&text, |_| {});
+            audit.record(server_id, user, action, cmd, false, Some(text));
             Err(err)
         }
     }

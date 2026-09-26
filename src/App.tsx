@@ -4,6 +4,7 @@ import { NavProvider } from './app/nav'
 import { ServersProvider } from './app/servers'
 import { SplashScreen } from './components/splash'
 import { ToastProvider } from './components/toast'
+import { TraceProvider } from './app/trace'
 import { TransfersProvider } from './app/transfers'
 import { AppShell } from './layout/app-shell'
 
@@ -19,8 +20,10 @@ export default function App() {
         <NavProvider>
           <ToastProvider>
             <TransfersProvider>
-              <AppShell />
-              <SplashScreen ready={ready} />
+              <TraceProvider>
+                <AppShell />
+                <SplashScreen ready={ready} />
+              </TraceProvider>
             </TransfersProvider>
           </ToastProvider>
         </NavProvider>

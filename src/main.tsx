@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { DebugWindow } from './debug/debug-window'
 import '@fontsource-variable/inter'
 import '@fontsource/roboto/400.css'
 import '@fontsource/roboto/500.css'
@@ -9,8 +10,9 @@ import '@fontsource/roboto-mono/400.css'
 import '@adonisgm/logo/styles.css'
 import './styles/app.css'
 
+// The same bundle serves the main window and the debug trace window.
+const isDebug = new URLSearchParams(window.location.search).get('window') === 'debug'
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+  <React.StrictMode>{isDebug ? <DebugWindow /> : <App />}</React.StrictMode>,
 )

@@ -1,4 +1,6 @@
-import { ArrowLeftRight, LayoutGrid, Server, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, Bug, LayoutGrid, Server, type LucideIcon } from 'lucide-react'
+import { useTrace } from '../app/trace'
+import { api } from '../lib/api'
 import { useNav, type RailId } from '../app/nav'
 
 const ITEMS: { id: RailId; label: string; icon: LucideIcon }[] = [
@@ -30,6 +32,29 @@ export function Rail() {
           </button>
         )
       })}
+      <span className="flex-1" />
+      <DebugButton />
     </nav>
+  )
+}
+
+/** Bottom of the rail: opens the debug trace window; shows how many
+ *  commands are running on servers right now. */
+function DebugButton() {
+  const { running } = useTrace()
+  return (
+    <button
+      type="button"
+      title={running ? `Nhật ký gỡ lỗi · ${running} việc đang chạy` : 'Nhật ký gỡ lỗi (mở cửa sổ riêng)'}
+      onClick={() => void api.openDebugWindow()}
+      className="relative flex size-10 cursor-pointer items-center justify-center rounded-[11px] border border-line2 text-ink2 hover:border-muted"
+    >
+      <Bug size={18} strokeWidth={1.75} />
+      {running > 0 && (
+        <span className="num absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] leading-none font-semibold text-accent-fg">
+          {running > 99 ? '99+' : running}
+        </span>
+      )}
+    </button>
   )
 }

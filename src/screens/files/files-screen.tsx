@@ -31,6 +31,7 @@ import { Button, cx } from '../../components/ui/primitives'
 import { SearchInput } from '../../components/ui/search-input'
 import { api, isAppError, type AppError, type FileEntry, type Listing, type Server } from '../../lib/api'
 import { copyText } from '../../lib/clipboard'
+import { chooseDownloadDir } from '../../lib/download-dir'
 import { formatBytes } from '../server/format'
 import { FileDialog, type FileAction } from './dialogs'
 import { crumbs, fileError, fullTime, isDirLike, joinPath, matcher, modeString, octal, parentOf, q, shortTime, tagOf, typeChar } from './format'
@@ -175,19 +176,19 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
     run(() => api.openTerminal(id, user, undefined, cwd).then(() => toast({ title: 'Đã mở Terminal', detail: `cd ${q(cwd)}` })), 'Không mở được Terminal')
 
   const download = (entries: FileEntry[]) =>
-    run(
-      () =>
-        api.download(server.name, id, user, entries.map((e) => e.path)).then(() =>
-          toast({ title: `Đang tải xuống ${entries.length} mục`, detail: '~/Downloads' }),
-        ),
-      'Không tải xuống được',
-    )
+    run(async () => {
+      if (!isTauri()) return toast({ title: 'Chỉ tải xuống được trong ứng dụng' })
+      const dest = await chooseDownloadDir(entries.length)
+      if (!dest) return
+      // The queue opens on its own and shows progress; no toast on top of it.
+      await api.download(server.name, id, user, entries.map((e) => e.path), dest)
+    }, 'Không tải xuống được')
 
   // Uploads: names that already exist ask first.
   const [conflict, setConflict] = useState<{ paths: string[]; clashes: string[] } | null>(null)
   const sendUpload = (paths: string[], overwrite: boolean) =>
     run(
-      () => api.upload(server.name, id, user, paths, path, overwrite).then(() => toast({ title: `Đang tải lên ${paths.length} mục`, detail: path })),
+      () => api.upload(server.name, id, user, paths, path, overwrite),
       'Không tải lên được',
     )
   const startUpload = (paths: string[]) => {
@@ -226,6 +227,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
 
   // Show new uploads once they land in the folder on screen.
   const { list: transfers } = useTransfers()
+  const queueShown = transfers.length > 0
   const seen = useRef<Set<string> | null>(null)
   useEffect(() => {
     const finished = transfers.filter((t) => t.direction === 'up' && t.status === 'done' && t.serverId === id && t.user === user)
@@ -272,7 +274,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   const match = filter.trim()
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+    <div className="relative flex min-h-0 flex-1 flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <PathBar path={path} go={go} />
         <Button size="sm" onClick={() => void pickUpload()} disabled={!canWrite}>
@@ -316,6 +318,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
         <Table
           loading={false}
           dim={loading}
+          padBottom={queueShown}
           overlay={
             dropping && (
               <div className="pointer-events-none absolute inset-1.5 flex flex-col items-center justify-center gap-1.5 rounded-[10px] border-2 border-dashed border-accent bg-[color-mix(in_srgb,var(--surface)_80%,transparent)]">
@@ -448,6 +451,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
             more={more}
             setMore={setMore}
             onCollapse={() => setPanel(false)}
+            padBottom={queueShown}
             act={{
               rename: () => one && setAction({ mode: 'rename', entry: one }),
               chmod: () => setAction({ mode: 'chmod', entries: sel }),
@@ -605,12 +609,15 @@ function Table({
   dim,
   head,
   overlay,
+  padBottom,
   children,
 }: {
   loading: boolean
   dim?: boolean
   head?: ReactNode
   overlay?: ReactNode
+  /** Room under the last row so it can scroll out from under the floating queue. */
+  padBottom?: boolean
   children?: ReactNode
 }) {
   return (
@@ -641,6 +648,7 @@ function Table({
               </div>
             ))
           : children}
+        {padBottom && <div className="h-14" />}
       </div>
       {overlay}
     </div>
@@ -742,6 +750,7 @@ function Details({
   more,
   setMore,
   onCollapse,
+  padBottom,
   act,
 }: {
   server: Server
@@ -757,6 +766,7 @@ function Details({
   more: boolean
   setMore: (v: boolean) => void
   onCollapse: () => void
+  padBottom: boolean
   act: Acts
 }) {
   const isRoot = user === 'root'
@@ -851,7 +861,7 @@ function Details({
         { label: 'Đổi tên', icon: Pencil, run: act.rename, ok: !!one && canWrite, why: !one ? 'Chỉ đổi tên được một mục' : `Cần quyền ghi trên ${path}` },
         { label: 'Sửa quyền', icon: ShieldCheck, run: act.chmod, ok: ownsAll, why: 'Chỉ owner hoặc root mới đổi được quyền', meta: 'chmod' },
         { label: 'Đổi owner', icon: Users, run: act.chown, ok: canChown, why: 'Chỉ root mới đổi được owner. Bật sudo cho phiên này.', meta: 'chown' },
-        { label: 'Tải xuống', icon: Download, run: act.download, ok: isRoot || sel.every((e) => e.readable), why: 'Có mục không đọc được', meta: '~/Downloads' },
+        { label: 'Tải xuống', icon: Download, run: act.download, ok: isRoot || sel.every((e) => e.readable), why: 'Có mục không đọc được', meta: 'chọn nơi lưu' },
         { label: 'Sao chép đường dẫn', icon: Copy, run: act.copy, ok: true },
         { label: 'Mở trong Terminal', icon: SquareTerminal, run: act.terminal, ok: !!one, why: 'Chỉ áp dụng cho một mục' },
         { label: 'Xoá', icon: Trash2, run: act.remove, ok: canWrite, why: `Cần quyền ghi trên ${path}`, danger: true },
@@ -860,7 +870,12 @@ function Details({
 
   const Chev = more ? ChevronDown : ChevronRight
   return (
-    <div className="flex w-[340px] flex-none flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-3.5 [scrollbar-width:thin] [&>*]:shrink-0">
+    <div
+      className={cx(
+        'flex w-[340px] flex-none flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-3.5 [scrollbar-width:thin] [&>*]:shrink-0',
+        padBottom && 'pb-16',
+      )}
+    >
       <div className="flex items-center gap-2.5">
         <Tag text={head.tag} colors={head.colors} large />
         <div className="flex min-w-0 flex-1 flex-col gap-px">

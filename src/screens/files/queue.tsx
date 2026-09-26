@@ -27,15 +27,15 @@ function pctLabel(t: Transfer) {
   return `${formatBytes(t.done)} / ${formatBytes(t.size)} · ${Math.floor(pct(t))}%`
 }
 
-/** "Hàng đợi chuyển tệp" docked at the bottom of the files screen. */
+/** "Hàng đợi chuyển tệp": a card floating over the bottom-right corner of the
+ *  files screen. It takes no room in the layout; the parent must be `relative`. */
 export function TransferQueue() {
   const { list, cancel, retry, clearDone } = useTransfers()
   const [open, setOpen] = useState(false)
   const active = list.filter((t) => t.status === 'running' || t.status === 'queued')
   const failed = list.filter((t) => t.status === 'error')
 
-  // Open while something is moving; fold away shortly after it all went well,
-  // so the dock does not keep covering the list and the details panel.
+  // Open while something is moving; fold away shortly after it all went well.
   const busy = active.length > 0
   const clean = failed.length === 0
   useEffect(() => {
@@ -54,8 +54,8 @@ export function TransferQueue() {
   const Chev = open ? ChevronDown : ChevronUp
 
   return (
-    <div className="flex-none">
-      <div className="overflow-hidden rounded-xl border border-line2 bg-surface shadow-pop">
+    <div className="pointer-events-none absolute right-0 bottom-0 z-[6] flex w-[520px] max-w-full justify-end">
+      <div className="pointer-events-auto w-full overflow-hidden rounded-xl border border-line2 bg-surface shadow-pop">
         {open && (
           <>
             <div className="flex items-center gap-2 border-b border-line px-3.5 py-2">
@@ -64,12 +64,12 @@ export function TransferQueue() {
                 Xoá mục đã xong
               </Button>
             </div>
-            <div className="max-h-[260px] overflow-auto">
+            <div className="max-h-[260px] overflow-auto overscroll-contain">
               {[...list].reverse().map((t) => {
                 const Icon = t.direction === 'up' ? ArrowUpFromLine : ArrowDownToLine
                 const bar = t.status === 'error' ? 'var(--danger)' : t.status === 'done' ? 'var(--success)' : 'var(--ink2)'
                 return (
-                  <div key={t.id} className="grid items-center gap-3 border-t border-line px-3.5 py-2 first:border-t-0" style={{ gridTemplateColumns: '22px minmax(0,1fr) 80px 170px auto' }}>
+                  <div key={t.id} className="grid items-center gap-3 border-t border-line px-3.5 py-2 first:border-t-0" style={{ gridTemplateColumns: '18px minmax(0,1fr) 128px auto' }}>
                     <Icon size={15} strokeWidth={1.8} className={t.status === 'error' ? 'text-danger' : 'text-ink2'} />
                     <div className="flex min-w-0 flex-col gap-0.5">
                       <span className="truncate font-medium">{t.name}</span>
@@ -77,9 +77,11 @@ export function TransferQueue() {
                         {subText(t)}
                       </span>
                     </div>
-                    <span className="num text-right text-[11.5px] text-muted">{t.status === 'running' && t.speed > 0 ? `${formatBytes(t.speed)}/s` : ''}</span>
                     <div className="flex flex-col gap-1">
-                      <span className="num text-[11px] text-ink2">{pctLabel(t)}</span>
+                      <span className="num truncate text-[11px] text-ink2">
+                        {pctLabel(t)}
+                        {t.status === 'running' && t.speed > 0 ? ` · ${formatBytes(t.speed)}/s` : ''}
+                      </span>
                       <span className="block h-1 overflow-hidden rounded-sm bg-sunken">
                         <span className="block h-full transition-[width] duration-500" style={{ width: `${pct(t)}%`, background: bar }} />
                       </span>
@@ -107,19 +109,28 @@ export function TransferQueue() {
             </div>
           </>
         )}
-        <button type="button" onClick={() => setOpen(!open)} className="flex w-full cursor-pointer items-center gap-3 border-t border-line px-3.5 py-[9px] text-left first:border-t-0">
-          <ArrowUpDown size={15} strokeWidth={1.8} className="text-ink2" />
-          <span className="font-semibold">{active.length ? `Đang chuyển ${active.length} mục` : 'Đã chuyển xong'}</span>
-          <span className={`text-[11.5px] ${failed.length ? 'text-danger' : 'text-muted'}`}>
-            {failed.length ? `${failed.length} lỗi` : active.length && speed > 0 ? `${formatBytes(speed)}/s` : ''}
-          </span>
-          <span className="flex-1" />
-          <span className="block h-1 w-40 overflow-hidden rounded-sm bg-sunken">
-            <span className="block h-full bg-ink2 transition-[width] duration-500" style={{ width: `${overall}%` }} />
-          </span>
-          <span className="num w-9 text-right text-[11.5px] text-muted">{Math.floor(overall)}%</span>
-          <Chev size={14} strokeWidth={1.8} className="text-muted" />
-        </button>
+        <div className="flex items-center border-t border-line first:border-t-0">
+          <button type="button" onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-[9px] pr-2 pl-3.5 text-left">
+            <ArrowUpDown size={15} strokeWidth={1.8} className="flex-none text-ink2" />
+            <span className="font-semibold whitespace-nowrap">{active.length ? `Đang chuyển ${active.length} mục` : 'Đã chuyển xong'}</span>
+            <span className={`truncate text-[11.5px] ${failed.length ? 'text-danger' : 'text-muted'}`}>
+              {failed.length ? `${failed.length} lỗi` : active.length && speed > 0 ? `${formatBytes(speed)}/s` : ''}
+            </span>
+            <span className="flex-1" />
+            <span className="block h-1 w-24 flex-none overflow-hidden rounded-sm bg-sunken">
+              <span className="block h-full bg-ink2 transition-[width] duration-500" style={{ width: `${overall}%` }} />
+            </span>
+            <span className="num w-9 flex-none text-right text-[11.5px] text-muted">{Math.floor(overall)}%</span>
+            <Chev size={14} strokeWidth={1.8} className="flex-none text-muted" />
+          </button>
+          {!busy && (
+            <span className="pr-2">
+              <IconButton title="Đóng và xoá danh sách" onClick={clearDone}>
+                <X size={14} strokeWidth={1.8} />
+              </IconButton>
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )

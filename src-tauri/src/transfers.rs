@@ -360,10 +360,17 @@ fn enqueue(state: &Arc<Transfers>, session: Arc<Session>, audit: AuditLog, serve
     t
 }
 
-fn downloads_dir() -> PathBuf {
-    home_dir().join("Downloads")
+/// "~/Downloads/x" for a path under the home directory, as shown in the queue.
+fn tilde(path: &Path) -> String {
+    match path.strip_prefix(home_dir()) {
+        Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Ok(rest) => format!("~/{}", rest.display()),
+        Err(_) => path.display().to_string(),
+    }
 }
 
+/// Download remote paths into `dest`, a local folder the user picked.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn transfer_download(
     state: tauri::State<'_, Arc<Transfers>>,
@@ -373,9 +380,14 @@ pub fn transfer_download(
     server_id: String,
     user: String,
     paths: Vec<String>,
+    dest: String,
 ) -> AppResult<Vec<Transfer>> {
     let session = sessions.get(&server_id, &user)?;
-    let dir = downloads_dir();
+    let dir = PathBuf::from(&dest);
+    if !dir.is_dir() {
+        return Err(AppError::detail("not_a_dir", &dest));
+    }
+    let shown = tilde(&dir);
     Ok(paths
         .into_iter()
         .map(|remote| {
@@ -390,7 +402,7 @@ pub fn transfer_download(
                 Direction::Down,
                 name,
                 from,
-                "~/Downloads".into(),
+                shown.clone(),
                 Job::Download { remote, local_dir: dir.clone() },
             )
         })

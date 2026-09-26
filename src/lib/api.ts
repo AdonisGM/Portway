@@ -260,7 +260,8 @@ type Api = {
   sftpRemove(serverId: string, user: string, paths: string[]): Promise<void>
   sftpChmod(serverId: string, user: string, paths: string[], mode: number, recursive: boolean): Promise<void>
   sftpChown(serverId: string, user: string, paths: string[], owner: string, group: string, recursive: boolean): Promise<void>
-  download(serverName: string, serverId: string, user: string, paths: string[]): Promise<Transfer[]>
+  /** `dest` is the local folder the user picked. */
+  download(serverName: string, serverId: string, user: string, paths: string[], dest: string): Promise<Transfer[]>
   upload(serverName: string, serverId: string, user: string, localPaths: string[], remoteDir: string, overwrite: boolean): Promise<Transfer[]>
   transfers(): Promise<Transfer[]>
   cancelTransfer(id: string): Promise<void>
@@ -298,7 +299,7 @@ const tauriApi: Api = {
   sftpRemove: (serverId, user, paths) => invoke('sftp_remove', { serverId, user, paths }),
   sftpChmod: (serverId, user, paths, mode, recursive) => invoke('sftp_chmod', { serverId, user, paths, mode, recursive }),
   sftpChown: (serverId, user, paths, owner, group, recursive) => invoke('sftp_chown', { serverId, user, paths, owner, group, recursive }),
-  download: (serverName, serverId, user, paths) => invoke('transfer_download', { serverName, serverId, user, paths }),
+  download: (serverName, serverId, user, paths, dest) => invoke('transfer_download', { serverName, serverId, user, paths, dest }),
   upload: (serverName, serverId, user, localPaths, remoteDir, overwrite) =>
     invoke('transfer_upload', { serverName, serverId, user, localPaths, remoteDir, overwrite }),
   transfers: () => invoke('transfer_list'),

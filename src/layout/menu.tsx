@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Clock,
   Database,
-  FileText,
   Folder,
   KeyRound,
   Layers,
@@ -128,7 +127,6 @@ function ServerMenu() {
       kids: [services('services', List, 'Dịch vụ'), services('jobs', Clock, 'Tác vụ định kỳ')],
     },
     { id: 'firewall', icon: Shield },
-    { id: 'logs', icon: FileText },
   ]
 
   return (

@@ -6,7 +6,6 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
   docker: 'Docker',
   services: 'Dịch vụ',
   firewall: 'Firewall',
-  logs: 'Log',
 }
 
 /** Context shown next to the app name in the title bar. */

@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useConnections } from './connections'
 
 export type RailId = 'conn' | 'server' | 'tunnels'
-export type ModuleId = 'overview' | 'files' | 'docker' | 'services' | 'firewall' | 'logs'
+export type ModuleId = 'overview' | 'files' | 'docker' | 'services' | 'firewall'
 export type DockerView = 'containers' | 'compose' | 'images' | 'volumes'
 export type ServicesView = 'services' | 'jobs'
 
@@ -21,12 +21,11 @@ type Nav = {
   /** Sub-view of the modules that have children in the menu. */
   dockerView: DockerView
   servicesView: ServicesView
-  logSource: string
-  /** Menu groups (docker, services, logs) that are expanded. */
+  /** Menu groups (docker, services) that are expanded. */
   expanded: Partial<Record<ModuleId, boolean>>
   go: (screen: Screen) => void
   goRail: (rail: RailId) => void
-  openModule: (module: ModuleId, sub?: { docker?: DockerView; services?: ServicesView; log?: string }) => void
+  openModule: (module: ModuleId, sub?: { docker?: DockerView; services?: ServicesView }) => void
   toggleGroup: (module: ModuleId) => void
   /** Open (or switch to) a session for this server and user and connect it
    *  over SSH if it is not connected yet. */
@@ -49,7 +48,6 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const [lastServer, setLastServer] = useState<Extract<Screen, { kind: 'server' }> | null>(null)
   const [dockerView, setDockerView] = useState<DockerView>('containers')
   const [servicesView, setServicesView] = useState<ServicesView>('services')
-  const [logSource, setLogSource] = useState('nginx-access')
   const [expanded, setExpanded] = useState<Nav['expanded']>({})
 
   const go = (next: Screen) => {
@@ -72,8 +70,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
     if (!base) return
     if (sub?.docker) setDockerView(sub.docker)
     if (sub?.services) setServicesView(sub.services)
-    if (sub?.log) setLogSource(sub.log)
-    if (module === 'docker' || module === 'services' || module === 'logs') {
+    if (module === 'docker' || module === 'services') {
       setExpanded((e) => ({ ...e, [module]: true }))
     }
     go({ ...base, module })
@@ -111,7 +108,6 @@ export function NavProvider({ children }: { children: ReactNode }) {
         sessions,
         dockerView,
         servicesView,
-        logSource,
         expanded,
         go,
         goRail,

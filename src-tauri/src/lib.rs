@@ -8,6 +8,7 @@ mod firewalld;
 mod keys;
 mod local;
 mod logtail;
+mod nginx;
 mod paths;
 mod ports;
 mod servers;
@@ -161,6 +162,9 @@ pub fn run() {
             docker::docker_volume_sizes,
             docker::docker_volume_remove,
             logtail::log_tail_start,
+            nginx::nginx_state,
+            nginx::nginx_action,
+            nginx::nginx_action_preview,
             logtail::log_tail_stop,
             settings::settings_get,
             settings::settings_set,

@@ -1,0 +1,11 @@
+# Static site; its certificate runs out in 10 days (built that way to test the warning).
+server {
+    listen 443 ssl;
+    server_name blog.portway.test;
+    ssl_certificate     /etc/ssl/portway/blog.crt;
+    ssl_certificate_key /etc/ssl/portway/blog.key;
+
+    root /var/www/blog;
+    index index.html;
+    access_log /var/log/nginx/blog.access.log;
+}

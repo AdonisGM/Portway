@@ -114,6 +114,8 @@ pub struct HostInfo {
     pub docker: bool,
     /// systemd runs as init (the services view is shown only then).
     pub systemd: bool,
+    /// nginx is installed (the Nginx module is shown only then).
+    pub nginx: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -952,7 +954,7 @@ pub const MARK: &str = "@@PORTWAY@@";
 
 async fn read_host_info(session: &Session) -> AppResult<HostInfo> {
     let script = format!(
-        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null; echo {MARK}; if command -v docker >/dev/null 2>&1; then echo docker; fi; echo {MARK}; if [ -d /run/systemd/system ]; then echo systemd; fi"
+        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null; echo {MARK}; if command -v docker >/dev/null 2>&1; then echo docker; fi; echo {MARK}; if [ -d /run/systemd/system ]; then echo systemd; fi; echo {MARK}; if command -v nginx >/dev/null 2>&1 || [ -x /usr/sbin/nginx ]; then echo nginx; fi"
     );
     let out = exec(session, &script).await?.stdout_or_err()?;
     let parts: Vec<&str> = out.split(MARK).map(str::trim).collect();
@@ -964,6 +966,7 @@ async fn read_host_info(session: &Session) -> AppResult<HostInfo> {
         uptime_secs: get(3).split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) as u64,
         docker: get(4) == "docker",
         systemd: get(5) == "systemd",
+        nginx: get(6) == "nginx",
     })
 }
 

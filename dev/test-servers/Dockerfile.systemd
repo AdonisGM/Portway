@@ -12,6 +12,19 @@ RUN apt-get update \
  && systemctl mask getty@tty1.service console-getty.service systemd-firstboot.service
 
 COPY sshd_portway.conf /etc/ssh/sshd_config.d/portway.conf
+# Nginx sites for the Website screen: proxy + SSL, static with a certificate
+# about to run out, a disabled redirect, a proxy to a port nobody listens on.
+COPY systemd-nginx/ /etc/nginx/sites-available/
+RUN mkdir -p /etc/ssl/portway /var/www/blog \
+ && echo '<h1>blog</h1>' > /var/www/blog/index.html \
+ && openssl req -x509 -newkey rsa:2048 -nodes -days 90 -subj /CN=shop.portway.test \
+      -addext 'subjectAltName=DNS:shop.portway.test,DNS:www.shop.portway.test' \
+      -keyout /etc/ssl/portway/shop.key -out /etc/ssl/portway/shop.crt 2>/dev/null \
+ && openssl req -x509 -newkey rsa:2048 -nodes -days 10 -subj /CN=blog.portway.test \
+      -keyout /etc/ssl/portway/blog.key -out /etc/ssl/portway/blog.crt 2>/dev/null \
+ && chmod 600 /etc/ssl/portway/*.key \
+ && for s in shop.portway.test blog.portway.test api.portway.test app-backend; do \
+      ln -s /etc/nginx/sites-available/$s /etc/nginx/sites-enabled/$s; done
 COPY systemd/ /etc/systemd/system/
 COPY systemd/bin/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/* \

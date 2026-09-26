@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useConnections } from './connections'
 
 export type RailId = 'conn' | 'server' | 'transfer' | 'tunnels' | 'settings'
-export type ModuleId = 'overview' | 'files' | 'docker' | 'services' | 'firewall'
+export type ModuleId = 'overview' | 'files' | 'nginx' | 'docker' | 'services' | 'firewall'
 export type DockerView = 'containers' | 'compose' | 'images' | 'volumes'
 export type ServicesView = 'services' | 'jobs'
 

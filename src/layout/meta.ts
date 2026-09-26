@@ -3,6 +3,7 @@ import type { ModuleId, Screen } from '../app/nav'
 export const MODULE_LABELS: Record<ModuleId, string> = {
   overview: 'Tổng quan',
   files: 'Tệp (SFTP)',
+  nginx: 'Nginx',
   docker: 'Docker',
   services: 'Dịch vụ',
   firewall: 'Firewall',

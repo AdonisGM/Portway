@@ -15,6 +15,7 @@ import { DockerScreen } from '../docker/docker-screen'
 import { ServicesScreen } from '../services/services-screen'
 import { FilesScreen } from '../files/files-screen'
 import { FirewallScreen } from '../firewall/firewall-screen'
+import { NginxScreen } from '../nginx/nginx-screen'
 import { Overview } from './overview'
 import { SudoBanner, SudoPrompt } from './sudo'
 
@@ -30,9 +31,10 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
   // if the session turns out not to have it (e.g. opened before connecting).
   const noDocker = conn?.status === 'connected' && !conn.info.docker
   const noSystemd = conn?.status === 'connected' && !conn.info.systemd
+  const noNginx = conn?.status === 'connected' && !conn.info.nginx
   useEffect(() => {
-    if ((module === 'docker' && noDocker) || (module === 'services' && noSystemd)) nav.openModule('overview')
-  }, [module, noDocker, noSystemd, nav])
+    if ((module === 'docker' && noDocker) || (module === 'services' && noSystemd) || (module === 'nginx' && noNginx)) nav.openModule('overview')
+  }, [module, noDocker, noSystemd, noNginx, nav])
 
   if (!server) {
     return <div className="rounded-xl border border-line bg-surface p-8 text-center text-muted">Server này không còn trong danh sách.</div>
@@ -40,7 +42,7 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
 
   // The header never scrolls; only the area under it does. Modules that manage
   // their own scrolling (the file browser) get exactly that area's height.
-  const fill = module === 'files' || module === 'docker' || module === 'services'
+  const fill = module === 'files' || module === 'docker' || module === 'services' || module === 'nginx'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -69,6 +71,8 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
                   <Overview server={server} user={user} />
                 ) : module === 'files' ? (
                   <FilesScreen server={server} user={user} />
+                ) : module === 'nginx' ? (
+                  <NginxScreen server={server} user={user} />
                 ) : module === 'docker' ? (
                   <DockerScreen server={server} user={user} />
                 ) : module === 'services' ? (

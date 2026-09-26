@@ -8,6 +8,7 @@ import {
   Database,
   Download,
   Folder,
+  Globe,
   Info,
   Palette,
   FolderSync,
@@ -140,6 +141,7 @@ function ServerMenu() {
   const hasDocker = up && conn.info.docker
   // Services read systemd; hidden on servers without it (containers, OpenRC).
   const hasSystemd = up && conn.info.systemd
+  const hasNginx = up && conn.info.nginx
   const inModule = (m: ModuleId) => s?.module === m
   // Sub-views only; counts appear once each module reads real data.
   const docker = (view: DockerView, icon: LucideIcon, label: string): Kid => ({
@@ -158,6 +160,7 @@ function ServerMenu() {
   const modules: { id: ModuleId; icon: LucideIcon; count?: number; alert?: string; kids?: Kid[]; hidden?: boolean }[] = [
     { id: 'overview', icon: LayoutDashboard },
     { id: 'files', icon: Folder },
+    { id: 'nginx', icon: Globe, hidden: !hasNginx },
     {
       id: 'docker',
       hidden: !hasDocker,

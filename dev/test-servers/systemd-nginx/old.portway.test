@@ -1,0 +1,6 @@
+# Moved: kept in sites-available but not enabled.
+server {
+    listen 80;
+    server_name old.portway.test;
+    return 301 https://shop.portway.test$request_uri;
+}

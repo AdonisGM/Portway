@@ -1,0 +1,8 @@
+# Stand-in for the app behind shop.portway.test.
+server {
+    listen 127.0.0.1:3000;
+    location / {
+        default_type application/json;
+        return 200 '{"ok":true,"app":"shop"}';
+    }
+}

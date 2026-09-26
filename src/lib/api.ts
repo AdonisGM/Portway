@@ -87,7 +87,55 @@ export type HostInfo = {
   docker: boolean
   /** systemd runs as init; the services view shows only then. */
   systemd: boolean
+  /** nginx is installed; the Nginx module shows only then. */
+  nginx: boolean
 }
+
+export type NginxListen = { addr: string; port: number; ssl: boolean }
+export type NginxTarget =
+  | { kind: 'proxy'; url: string }
+  | { kind: 'static'; root: string }
+  | { kind: 'redirect'; code: number; to: string }
+  | { kind: 'fixed'; code: number }
+  | { kind: 'other' }
+export type NginxCert = {
+  /** Seconds since epoch. */
+  notAfter: number
+  daysLeft: number
+  subject: string
+  issuer: string
+  names: string[]
+  selfSigned: boolean
+  nameMismatch: boolean
+}
+export type NginxSite = {
+  id: string
+  file: string
+  available: string | null
+  enabled: boolean
+  names: string[]
+  listens: NginxListen[]
+  target: NginxTarget
+  ssl: boolean
+  httpsRedirect: boolean
+  gzip: boolean
+  websocket: boolean
+  sslCertificate: string | null
+  accessLog: string | null
+  errorLog: string | null
+  /** As served by nginx; null when it could not be read. */
+  cert: NginxCert | null
+  /** Local proxy target accepting connections; null when not checked. */
+  upstreamUp: boolean | null
+  source: string
+}
+export type NginxState =
+  | { kind: 'absent' }
+  | { kind: 'needsRoot'; detail: string }
+  | { kind: 'broken'; version: string; running: boolean; output: string }
+  | { kind: 'ok'; version: string; running: boolean; test: string; sites: NginxSite[]; layout: boolean }
+export type NginxAction = { op: 'test' } | { op: 'reload' } | { op: 'enable'; file: string } | { op: 'disable'; link: string }
+export type NginxResult = { ok: boolean; output: string; rolledBack: boolean }
 
 export type ConnectResult =
   | { status: 'connected'; info: HostInfo }
@@ -523,6 +571,9 @@ type Api = {
   localMkdir(dir: string, name: string): Promise<string>
   localTerminal(path: string): Promise<void>
   transfers(): Promise<Transfer[]>
+  nginxState(serverId: string, user: string): Promise<NginxState>
+  nginxAction(serverId: string, user: string, action: NginxAction): Promise<NginxResult>
+  nginxPreview(action: NginxAction): Promise<string>
   logTailStart(serverId: string, user: string, path: string, lines: number, sudo: boolean): Promise<string>
   logTailStop(id: string): Promise<void>
   cancelTransfer(id: string): Promise<void>
@@ -605,6 +656,9 @@ const tauriApi: Api = {
   localMkdir: (dir, name) => invoke('local_mkdir', { dir, name }),
   localTerminal: (path) => invoke('local_terminal', { path }),
   transfers: () => invoke('transfer_list'),
+  nginxState: (serverId, user) => invoke('nginx_state', { serverId, user }),
+  nginxAction: (serverId, user, action) => invoke('nginx_action', { serverId, user, action }),
+  nginxPreview: (action) => invoke('nginx_action_preview', { action }),
   logTailStart: (serverId, user, path, lines, sudo) => invoke('log_tail_start', { serverId, user, path, lines, sudo }),
   logTailStop: (id) => invoke('log_tail_stop', { id }),
   cancelTransfer: (id) => invoke('transfer_cancel', { id }),
@@ -788,6 +842,9 @@ function browserApi(): Api {
     localMkdir: async () => fail('needs_app'),
     localTerminal: async () => fail('needs_app'),
     transfers: async () => [],
+    nginxState: async () => fail('needs_app'),
+    nginxAction: async () => fail('needs_app'),
+    nginxPreview: async () => fail('needs_app'),
     logTailStart: async () => fail('needs_app'),
     logTailStop: async () => {},
     cancelTransfer: async () => {},

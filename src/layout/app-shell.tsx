@@ -26,7 +26,9 @@ export function AppShell() {
             ) : screen.kind === 'keys' ? (
               <KeyListScreen />
             ) : screen.kind === 'server' ? (
-              <ServerScreen serverId={screen.serverId} user={screen.user} module={screen.module} />
+              // One instance per session: switching user must not show the
+              // previous user's numbers while the new ones load.
+              <ServerScreen key={`${screen.serverId}|${screen.user}`} serverId={screen.serverId} user={screen.user} module={screen.module} />
             ) : (
               <PlaceholderScreen
                 title="Tunnel"

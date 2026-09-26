@@ -10,6 +10,7 @@ import {
   Copy,
   Download,
   Folder,
+  FolderOpen,
   Lock,
   AppWindow,
   FilePen,
@@ -37,6 +38,7 @@ import { SearchInput } from '../../components/ui/search-input'
 import { api, isAppError, type AppError, type FileEntry, type Listing, type Server } from '../../lib/api'
 import { copyText } from '../../lib/clipboard'
 import { chooseDownloadDir } from '../../lib/download-dir'
+import { pickApp } from '../../lib/pick-app'
 import { formatBytes } from '../server/format'
 import { FileDialog, type FileAction } from './dialogs'
 import { crumbs, fileError, fullTime, isDirLike, joinPath, matcher, modeString, octal, parentOf, q, shortTime, tagOf, typeChar } from './format'
@@ -513,7 +515,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
       {chooseApp && (
         <Modal open onClose={() => setChooseApp(null)} width={420} title={`Mở ${chooseApp.name} bằng…`} subtitle="Lưu trong app là Portway tự tải lên server">
           <div className="flex flex-col gap-px">
-            {[{ name: 'Editor mặc định của macOS', path: '' }, ...edits.apps].map((a) => (
+            {[{ name: `Mặc định của macOS${edits.apps.find((x) => x.default) ? ` (${edits.apps.find((x) => x.default)!.name})` : ''}`, path: '' }, ...edits.apps].map((a) => (
               <button
                 key={a.path || 'default'}
                 type="button"
@@ -528,6 +530,22 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                 {a.path && <span className="truncate font-mono text-[10.5px] text-muted">{a.path.replace(/\/[^/]+$/, '')}</span>}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                const entry = chooseApp
+                void pickApp(`Mở ${entry.name} bằng…`).then((app) => {
+                  if (!app) return
+                  setChooseApp(null)
+                  void edits.open(id, user, entry.path, app)
+                })
+              }}
+              className="flex cursor-pointer items-center gap-2.5 rounded-lg border-t border-line px-2.5 py-2 text-left hover:bg-raised"
+            >
+              <FolderOpen size={15} strokeWidth={1.8} className="text-ink2" />
+              <span className="flex-1">Chọn app khác…</span>
+              <span className="text-[11px] text-muted">bất kỳ .app nào</span>
+            </button>
           </div>
         </Modal>
       )}

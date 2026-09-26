@@ -79,6 +79,12 @@ pub fn settings_set(app: AppHandle, store: tauri::State<'_, SettingsStore>, sett
     }
     next.ask_download = Some(next.ask_download.unwrap_or(next.download_dir.is_none()));
     next.editor = next.editor.filter(|e| !e.trim().is_empty());
+    if let Some(app) = &next.editor {
+        let p = std::path::Path::new(app);
+        if !(p.is_dir() && p.extension().is_some_and(|e| e == "app")) {
+            return Err(AppError::detail("not_an_app", app));
+        }
+    }
     let saved = store.save(next)?;
     let _ = app.emit("settings", saved.clone());
     Ok(saved)

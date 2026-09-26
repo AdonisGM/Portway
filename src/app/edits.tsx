@@ -12,6 +12,8 @@ type Edits = {
   stop: (id: string) => void
   resolve: (id: string, overwrite: boolean) => Promise<void>
   reopen: (id: string, app?: string | null) => void
+  /** Read the editor list again (after picking an app by hand). */
+  refreshApps: () => void
 }
 
 const EditsContext = createContext<Edits | null>(null)
@@ -72,6 +74,7 @@ export function EditsProvider({ children }: { children: ReactNode }) {
         },
         resolve: (id, overwrite) => api.editResolve(id, overwrite).catch((e) => toast({ title: 'Không làm được', detail: editError(e) })),
         reopen: (id, app) => void api.editReopen(id, app).catch((e) => toast({ title: 'Không mở lại được', detail: editError(e) })),
+        refreshApps: () => void api.editorApps().then(setApps),
       }}
     >
       {children}

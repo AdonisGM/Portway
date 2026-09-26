@@ -91,7 +91,7 @@ export type Edit = {
   syncedAt: number
   error: string | null
 }
-export type EditorApp = { name: string; path: string }
+export type EditorApp = { name: string; path: string; /** macOS opens plain text with it by default. */ default: boolean }
 
 export type AppError = { code: string; field?: string; detail?: string }
 

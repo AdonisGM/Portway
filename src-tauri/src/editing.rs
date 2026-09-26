@@ -467,40 +467,114 @@ pub fn edit_list(edits: tauri::State<'_, Arc<Edits>>) -> Vec<Edit> {
 pub struct EditorApp {
     pub name: String,
     pub path: String,
+    /// macOS opens plain text with it by default.
+    pub default: bool,
 }
 
-/// Code and text editors installed on this Mac, in a sensible order.
-#[tauri::command]
-pub fn editor_apps() -> Vec<EditorApp> {
-    const KNOWN: &[&str] = &[
-        "Visual Studio Code",
-        "Cursor",
-        "Zed",
-        "Sublime Text",
-        "Nova",
-        "BBEdit",
-        "CotEditor",
-        "TextMate",
-        "Windsurf",
-        "VSCodium",
-        "IntelliJ IDEA",
-        "IntelliJ IDEA CE",
-        "WebStorm",
-        "PhpStorm",
-        "PyCharm",
-        "PyCharm CE",
-        "GoLand",
-        "Fleet",
-        "Xcode",
-        "TextEdit",
+/// Well-known editors, in the order they are offered. Anything else macOS
+/// reports comes after them, alphabetically.
+const KNOWN: &[&str] = &[
+    "Visual Studio Code",
+    "Cursor",
+    "Zed",
+    "Sublime Text",
+    "Nova",
+    "BBEdit",
+    "CotEditor",
+    "TextMate",
+    "Windsurf",
+    "VSCodium",
+    "IntelliJ IDEA",
+    "IntelliJ IDEA CE",
+    "WebStorm",
+    "PhpStorm",
+    "PyCharm",
+    "PyCharm CE",
+    "GoLand",
+    "Fleet",
+    "Xcode",
+    "TextEdit",
+];
+
+/// Apps macOS lists for text files that are not editors: browsers run or
+/// show the file, terminals run scripts.
+fn not_an_editor(name: &str) -> bool {
+    const NOT: &[&str] = &[
+        "Safari", "Google Chrome", "Chromium", "Firefox", "Microsoft Edge", "Arc", "Brave Browser", "Opera", "Vivaldi", "Orion",
+        "Terminal", "iTerm", "Warp", "Ghostty", "Alacritty", "kitty", "WezTerm", "Hyper", "Script Editor", "Archive Utility",
+        "Preview", "Notes", "Pages", "Numbers", "Keynote", "Microsoft Word", "Console", "Python Launcher", "Installer",
     ];
+    NOT.iter().any(|n| n.eq_ignore_ascii_case(name))
+}
+
+fn app_name(path: &Path) -> String {
+    path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// Apps LaunchServices says can open these kinds of text files, and the one
+/// it opens plain text with. Sample files are made in a temporary folder so
+/// the answer follows their real types (.txt, .json, .yml, .sh…).
+#[cfg(target_os = "macos")]
+fn registered_text_apps() -> (Vec<PathBuf>, Option<PathBuf>) {
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{NSString, NSURL};
+    let dir = std::env::temp_dir().join(format!("portway-editors-{}", std::process::id()));
+    if std::fs::create_dir_all(&dir).is_err() {
+        return (Vec::new(), None);
+    }
+    let ws = NSWorkspace::sharedWorkspace();
+    let url_of = |name: &str| {
+        let f = dir.join(name);
+        let _ = std::fs::write(&f, "");
+        NSURL::fileURLWithPath(&NSString::from_str(&f.to_string_lossy()))
+    };
+    let mut apps: Vec<PathBuf> = Vec::new();
+    for name in ["sample.txt", "sample.json", "sample.yml", "sample.sh", "sample.py", "sample.js", "sample.conf", "sample.md", "sample.xml"] {
+        for u in ws.URLsForApplicationsToOpenURL(&url_of(name)).iter() {
+            if let Some(p) = u.path() {
+                let p = PathBuf::from(p.to_string());
+                if !apps.contains(&p) {
+                    apps.push(p);
+                }
+            }
+        }
+    }
+    let default = ws.URLForApplicationToOpenURL(&url_of("sample.txt")).and_then(|u| u.path()).map(|p| PathBuf::from(p.to_string()));
+    let _ = std::fs::remove_dir_all(&dir);
+    (apps, default)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn registered_text_apps() -> (Vec<PathBuf>, Option<PathBuf>) {
+    (Vec::new(), None)
+}
+
+/// Code and text editors on this Mac: what macOS registers for text files,
+/// plus well-known editors found installed, plus the one chosen in Cài đặt.
+#[tauri::command]
+pub fn editor_apps(settings: tauri::State<'_, crate::settings::SettingsStore>) -> Vec<EditorApp> {
+    let (registered, default) = registered_text_apps();
     let home = crate::paths::home_dir();
     let roots = [PathBuf::from("/Applications"), home.join("Applications"), PathBuf::from("/System/Applications")];
-    KNOWN
-        .iter()
-        .filter_map(|name| {
-            roots.iter().map(|r| r.join(format!("{name}.app"))).find(|p| p.is_dir()).map(|p| EditorApp { name: name.to_string(), path: p.to_string_lossy().into_owned() })
-        })
+    let mut found: Vec<PathBuf> = registered.into_iter().filter(|p| p.is_dir() && !not_an_editor(&app_name(p))).collect();
+    for name in KNOWN {
+        if let Some(p) = roots.iter().map(|r| r.join(format!("{name}.app"))).find(|p| p.is_dir()) {
+            if !found.iter().any(|f| app_name(f) == *name) {
+                found.push(p);
+            }
+        }
+    }
+    // An app picked by hand stays on the list even if macOS does not list it.
+    if let Some(chosen) = settings.get().editor.map(PathBuf::from).filter(|p| p.is_dir()) {
+        if !found.contains(&chosen) {
+            found.push(chosen);
+        }
+    }
+    let rank = |p: &PathBuf| KNOWN.iter().position(|k| *k == app_name(p)).unwrap_or(KNOWN.len() - 1);
+    found.sort_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| app_name(a).to_lowercase().cmp(&app_name(b).to_lowercase())));
+    found
+        .into_iter()
+        .map(|p| EditorApp { name: app_name(&p), default: default.as_ref() == Some(&p), path: p.to_string_lossy().into_owned() })
         .collect()
 }
 
@@ -520,5 +594,17 @@ mod tests {
         let name = a.file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.starts_with("web-01_root_"), "{name}");
         assert_eq!(tidy("Máy chủ / A"), "M_y_ch____A");
+    }
+
+    /// Prints what LaunchServices reports on this Mac: `cargo test -- --ignored --nocapture lists_text_apps`
+    #[test]
+    #[ignore]
+    fn lists_text_apps() {
+        let (apps, default) = registered_text_apps();
+        for a in &apps {
+            println!("{} {}", if not_an_editor(&app_name(a)) { "skip" } else { "keep" }, a.display());
+        }
+        println!("default: {default:?}");
+        assert!(!apps.is_empty());
     }
 }

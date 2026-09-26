@@ -12,20 +12,30 @@ import { SelectField } from '../../components/ui/form-controls'
 import { Button } from '../../components/ui/primitives'
 import { SegmentedControl } from '../../components/ui/segmented'
 import { api, isAppError, type Theme } from '../../lib/api'
+import { pickApp } from '../../lib/pick-app'
 
 /** Select value for "no app chosen" (the select treats '' as nothing chosen). */
 const DEFAULT_EDITOR = 'default'
+const PICK = 'pick'
 
 /** "~/Downloads" for a folder under the home folder. */
 const shownDir = (dir: string, home: string) => (home && dir.startsWith(home + '/') ? '~' + dir.slice(home.length) : dir)
 
-const errText = (e: unknown) => (isAppError(e) ? (e.code === 'not_a_dir' ? `${e.detail} không phải thư mục` : (e.detail ?? e.code)) : String(e))
+const errText = (e: unknown) =>
+  isAppError(e)
+    ? e.code === 'not_a_dir'
+      ? `${e.detail} không phải thư mục`
+      : e.code === 'not_an_app'
+        ? `${e.detail} không phải một ứng dụng (.app)`
+        : (e.detail ?? e.code)
+    : String(e)
 
 /** "Cài đặt": downloads, appearance, the server list as a file, version. */
 export function SettingsScreen() {
   const { settings, update } = useSettings()
   const { servers, refresh } = useServers()
-  const { apps } = useEdits()
+  const { apps, refreshApps } = useEdits()
+  const systemEditor = apps.find((a) => a.default)
   const toast = useToast()
   const [dataPath, setDataPath] = useState('')
   const [version, setVersion] = useState('')
@@ -126,9 +136,22 @@ export function SettingsScreen() {
         >
           <SelectField
             value={settings.editor ?? DEFAULT_EDITOR}
-            onChange={(v) => void run(() => update({ editor: v === DEFAULT_EDITOR ? null : v }), 'Không lưu được')}
-            options={[{ value: DEFAULT_EDITOR, label: 'Editor mặc định của macOS' }, ...apps.map((a) => ({ value: a.path, label: a.name }))]}
-            className="w-56"
+            onChange={(v) =>
+              void run(async () => {
+                if (v !== PICK) return update({ editor: v === DEFAULT_EDITOR ? null : v })
+                const app = await pickApp('Chọn app để sửa tệp của server')
+                if (app) {
+                  await update({ editor: app })
+                  refreshApps()
+                }
+              }, 'Không lưu được')
+            }
+            options={[
+              { value: DEFAULT_EDITOR, label: `Mặc định của macOS${systemEditor ? ` (${systemEditor.name})` : ''}` },
+              ...apps.map((a) => ({ value: a.path, label: a.name })),
+              { value: PICK, label: 'Chọn app khác…' },
+            ]}
+            className="!w-64"
           />
         </Row>
       </Section>

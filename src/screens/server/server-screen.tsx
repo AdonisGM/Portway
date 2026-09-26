@@ -25,37 +25,47 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
     return <div className="rounded-xl border border-line bg-surface p-8 text-center text-muted">Server này không còn trong danh sách.</div>
   }
 
-  // Modules that manage their own scrolling (the file browser) get exactly the
-  // height left under the header instead of growing the page.
+  // The header never scrolls; only the area under it does. Modules that manage
+  // their own scrolling (the file browser) get exactly that area's height.
   const fill = module === 'files'
 
   return (
-    <div className={cx('flex flex-col gap-4', fill && 'min-h-0 flex-1')}>
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       <ServerHeader server={server} user={user} conn={conn} />
 
-      {(!conn || conn.status === 'failed') && <Failed server={server} user={user} conn={conn} />}
-      {(conn?.status === 'connecting' || conn?.status === 'prompt') && <Connecting server={server} />}
-      {conn?.status === 'prompt' && (
-        <ConnectPrompt server={server} user={user} prompt={conn.prompt} onCancel={() => conns.markLost(serverId, user, { code: 'cancelled' })} />
-      )}
-      {(conn?.status === 'connected' || conn?.status === 'reconnecting') && (
-        <>
-          {conn.status === 'reconnecting' && <Reconnecting server={server} user={user} conn={conn} />}
-          <SudoBanner server={server} user={user} sudo={conn.sudo} />
-          {/* Last numbers stay on screen, dimmed, while reconnecting. */}
-          <div className={cx('flex flex-col gap-4 transition-opacity duration-200', fill && 'min-h-0 flex-1')} style={{ opacity: conn.status === 'reconnecting' ? 0.55 : 1 }}>
-            {module === 'overview' ? (
-              <Overview server={server} user={user} />
-            ) : module === 'files' ? (
-              <FilesScreen server={server} user={user} />
-            ) : (
-              <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">
-                Mục {MODULE_LABELS[module]} sẽ làm ở bước sau
+      {/* Scroll area reaches the window's right and bottom edges (cancelling
+          main's padding), so its scrollbar sits at the edge and content is
+          not cut short above the bottom padding. */}
+      <div className="-mx-6 -mb-10 min-h-0 flex-1 overflow-y-auto px-6">
+        <div className={cx('flex flex-col gap-4 pb-10', fill && 'h-full')}>
+          {(!conn || conn.status === 'failed') && <Failed server={server} user={user} conn={conn} />}
+          {(conn?.status === 'connecting' || conn?.status === 'prompt') && <Connecting server={server} />}
+          {conn?.status === 'prompt' && (
+            <ConnectPrompt server={server} user={user} prompt={conn.prompt} onCancel={() => conns.markLost(serverId, user, { code: 'cancelled' })} />
+          )}
+          {(conn?.status === 'connected' || conn?.status === 'reconnecting') && (
+            <>
+              {conn.status === 'reconnecting' && <Reconnecting server={server} user={user} conn={conn} />}
+              <SudoBanner server={server} user={user} sudo={conn.sudo} />
+              {/* Last numbers stay on screen, dimmed, while reconnecting. */}
+              <div
+                className={cx('flex flex-col gap-4 transition-opacity duration-200', fill && 'min-h-0 flex-1')}
+                style={{ opacity: conn.status === 'reconnecting' ? 0.55 : 1 }}
+              >
+                {module === 'overview' ? (
+                  <Overview server={server} user={user} />
+                ) : module === 'files' ? (
+                  <FilesScreen server={server} user={user} />
+                ) : (
+                  <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">
+                    Mục {MODULE_LABELS[module]} sẽ làm ở bước sau
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </>
-      )}
+            </>
+          )}
+        </div>
+      </div>
       {conns.sudoAsked(serverId, user) && conn?.status === 'connected' && <SudoPrompt server={server} user={user} />}
     </div>
   )
@@ -96,7 +106,7 @@ function ServerHeader({ server, user, conn }: { server: Server; user: string; co
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2.5">
+    <div className="flex flex-none flex-wrap items-end gap-2.5">
       <div className="flex min-w-[260px] flex-1 flex-col gap-1">
         <div className="flex items-center gap-2.5">
           <OsBadge os={server.os} size={28} />

@@ -1,5 +1,5 @@
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { ArrowDownToLine, ArrowUpDown, ArrowUpFromLine, ChevronDown, ChevronUp, FolderOpen, RotateCw, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowLeftRight, ArrowUpDown, ArrowUpFromLine, ChevronDown, ChevronUp, FolderOpen, RotateCw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTransfers } from '../../app/transfers'
 import { Button } from '../../components/ui/primitives'
@@ -24,11 +24,12 @@ function subText(t: Transfer) {
 function pctLabel(t: Transfer) {
   if (t.status === 'done') return `Xong · ${formatBytes(t.size)}`
   if (t.status === 'queued') return 'Đang chờ'
+  if (t.counting) return 'Đang đếm…'
   return `${formatBytes(t.done)} / ${formatBytes(t.size)} · ${Math.floor(pct(t))}%`
 }
 
 /** "Hàng đợi chuyển tệp": a card floating over the bottom-right corner of the
- *  files screen. It takes no room in the layout; the parent must be `relative`. */
+ *  files and transfer screens. It takes no room in the layout; the parent must be `relative`. */
 export function TransferQueue() {
   const { list, cancel, retry, clearDone } = useTransfers()
   const [open, setOpen] = useState(false)
@@ -66,7 +67,7 @@ export function TransferQueue() {
             </div>
             <div className="max-h-[260px] overflow-auto overscroll-contain">
               {[...list].reverse().map((t) => {
-                const Icon = t.direction === 'up' ? ArrowUpFromLine : ArrowDownToLine
+                const Icon = t.direction === 'up' ? ArrowUpFromLine : t.direction === 'copy' ? ArrowLeftRight : ArrowDownToLine
                 const bar = t.status === 'error' ? 'var(--danger)' : t.status === 'done' ? 'var(--success)' : 'var(--ink2)'
                 return (
                   <div key={t.id} className="grid items-center gap-3 border-t border-line px-3.5 py-2 first:border-t-0" style={{ gridTemplateColumns: '18px minmax(0,1fr) 128px auto' }}>

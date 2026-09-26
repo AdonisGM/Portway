@@ -368,14 +368,20 @@ export type TraceEntry = {
 
 export type Transfer = {
   id: string
+  /** Server read from (download, copy) or written to (upload). */
   serverId: string
   user: string
-  direction: 'up' | 'down'
+  /** Server written to by a copy between two servers. */
+  destServerId: string | null
+  destUser: string | null
+  direction: 'up' | 'down' | 'copy'
   name: string
   from: string
   to: string
-  /** Local file for a download, remote path for an upload. */
+  /** Local file for a download, remote path otherwise. */
   target: string
+  /** Still walking the source; size is not known yet. */
+  counting: boolean
   size: number
   done: number
   speed: number
@@ -384,6 +390,11 @@ export type Transfer = {
   startedAt: number
   finishedAt: number | null
 }
+
+/** One side of a copy: this Mac or a server session (name is for display). */
+export type TransferEnd = { kind: 'local' } | { kind: 'remote'; serverId: string; user: string; name: string }
+/** `name` renames the item at the destination; `overwrite` replaces what is there. */
+export type TransferItem = { path: string; name?: string; overwrite: boolean }
 
 export type ConnectOptions = {
   password?: string
@@ -487,6 +498,10 @@ type Api = {
   /** `dest` is the local folder the user picked. */
   download(serverName: string, serverId: string, user: string, paths: string[], dest: string): Promise<Transfer[]>
   upload(serverName: string, serverId: string, user: string, localPaths: string[], remoteDir: string, overwrite: boolean): Promise<Transfer[]>
+  transferCopy(from: TransferEnd, to: TransferEnd, dir: string, items: TransferItem[]): Promise<Transfer[]>
+  localList(path: string): Promise<Listing>
+  localMkdir(dir: string, name: string): Promise<string>
+  localTerminal(path: string): Promise<void>
   transfers(): Promise<Transfer[]>
   cancelTransfer(id: string): Promise<void>
   retryTransfer(id: string): Promise<void>
@@ -558,6 +573,10 @@ const tauriApi: Api = {
   download: (serverName, serverId, user, paths, dest) => invoke('transfer_download', { serverName, serverId, user, paths, dest }),
   upload: (serverName, serverId, user, localPaths, remoteDir, overwrite) =>
     invoke('transfer_upload', { serverName, serverId, user, localPaths, remoteDir, overwrite }),
+  transferCopy: (from, to, dir, items) => invoke('transfer_copy', { from, to, dir, items }),
+  localList: (path) => invoke('local_list', { path }),
+  localMkdir: (dir, name) => invoke('local_mkdir', { dir, name }),
+  localTerminal: (path) => invoke('local_terminal', { path }),
   transfers: () => invoke('transfer_list'),
   cancelTransfer: (id) => invoke('transfer_cancel', { id }),
   retryTransfer: (id) => invoke('transfer_retry', { id }),
@@ -726,6 +745,10 @@ function browserApi(): Api {
     sftpChown: async () => fail('needs_app'),
     download: async () => fail('needs_app'),
     upload: async () => fail('needs_app'),
+    transferCopy: async () => fail('needs_app'),
+    localList: async () => fail('needs_app'),
+    localMkdir: async () => fail('needs_app'),
+    localTerminal: async () => fail('needs_app'),
     transfers: async () => [],
     cancelTransfer: async () => {},
     retryTransfer: async () => {},

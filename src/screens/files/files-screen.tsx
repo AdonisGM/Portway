@@ -286,6 +286,13 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
         <Button size="sm" onClick={() => setAction({ mode: 'newdir' })} disabled={!canWrite}>
           Thư mục mới
         </Button>
+        <Button
+          size="sm"
+          title="Mở màn Chuyển tệp với thư mục này ở bên trái"
+          onClick={() => nav.openTransfer({ src: { kind: 'remote', serverId: id, user }, path })}
+        >
+          Chép sang máy khác
+        </Button>
         <button
           type="button"
           title="Mở thư mục này trong Terminal"

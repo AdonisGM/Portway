@@ -2,6 +2,7 @@ import { useNav } from '../app/nav'
 import { KeyListScreen } from '../screens/keys/key-list'
 import { ServerScreen } from '../screens/server/server-screen'
 import { ServerListScreen } from '../screens/servers/server-list'
+import { TransferScreen } from '../screens/transfer/transfer-screen'
 import { TunnelsScreen } from '../screens/tunnels/tunnels-screen'
 import { Menu } from './menu'
 import { Rail } from './rail'
@@ -29,6 +30,8 @@ export function AppShell() {
               // One instance per session: switching user must not show the
               // previous user's numbers while the new ones load.
               <ServerScreen key={`${screen.serverId}|${screen.user}`} serverId={screen.serverId} user={screen.user} module={screen.module} />
+            ) : screen.kind === 'transfer' ? (
+              <TransferScreen />
             ) : (
               <TunnelsScreen />
             )}

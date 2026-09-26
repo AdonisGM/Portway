@@ -1,5 +1,6 @@
-import { ArrowLeftRight, Bug, LayoutGrid, Server, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpDown, Bug, LayoutGrid, Server, type LucideIcon } from 'lucide-react'
 import { useTrace } from '../app/trace'
+import { useTransfers } from '../app/transfers'
 import { useTunnels } from '../app/tunnels'
 import { api } from '../lib/api'
 import { useNav, type RailId } from '../app/nav'
@@ -7,13 +8,15 @@ import { useNav, type RailId } from '../app/nav'
 const ITEMS: { id: RailId; label: string; icon: LucideIcon }[] = [
   { id: 'conn', label: 'Quản lý kết nối', icon: LayoutGrid },
   { id: 'server', label: 'Server đang kết nối', icon: Server },
+  { id: 'transfer', label: 'Chuyển tệp', icon: ArrowUpDown },
   { id: 'tunnels', label: 'Tunnel', icon: ArrowLeftRight },
 ]
 
-/** Leftmost column: switches between the three areas of the app. */
+/** Leftmost column: switches between the areas of the app. */
 export function Rail() {
   const nav = useNav()
   const tunnels = useTunnels()
+  const moving = useTransfers().list.filter((t) => t.status === 'running' || t.status === 'queued').length
 
   return (
     <nav className="flex w-[60px] flex-none flex-col items-center gap-2 border-r border-line bg-rail py-3">
@@ -31,6 +34,11 @@ export function Rail() {
             }`}
           >
             <Icon size={18} strokeWidth={1.75} />
+            {id === 'transfer' && moving > 0 && (
+              <span className="num absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] leading-none font-semibold text-accent-fg">
+                {moving}
+              </span>
+            )}
             {id === 'tunnels' && tunnels.running > 0 && (
               <span className="num absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-success px-1 text-[10px] leading-none font-semibold text-bg">
                 {tunnels.running}

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useConnections } from './connections'
 
-export type RailId = 'conn' | 'server' | 'tunnels'
+export type RailId = 'conn' | 'server' | 'transfer' | 'tunnels'
 export type ModuleId = 'overview' | 'files' | 'docker' | 'services' | 'firewall'
 export type DockerView = 'containers' | 'compose' | 'images' | 'volumes'
 export type ServicesView = 'services' | 'jobs'
@@ -10,9 +10,16 @@ export type Screen =
   | { kind: 'servers' }
   | { kind: 'keys' }
   | { kind: 'tunnels' }
+  | { kind: 'transfer' }
   | { kind: 'server'; serverId: string; user: string; module: ModuleId }
 
 export type Session = { serverId: string; user: string }
+
+/** Where a pane of "Chuyển tệp" looks: this Mac or a server session, and the
+ *  folder ('' = home). Kept here so the panes survive leaving the screen. */
+export type PaneSource = { kind: 'local' } | { kind: 'remote'; serverId: string; user: string }
+export type PaneSpot = { src: PaneSource; path: string }
+export type PaneSide = 'L' | 'R'
 
 type Nav = {
   screen: Screen
@@ -30,15 +37,26 @@ type Nav = {
   /** Open (or switch to) a session for this server and user and connect it
    *  over SSH if it is not connected yet. */
   connect: (serverId: string, user: string) => void
+  /** Open a session without leaving the current screen. */
+  openSession: (serverId: string, user: string) => void
   closeSession: (s: Session) => void
   /** Close every session of a server, e.g. when it is deleted. */
   closeServer: (serverId: string) => void
+  panes: Record<PaneSide, PaneSpot>
+  setPane: (side: PaneSide, spot: PaneSpot) => void
+  swapPanes: () => void
+  /** Go to "Chuyển tệp" with the left pane on this spot. */
+  openTransfer: (left: PaneSpot) => void
 }
 
 const NavContext = createContext<Nav | null>(null)
 
 export const railOf = (s: Screen): RailId =>
-  s.kind === 'server' ? 'server' : s.kind === 'tunnels' ? 'tunnels' : 'conn'
+  s.kind === 'server' ? 'server' : s.kind === 'tunnels' ? 'tunnels' : s.kind === 'transfer' ? 'transfer' : 'conn'
+
+const LOCAL_DOWNLOADS: PaneSpot = { src: { kind: 'local' }, path: '~/Downloads' }
+const sameSource = (a: PaneSource, b: PaneSource) =>
+  a.kind === 'local' ? b.kind === 'local' : b.kind === 'remote' && a.serverId === b.serverId && a.user === b.user
 
 export function NavProvider({ children }: { children: ReactNode }) {
   const conns = useConnections()
@@ -49,6 +67,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const [dockerView, setDockerView] = useState<DockerView>('containers')
   const [servicesView, setServicesView] = useState<ServicesView>('services')
   const [expanded, setExpanded] = useState<Nav['expanded']>({})
+  const [panes, setPanes] = useState<Record<PaneSide, PaneSpot>>({ L: LOCAL_DOWNLOADS, R: LOCAL_DOWNLOADS })
 
   const go = (next: Screen) => {
     if (next.kind === 'server') setLastServer(next)
@@ -58,6 +77,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const goRail = (rail: RailId) => {
     if (rail === 'conn') return go({ kind: 'servers' })
     if (rail === 'tunnels') return go({ kind: 'tunnels' })
+    if (rail === 'transfer') return go({ kind: 'transfer' })
     // Server rail: back to the last session if it is still open, else the first one.
     const alive = lastServer && sessions.some((s) => s.serverId === lastServer.serverId && s.user === lastServer.user)
     if (alive) return go(lastServer)
@@ -78,11 +98,20 @@ export function NavProvider({ children }: { children: ReactNode }) {
 
   const toggleGroup = (module: ModuleId) => setExpanded((e) => ({ ...e, [module]: !e[module] }))
 
-  const connect = (serverId: string, user: string) => {
+  const openSession = (serverId: string, user: string) => {
     setSessions((list) => (list.some((s) => s.serverId === serverId && s.user === user) ? list : [...list, { serverId, user }]))
-    go({ kind: 'server', serverId, user, module: 'overview' })
     const current = conns.get(serverId, user)
     if (!current || current.status === 'failed') void conns.connect(serverId, user)
+  }
+
+  const connect = (serverId: string, user: string) => {
+    openSession(serverId, user)
+    go({ kind: 'server', serverId, user, module: 'overview' })
+  }
+
+  const openTransfer = (left: PaneSpot) => {
+    setPanes((p) => ({ L: left, R: sameSource(p.R.src, left.src) ? (sameSource(p.L.src, left.src) ? LOCAL_DOWNLOADS : p.L) : p.R }))
+    go({ kind: 'transfer' })
   }
 
   const closeWhere = (drop: (s: Session) => boolean) => {
@@ -114,8 +143,13 @@ export function NavProvider({ children }: { children: ReactNode }) {
         openModule,
         toggleGroup,
         connect,
+        openSession,
         closeSession,
         closeServer,
+        panes,
+        setPane: (side, spot) => setPanes((p) => ({ ...p, [side]: spot })),
+        swapPanes: () => setPanes((p) => ({ L: p.R, R: p.L })),
+        openTransfer,
       }}
     >
       {children}

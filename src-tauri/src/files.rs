@@ -305,7 +305,7 @@ pub async fn sftp_list(sessions: tauri::State<'_, Sessions>, server_id: String, 
     r
 }
 
-fn check_name(name: &str) -> AppResult<()> {
+pub(crate) fn check_name(name: &str) -> AppResult<()> {
     let n = name.trim();
     if n.is_empty() || n == "." || n == ".." || n.contains('/') || n.contains('\0') {
         return Err(AppError::field("invalid_name", "name"));

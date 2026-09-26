@@ -4025,9 +4025,10 @@ dependencies = [
 
 [[package]]
 name = "portway"
-version = "0.0.26"
+version = "0.0.27"
 dependencies = [
  "keyring",
+ "libc",
  "objc2",
  "objc2-app-kit",
  "russh",

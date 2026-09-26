@@ -1,6 +1,7 @@
 import {
   Activity,
   ArrowLeftRight,
+  ArrowUpDown,
   Box,
   ChevronDown,
   ChevronRight,
@@ -20,6 +21,7 @@ import type { ReactNode } from 'react'
 import { useNav, type DockerView, type ModuleId, type ServicesView } from '../app/nav'
 import { useConnections } from '../app/connections'
 import { useServers } from '../app/servers'
+import { useTransfers } from '../app/transfers'
 import { OsBadge } from '../components/os-badge'
 import { MODULE_LABELS } from './meta'
 
@@ -31,6 +33,7 @@ export function Menu() {
     <aside className="flex w-[224px] flex-none flex-col gap-0.5 overflow-auto border-r border-line bg-rail px-2 py-3">
       {nav.rail === 'conn' && <ConnMenu />}
       {nav.rail === 'server' && <ServerMenu />}
+      {nav.rail === 'transfer' && <TransferMenu />}
       {nav.rail === 'tunnels' && <TunnelMenu />}
     </aside>
   )
@@ -59,6 +62,23 @@ function ConnMenu() {
         count={keys.length}
         active={nav.screen.kind === 'keys'}
         onClick={() => nav.go({ kind: 'keys' })}
+      />
+    </>
+  )
+}
+
+function TransferMenu() {
+  const nav = useNav()
+  const running = useTransfers().list.filter((t) => t.status === 'running').length
+  return (
+    <>
+      <MenuTitle>Chuyển tệp</MenuTitle>
+      <MenuItem
+        icon={ArrowUpDown}
+        label="Chuyển tệp"
+        count={running ? `${running} đang chạy` : undefined}
+        active={nav.screen.kind === 'transfer'}
+        onClick={() => nav.go({ kind: 'transfer' })}
       />
     </>
   )

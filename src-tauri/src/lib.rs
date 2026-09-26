@@ -6,6 +6,7 @@ mod files;
 mod firewall;
 mod firewalld;
 mod keys;
+mod local;
 mod paths;
 mod ports;
 mod servers;
@@ -110,6 +111,10 @@ pub fn run() {
             files::sftp_chown,
             transfers::transfer_download,
             transfers::transfer_upload,
+            transfers::transfer_copy,
+            local::local_list,
+            local::local_mkdir,
+            local::local_terminal,
             transfers::transfer_list,
             transfers::transfer_cancel,
             transfers::transfer_retry,

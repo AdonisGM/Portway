@@ -17,6 +17,8 @@ export function screenTitle(s: Screen, serverName: (id: string) => string | unde
       return 'Khoá SSH'
     case 'tunnels':
       return 'Tunnel'
+    case 'transfer':
+      return 'Chuyển tệp'
     case 'server':
       return `${serverName(s.serverId) ?? s.serverId} — ${MODULE_LABELS[s.module]}`
   }

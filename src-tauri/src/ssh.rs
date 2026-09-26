@@ -85,6 +85,8 @@ pub struct HostInfo {
     pub uptime_secs: u64,
     /// The docker CLI is installed (the Docker module is shown only then).
     pub docker: bool,
+    /// systemd runs as init (the services view is shown only then).
+    pub systemd: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -717,7 +719,7 @@ pub const MARK: &str = "@@PORTWAY@@";
 
 async fn read_host_info(session: &Session) -> AppResult<HostInfo> {
     let script = format!(
-        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null; echo {MARK}; if command -v docker >/dev/null 2>&1; then echo docker; fi"
+        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null; echo {MARK}; if command -v docker >/dev/null 2>&1; then echo docker; fi; echo {MARK}; if [ -d /run/systemd/system ]; then echo systemd; fi"
     );
     let out = exec(session, &script).await?.stdout_or_err()?;
     let parts: Vec<&str> = out.split(MARK).map(str::trim).collect();
@@ -728,6 +730,7 @@ async fn read_host_info(session: &Session) -> AppResult<HostInfo> {
         kernel: get(2).to_string(),
         uptime_secs: get(3).split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) as u64,
         docker: get(4) == "docker",
+        systemd: get(5) == "systemd",
     })
 }
 
@@ -1027,7 +1030,8 @@ async fn top_processes(session: &Session) -> AppResult<Processes> {
   g=$(head -n 5 /proc/$p/cgroup 2>/dev/null | tr '\t\n' '  ')
   printf '@@P %s\t%s\t%s\t%s\n' "$p" "$u" "$c" "$g"
 done
-echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --format '{{{{.ID}}}} {{{{.Names}}}}' 2>/dev/null || true"#,
+echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --format '{{{{.ID}}}} {{{{.Names}}}}' 2>/dev/null || true
+echo {MARK}; head -n 5 /proc/1/cgroup 2>/dev/null | tr '\t\n' '  '"#,
         pids = pids.join(" ")
     );
     let out = exec(&session, &detail).await?.stdout;
@@ -1047,7 +1051,19 @@ echo {MARK}; cat /etc/passwd 2>/dev/null; echo {MARK}; docker ps --no-trunc --fo
         .lines()
         .filter_map(|l| l.trim().split_once(' ').map(|(id, name)| (id.to_string(), name.to_string())))
         .collect();
+    // When the server itself runs in a container (an LXC/Docker "VPS"), every
+    // process carries that container's id; it is the server, not a container on it.
+    let own = container_id(parts.get(3).unwrap_or(&""));
     let mut details = parse_proc_details(parts.first().unwrap_or(&""));
+    if let Some(own) = &own {
+        for d in details.values_mut() {
+            if let ProcDetail::Process { container, .. } = d {
+                if container.as_ref() == Some(own) {
+                    *container = None;
+                }
+            }
+        }
+    }
     let is_probe = |pid: &u32| chains[pid].iter().any(|p| details.get(p) == Some(&ProcDetail::Probe));
     let keep: Vec<u32> = ranked.iter().map(|r| r.0).filter(|pid| !is_probe(pid)).collect();
 
@@ -1319,14 +1335,14 @@ pub fn open_terminal(
     user: String,
     tool: Option<String>,
     cwd: Option<String>,
-    container: Option<String>,
+    target: Option<String>,
 ) -> AppResult<()> {
     // Docker goes through sudo when this session uses sudo for it; the
     // terminal asks for the password itself.
     let sudo = if user != "root" && sessions.get(&server_id, &user).map(|s| s.sudo_on()).unwrap_or(false) { "sudo " } else { "" };
     // Remote commands are fixed here; the UI only picks one by name, plus a
     // directory or container name that is quoted, never run as code.
-    let remote: Option<String> = match (tool.as_deref(), cwd, container) {
+    let remote: Option<String> = match (tool.as_deref(), cwd, target) {
         (None, None, _) => None,
         (Some("htop"), _, _) => Some("command -v htop >/dev/null 2>&1 && exec htop || exec top".into()),
         (None, Some(dir), _) => Some(format!("cd {} && exec \"$SHELL\" -l", shell_quote(&dir))),
@@ -1336,6 +1352,7 @@ pub fn open_terminal(
         )),
         (Some("dockerLogs"), _, Some(c)) => Some(format!("{sudo}docker logs -f --tail 200 {}", shell_quote(&c))),
         (Some("dockerDaemonLog"), _, _) => Some(format!("{sudo}journalctl -u docker -n 200 -f")),
+        (Some("unitLog"), _, Some(unit)) => Some(format!("{sudo}journalctl -u {} -n 200 -f", shell_quote(&unit))),
         (Some(_), _, _) => return Err(AppError::new("unknown_tool")),
     };
     let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
@@ -1579,6 +1596,26 @@ mod tests {
         let alpine = Session::new(a, "test", "root");
         assert!(!read_host_info(&alpine).await.unwrap().docker);
         assert!(matches!(docker::parse_overview(&exec_priv(&alpine, docker::OVERVIEW_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout), DockerState::NotInstalled));
+
+        // systemd on pw-systemd: units, state, journal access.
+        let fp = match open(&target(2204, "root"), Credential::Key(key.clone()), None).await.unwrap() {
+            Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) => fingerprint,
+            _ => panic!("expected an unknown host key"),
+        };
+        let Opened::Ready(h) = open(&target(2204, "root"), Credential::Key(key.clone()), Some(fp)).await.unwrap() else { panic!("root@pw-systemd") };
+        let sysd = Session::new(h, "test", "root");
+        let info = read_host_info(&sysd).await.unwrap();
+        assert!(info.systemd && !info.docker);
+        assert!(!read_host_info(&alpine).await.unwrap().systemd, "Alpine runs OpenRC");
+        let all = crate::services::parse_all(&exec_priv(&sysd, "systemctl list-units --type=service --all --no-legend --plain --no-pager; echo @@PORTWAY@@; systemctl list-unit-files --type=service --no-legend --no-pager", EXEC_TIMEOUT).await.unwrap().stdout);
+        assert!(all.iter().any(|u| u.name == "nginx.service" && u.active == "active"));
+        assert!(all.iter().any(|u| u.name == "report-mailer.service" && u.file_state.as_deref() == Some("disabled")));
+        assert!(!all.iter().any(|u| u.name == "sshd.service"), "aliases are left out");
+        let show = exec_priv(&sysd, "systemctl show --no-pager --timestamp=unix -p Id,Names,ActiveState,Result,ExecMainStatus,User -- backup-db.service sshd.service", EXEC_TIMEOUT).await.unwrap().stdout;
+        let units = crate::services::parse_show(&show);
+        let backup = units.iter().find(|u| u.name == "backup-db.service").unwrap();
+        assert_eq!((backup.active_state.as_str(), backup.exit_status), ("failed", Some(1)));
+        assert!(units.iter().any(|u| u.name == "ssh.service" && u.aliases.contains(&"sshd.service".to_string())));
 
         // Nothing listening: refused.
         let err = open(&target(2299, "root"), Credential::Key(key), None).await.err().unwrap();

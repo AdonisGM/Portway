@@ -1,0 +1,4 @@
+#!/bin/sh
+echo "worker starting, connecting to queue at 127.0.0.1:6380"
+echo "ERROR: connection refused (queue not reachable)" >&2
+exit 3

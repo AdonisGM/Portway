@@ -48,6 +48,13 @@ pub struct Server {
     pub os: Option<String>,
     #[serde(default)]
     pub pinned: bool,
+    /// systemd units shown in "Dịch vụ". None until first chosen, so a
+    /// starting set can be offered once; an empty list is a choice too.
+    #[serde(default)]
+    pub watched_units: Option<Vec<String>>,
+    /// Names the user gave units, e.g. "worker-queue.service" → "Hàng đợi".
+    #[serde(default)]
+    pub unit_names: std::collections::HashMap<String, String>,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -135,6 +142,8 @@ impl ServerStore {
             }
             None => {
                 let server = Server {
+                    watched_units: None,
+                    unit_names: Default::default(),
                     id: uuid::Uuid::new_v4().to_string(),
                     name: input.name,
                     host: input.host,
@@ -177,6 +186,30 @@ impl ServerStore {
         Ok(saved)
     }
 
+    pub fn set_watched_units(&self, id: &str, units: Vec<String>) -> AppResult<Server> {
+        let mut servers = self.servers.lock().unwrap();
+        let server = servers.iter_mut().find(|s| s.id == id).ok_or_else(|| AppError::new("not_found"))?;
+        server.watched_units = Some(units);
+        let saved = server.clone();
+        self.persist(&servers)?;
+        Ok(saved)
+    }
+
+    /// Give a unit a display name; an empty name removes it.
+    pub fn set_unit_name(&self, id: &str, unit: &str, name: &str) -> AppResult<Server> {
+        let mut servers = self.servers.lock().unwrap();
+        let server = servers.iter_mut().find(|s| s.id == id).ok_or_else(|| AppError::new("not_found"))?;
+        let name = name.trim();
+        if name.is_empty() {
+            server.unit_names.remove(unit);
+        } else {
+            server.unit_names.insert(unit.to_string(), name.to_string());
+        }
+        let saved = server.clone();
+        self.persist(&servers)?;
+        Ok(saved)
+    }
+
     pub fn delete(&self, id: &str) -> AppResult<()> {
         let mut servers = self.servers.lock().unwrap();
         let before = servers.len();
@@ -212,6 +245,8 @@ impl ServerStore {
                 None => Auth::Password,
             };
             let server = Server {
+                watched_units: None,
+                unit_names: Default::default(),
                 id: uuid::Uuid::new_v4().to_string(),
                 name: h.alias,
                 host: h.host_name,
@@ -320,6 +355,16 @@ pub fn server_save(store: tauri::State<ServerStore>, input: ServerInput) -> AppR
 #[tauri::command]
 pub fn server_set_pinned(store: tauri::State<ServerStore>, id: String, pinned: bool) -> AppResult<Server> {
     store.set_pinned(&id, pinned)
+}
+
+#[tauri::command]
+pub fn server_set_watched_units(store: tauri::State<ServerStore>, id: String, units: Vec<String>) -> AppResult<Server> {
+    store.set_watched_units(&id, units)
+}
+
+#[tauri::command]
+pub fn server_set_unit_name(store: tauri::State<ServerStore>, id: String, unit: String, name: String) -> AppResult<Server> {
+    store.set_unit_name(&id, &unit, &name)
 }
 
 #[tauri::command]

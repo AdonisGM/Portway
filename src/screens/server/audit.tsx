@@ -30,6 +30,12 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   dockerDaemonStart: 'Khởi động Docker',
   imagePrune: 'Dọn image Docker',
   volumeRemove: 'Xoá volume',
+  serviceStart: 'Chạy dịch vụ',
+  serviceStop: 'Dừng dịch vụ',
+  serviceRestart: 'Khởi động lại dịch vụ',
+  serviceEnable: 'Bật tự khởi động',
+  serviceDisable: 'Tắt tự khởi động',
+  serviceResetFailed: 'Xoá trạng thái lỗi',
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')

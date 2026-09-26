@@ -1,0 +1,14 @@
+[Unit]
+Description=Background worker for the job queue
+After=network.target redis-server.service
+StartLimitIntervalSec=60
+StartLimitBurst=4
+
+[Service]
+User=deploy
+ExecStart=/usr/local/bin/worker-queue
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

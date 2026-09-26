@@ -1,0 +1,5 @@
+#!/bin/sh
+mkdir -p /var/tmp/uploads
+n=$(find /var/tmp/uploads -type f -mtime +1 | wc -l)
+find /var/tmp/uploads -type f -mtime +1 -delete
+echo "removed $n old uploads"

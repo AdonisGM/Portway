@@ -18,6 +18,10 @@ export type Server = {
   /** Detected on connect, e.g. "Ubuntu 24.04"; null until then. */
   os: string | null
   pinned: boolean
+  /** systemd units shown in "Dịch vụ"; null until first chosen. */
+  watchedUnits?: string[] | null
+  /** Display names the user gave units. */
+  unitNames?: Record<string, string>
   createdAt: number
   updatedAt: number
 }
@@ -69,6 +73,8 @@ export type HostInfo = {
   uptimeSecs: number
   /** The docker CLI is installed; the Docker module shows only then. */
   docker: boolean
+  /** systemd runs as init; the services view shows only then. */
+  systemd: boolean
 }
 
 export type ConnectResult =
@@ -230,7 +236,35 @@ export type DockerLogLine = { ts: string; text: string; err: boolean }
 export type DockerImage = { id: string; repo: string; tag: string; created: string; size: number; usedBy: string[] }
 export type DockerVolume = { name: string; driver: string; mountpoint: string; usedBy: string[] }
 export type ComposeAction = 'up' | 'pullUp' | 'restart' | 'down'
-export type TerminalTool = 'htop' | 'dockerExec' | 'dockerLogs' | 'dockerDaemonLog'
+export type TerminalTool = 'htop' | 'dockerExec' | 'dockerLogs' | 'dockerDaemonLog' | 'unitLog'
+
+/** A service unit from `systemctl list-units --all` / `list-unit-files`. */
+export type UnitBrief = { name: string; description: string; active: string; fileState: string | null }
+export type Unit = {
+  name: string
+  /** Other names of the unit, e.g. sshd.service for ssh.service. */
+  aliases: string[]
+  description: string
+  loadState: string
+  activeState: string
+  subState: string
+  fileState: string
+  mainPid: number | null
+  memory: number | null
+  restarts: number
+  /** ms since epoch */
+  activeSince: number | null
+  inactiveSince: number | null
+  exitStatus: number | null
+  exitCode: string | null
+  result: string
+  fragmentPath: string
+  runAs: string | null
+}
+/** syslog priority: 0 emerg … 3 err, 4 warning, 6 info, 7 debug. */
+export type JournalLine = { at: number; priority: number | null; message: string }
+export type JournalPage = { lines: JournalLine[]; cursor: string | null; limited: boolean }
+export type ServiceAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable' | 'resetFailed'
 
 export type TraceKind = 'exec' | 'sftp' | 'connect' | 'transfer'
 export type TraceStatus = 'waiting' | 'running' | 'ok' | 'error'
@@ -311,6 +345,8 @@ type Api = {
   publicKey(path: string): Promise<string>
   generateKey(input: GenerateKeyInput): Promise<SshKey>
   setPinned(id: string, pinned: boolean): Promise<Server>
+  setWatchedUnits(id: string, units: string[]): Promise<Server>
+  setUnitName(id: string, unit: string, name: string): Promise<Server>
   connect(serverId: string, user: string, opts?: ConnectOptions): Promise<ConnectResult>
   /** Reopen a dropped session with the credential it was opened with. */
   reconnect(serverId: string, user: string): Promise<ConnectResult>
@@ -327,9 +363,15 @@ type Api = {
   /** Slow on servers with large volumes (docker system df). */
   dockerDisk(serverId: string, user: string): Promise<DockerDisk>
   /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop), `cwd` starts in a directory. */
-  openTerminal(serverId: string, user: string, tool?: TerminalTool, cwd?: string, container?: string): Promise<void>
+  /** `target` is the container (dockerExec, dockerLogs) or the unit (unitLog). */
+  openTerminal(serverId: string, user: string, tool?: TerminalTool, cwd?: string, target?: string): Promise<void>
   /** Open (or bring to the front) the debug trace window. */
   openDebugWindow(): Promise<void>
+  servicesAll(serverId: string, user: string): Promise<UnitBrief[]>
+  servicesStatus(serverId: string, user: string, units: string[]): Promise<Unit[]>
+  servicesJournal(serverId: string, user: string, unit: string, tail: number, cursor?: string | null): Promise<JournalPage>
+  servicesUnitFile(serverId: string, user: string, unit: string): Promise<string>
+  servicesAction(serverId: string, user: string, unit: string, action: ServiceAction): Promise<void>
   traceList(): Promise<TraceEntry[]>
   traceClear(): Promise<void>
   dockerOverview(serverId: string, user: string): Promise<DockerState>
@@ -370,6 +412,8 @@ const tauriApi: Api = {
   publicKey: (path) => invoke('ssh_key_public', { path }),
   generateKey: (input) => invoke('ssh_key_generate', { input }),
   setPinned: (id, pinned) => invoke('server_set_pinned', { id, pinned }),
+  setWatchedUnits: (id, units) => invoke('server_set_watched_units', { id, units }),
+  setUnitName: (id, unit, name) => invoke('server_set_unit_name', { id, unit, name }),
   connect: (serverId, user, opts = {}) => invoke('ssh_connect', { serverId, user, ...opts }),
   reconnect: (serverId, user) => invoke('ssh_reconnect', { serverId, user }),
   disconnect: (serverId, user) => invoke('ssh_disconnect', { serverId, user }),
@@ -383,8 +427,13 @@ const tauriApi: Api = {
   ports: (serverId, user) => invoke('server_ports', { serverId, user }),
   disks: (serverId, user) => invoke('server_disks', { serverId, user }),
   dockerDisk: (serverId, user) => invoke('server_docker_disk', { serverId, user }),
-  openTerminal: (serverId, user, tool, cwd, container) => invoke('open_terminal', { serverId, user, tool, cwd, container }),
+  openTerminal: (serverId, user, tool, cwd, target) => invoke('open_terminal', { serverId, user, tool, cwd, target }),
   openDebugWindow: () => invoke('open_debug_window'),
+  servicesAll: (serverId, user) => invoke('services_all', { serverId, user }),
+  servicesStatus: (serverId, user, units) => invoke('services_status', { serverId, user, units }),
+  servicesJournal: (serverId, user, unit, tail, cursor) => invoke('services_journal', { serverId, user, unit, tail, cursor }),
+  servicesUnitFile: (serverId, user, unit) => invoke('services_unit_file', { serverId, user, unit }),
+  servicesAction: (serverId, user, unit, action) => invoke('services_action', { serverId, user, unit, action }),
   traceList: () => invoke('trace_list'),
   traceClear: () => invoke('trace_clear'),
   dockerOverview: (serverId, user) => invoke('docker_overview', { serverId, user }),
@@ -500,6 +549,8 @@ function browserApi(): Api {
       write(list.map((x) => (x.id === id ? next : x)))
       return next
     },
+    setWatchedUnits: async () => fail('needs_app'),
+    setUnitName: async () => fail('needs_app'),
     // SSH needs the Rust side; in a plain browser say so instead of faking it.
     async connect() {
       return fail('needs_app')
@@ -538,6 +589,11 @@ function browserApi(): Api {
       fail('needs_app')
     },
     openDebugWindow: async () => fail('needs_app'),
+    servicesAll: async () => fail('needs_app'),
+    servicesStatus: async () => fail('needs_app'),
+    servicesJournal: async () => fail('needs_app'),
+    servicesUnitFile: async () => fail('needs_app'),
+    servicesAction: async () => fail('needs_app'),
     traceList: async () => [],
     traceClear: async () => {},
     dockerOverview: async () => fail('needs_app'),

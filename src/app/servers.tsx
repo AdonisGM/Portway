@@ -15,6 +15,9 @@ type Servers = {
   reloadKeys: () => Promise<{ total: number; added: SshKey[]; removed: SshKey[] }>
   generateKey: (input: GenerateKeyInput) => Promise<SshKey>
   setPinned: (id: string, pinned: boolean) => Promise<void>
+  setWatchedUnits: (id: string, units: string[]) => Promise<void>
+  /** An empty name removes the display name. */
+  setUnitName: (id: string, unit: string, name: string) => Promise<void>
   /** Re-read the saved list (e.g. after the Rust side recorded a detected OS). */
   refresh: () => Promise<void>
 }
@@ -46,6 +49,16 @@ export function ServersProvider({ children }: { children: ReactNode }) {
 
   const setPinned = async (id: string, pinned: boolean) => {
     const saved = await api.setPinned(id, pinned)
+    setServers((list) => list.map((s) => (s.id === id ? saved : s)))
+  }
+
+  const setWatchedUnits = async (id: string, units: string[]) => {
+    const saved = await api.setWatchedUnits(id, units)
+    setServers((list) => list.map((s) => (s.id === id ? saved : s)))
+  }
+
+  const setUnitName = async (id: string, unit: string, name: string) => {
+    const saved = await api.setUnitName(id, unit, name)
     setServers((list) => list.map((s) => (s.id === id ? saved : s)))
   }
 
@@ -96,6 +109,8 @@ export function ServersProvider({ children }: { children: ReactNode }) {
         reloadKeys,
         generateKey,
         setPinned,
+        setWatchedUnits,
+        setUnitName,
         refresh,
       }}
     >

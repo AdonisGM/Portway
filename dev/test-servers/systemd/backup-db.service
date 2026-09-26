@@ -1,0 +1,6 @@
+[Unit]
+Description=Dump the database to /var/backups
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/backup-db

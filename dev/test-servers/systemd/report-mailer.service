@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly report mailer (disabled, started by hand)
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c 'while true; do sleep 3600; done'
+
+[Install]
+WantedBy=multi-user.target

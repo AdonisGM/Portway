@@ -1,0 +1,9 @@
+#!/bin/sh
+# Copy the key mounted at /authorized_keys into each test user's home.
+for u in root deploy viewer; do
+  home=$(getent passwd "$u" | cut -d: -f6)
+  mkdir -p "$home/.ssh"
+  [ -f /authorized_keys ] && cp /authorized_keys "$home/.ssh/authorized_keys"
+  chmod 700 "$home/.ssh"; [ -f "$home/.ssh/authorized_keys" ] && chmod 600 "$home/.ssh/authorized_keys"
+  chown -R "$u:$u" "$home/.ssh"
+done

@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly cleanup of temporary uploads
+
+[Timer]
+OnCalendar=hourly
+OnBootSec=30s
+
+[Install]
+WantedBy=timers.target

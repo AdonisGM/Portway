@@ -1,0 +1,10 @@
+[Unit]
+Description=Install the mounted test public key for root, deploy and viewer
+Before=ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/portway-keys
+
+[Install]
+WantedBy=multi-user.target

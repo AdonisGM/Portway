@@ -88,7 +88,10 @@ function ServerMenu() {
   const s = nav.screen.kind === 'server' ? nav.screen : null
   // Docker shows only once the session is up and found the docker CLI.
   const conn = s ? conns.get(s.serverId, s.user) : undefined
-  const hasDocker = (conn?.status === 'connected' || conn?.status === 'reconnecting') && conn.info.docker
+  const up = conn?.status === 'connected' || conn?.status === 'reconnecting'
+  const hasDocker = up && conn.info.docker
+  // Services read systemd; hidden on servers without it (containers, OpenRC).
+  const hasSystemd = up && conn.info.systemd
   const inModule = (m: ModuleId) => s?.module === m
   // Sub-views only; counts appear once each module reads real data.
   const docker = (view: DockerView, icon: LucideIcon, label: string): Kid => ({
@@ -121,6 +124,7 @@ function ServerMenu() {
     {
       id: 'services',
       icon: Activity,
+      hidden: !hasSystemd,
       kids: [services('services', List, 'Dịch vụ'), services('jobs', Clock, 'Tác vụ định kỳ')],
     },
     { id: 'firewall', icon: Shield },

@@ -47,6 +47,20 @@ services:
       - dind-sock:/dind
       - dind-data:/var/lib/docker
 
+  # systemd as PID 1, with nginx, redis, a crashing worker, a disabled
+  # service, timers (one failing) and crontabs: services and scheduled tasks.
+  systemd:
+    build: { context: ., dockerfile: Dockerfile.systemd }
+    restart: unless-stopped
+    hostname: pw-systemd
+    privileged: true
+    cgroup: host
+    tmpfs: [/run, /run/lock, /tmp]
+    ports: ["127.0.0.1:2204:22"]
+    volumes:
+      - ${PORTWAY_TEST_PUBKEY:-${HOME}/.ssh/id_ed25519.pub}:/authorized_keys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+
   alpine:
     <<: *server
     build: { context: ., dockerfile: Dockerfile.alpine }

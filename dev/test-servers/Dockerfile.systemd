@@ -1,0 +1,27 @@
+# SSH test server with systemd as PID 1 (Debian 12), for Portway's services
+# and scheduled tasks screens. Needs privileged + the host cgroup namespace
+# (see compose.yml).
+FROM debian:12
+ENV container=docker
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      systemd systemd-sysv dbus openssh-server sudo procps ca-certificates cron nginx-light redis-server \
+ && useradd -m -s /bin/bash -G sudo deploy && echo 'deploy:portway' | chpasswd \
+ && useradd -m -s /bin/bash viewer && echo 'viewer:portway' | chpasswd \
+ && systemctl mask getty@tty1.service console-getty.service systemd-firstboot.service
+
+COPY sshd_portway.conf /etc/ssh/sshd_config.d/portway.conf
+COPY systemd/ /etc/systemd/system/
+COPY systemd/bin/ /usr/local/bin/
+RUN chmod +x /usr/local/bin/* \
+ && rm -rf /etc/systemd/system/bin \
+ && systemctl enable portway-keys.service ssh.service nginx.service redis-server.service cron.service \
+      worker-queue.service backup-db.timer cleanup-tmp.timer \
+ && systemctl disable report-mailer.service \
+ && echo '*/15 * * * * /usr/local/bin/sync-feeds' | crontab -u deploy - \
+ && printf '0 4 * * 0 /usr/bin/apt-get clean\n30 2 * * * /usr/local/bin/rotate-uploads >> /var/log/rotate-uploads.log 2>&1\n' | crontab -u root -
+
+STOPSIGNAL SIGRTMIN+3
+EXPOSE 22
+CMD ["/lib/systemd/systemd"]

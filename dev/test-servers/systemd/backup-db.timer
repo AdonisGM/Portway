@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly database backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+OnBootSec=40s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

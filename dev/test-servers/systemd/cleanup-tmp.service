@@ -1,0 +1,6 @@
+[Unit]
+Description=Remove temporary uploads older than a day
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cleanup-tmp

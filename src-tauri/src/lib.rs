@@ -7,6 +7,7 @@ mod keys;
 mod paths;
 mod ports;
 mod servers;
+mod services;
 mod ssh;
 mod ssh_config;
 mod trace;
@@ -121,6 +122,13 @@ pub fn run() {
             ssh::open_terminal,
             trace::trace_list,
             trace::trace_clear,
+            services::services_all,
+            services::services_status,
+            services::services_journal,
+            services::services_unit_file,
+            services::services_action,
+            servers::server_set_watched_units,
+            servers::server_set_unit_name,
             docker::docker_overview,
             docker::docker_stats,
             docker::docker_container,

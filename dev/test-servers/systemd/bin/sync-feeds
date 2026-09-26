@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "$(date -u +%FT%TZ) synced feeds" >> /tmp/sync-feeds.log

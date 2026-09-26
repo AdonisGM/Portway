@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useConnections } from '../../app/connections'
 import { useNav } from '../../app/nav'
 import { readCache, writeCache } from '../../app/session-cache'
+import { useTunnels } from '../../app/tunnels'
 import { useToast } from '../../components/toast'
 import { Button } from '../../components/ui/primitives'
 import { SearchInput } from '../../components/ui/search-input'
@@ -35,6 +36,8 @@ export type DockerCtx = {
   /** Run a harmless change at once (start a container), toast, read again. */
   runNow: (title: string, command: string, work: () => Promise<unknown>) => Promise<void>
   openLogs: (c: Container) => void
+  /** New tunnel to the container's first published port. */
+  openTunnel: (c: Container) => void
   terminal: (tool: TerminalTool, container?: string) => void
   toast: ReturnType<typeof useToast>
   reload: () => Promise<void>
@@ -106,6 +109,7 @@ const TITLES = { containers: 'Container', compose: 'Compose', images: 'Images', 
 
 export function DockerScreen({ server, user }: { server: Server; user: string }) {
   const nav = useNav()
+  const tunnels = useTunnels()
   const toast = useToast()
   const view = nav.dockerView
   const { sudo } = useLive(server.id, user)
@@ -145,6 +149,12 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
       await reload()
     },
     openLogs: setLogsOf,
+    openTunnel: (c) => {
+      const p = c.ports[0]
+      if (!p) return
+      tunnels.setDraft({ kind: 'local', serverId: server.id, user, dest: `127.0.0.1:${p.hostPort}`, name: c.name })
+      nav.go({ kind: 'tunnels' })
+    },
     terminal: (tool, container) => {
       void api
         .openTerminal(server.id, user, tool, undefined, container)

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useConnections } from '../../app/connections'
+import { useNav } from '../../app/nav'
 import { readCache, writeCache } from '../../app/session-cache'
+import { useTunnels } from '../../app/tunnels'
 import { useToast } from '../../components/toast'
 import { Button, Chip, cx, TONES } from '../../components/ui/primitives'
 import { RowMenu } from '../../components/ui/row-menu'
@@ -56,6 +58,8 @@ const bindText = (l: Listen) => `${l.bind.includes(':') ? `[${l.bind}]` : l.bind
 
 export function FirewallScreen({ server, user }: { server: Server; user: string }) {
   const toast = useToast()
+  const nav = useNav()
+  const tunnels = useTunnels()
   const { sudo } = useLive(server.id, user)
   const priv = user === 'root' || sudo
   const { data, error, load } = useFirewall(server.id, user)
@@ -369,15 +373,28 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
           {local.map((l) => (
             <ListenLine key={`${l.proto}${l.port}${l.bind}`} l={l} complete={ports.processesComplete}>
               {l.proto === 'tcp' && (
-                <Button
-                  size="xs"
-                  onClick={() => {
-                    const c = tunnelCmd(l.port)
-                    void copyText(c).then(() => toast({ title: 'Đã sao chép lệnh tunnel', detail: c }))
-                  }}
-                >
-                  Sao chép lệnh tunnel
-                </Button>
+                <span className="flex gap-1">
+                  <Button
+                    size="xs"
+                    variant="primary"
+                    onClick={() => {
+                      tunnels.setDraft({ kind: 'local', serverId: server.id, user, dest: `127.0.0.1:${l.port}`, name: l.process ?? `Cổng ${l.port}` })
+                      nav.go({ kind: 'tunnels' })
+                    }}
+                  >
+                    Mở tunnel
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      const c = tunnelCmd(l.port)
+                      void copyText(c).then(() => toast({ title: 'Đã sao chép lệnh tunnel', detail: c }))
+                    }}
+                  >
+                    Lệnh ssh
+                  </Button>
+                </span>
               )}
             </ListenLine>
           ))}

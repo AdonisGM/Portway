@@ -137,6 +137,7 @@ export function ContainersView({
                               setOpen={(v) => setMenu(v ? c.id : null)}
                               items={[
                                 { label: 'Xem chi tiết', run: () => setSelected(c.id) },
+                                ...(c.ports.length ? [{ label: `Mở tunnel tới cổng ${c.ports[0].hostPort}`, run: () => ctx.openTunnel(c) }] : []),
                                 { label: 'Khởi động lại', run: () => askRestart(ctx, c, containers) },
                                 running
                                   ? { label: 'Dừng', run: () => askStop(ctx, c, containers), danger: true }

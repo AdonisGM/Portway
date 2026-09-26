@@ -1,0 +1,736 @@
+//! SSH tunnels: saved profiles and the forwards they run. Each running tunnel
+//! has its own SSH connection (independent of the session tabs), opened with
+//! the saved credential, and reconnects on its own when asked to.
+//!
+//! - local:  listen on this Mac, forward each connection to host:port as seen
+//!   from the server (`ssh -L`).
+//! - socks:  a SOCKS5 proxy on this Mac whose connections leave from the
+//!   server (`ssh -D`).
+//! - remote: the server listens on a port and forwards to host:port as seen
+//!   from this Mac (`ssh -R`).
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter, Manager};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
+
+use crate::audit::AuditLog;
+use crate::error::{AppError, AppResult};
+use crate::servers::ServerStore;
+use crate::ssh::{open_for_tunnel, ssh_target_args, Client, Forward, Sessions};
+use crate::trace;
+
+/// Seconds between reconnect attempts; the last one repeats.
+const RETRY: [u64; 6] = [2, 4, 8, 15, 30, 60];
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum Kind {
+    Local,
+    Socks,
+    Remote,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Spec {
+    pub id: String,
+    pub name: String,
+    pub kind: Kind,
+    pub server_id: String,
+    pub user: String,
+    /// Port on this Mac (local, socks) or on the server (remote).
+    pub port: u16,
+    /// Address the local listener binds: 127.0.0.1, or 0.0.0.0 for the LAN.
+    #[serde(default = "loopback")]
+    pub bind: String,
+    /// host:port the traffic goes to: seen from the server (local), or from
+    /// this Mac (remote). Empty for socks.
+    #[serde(default)]
+    pub dest: String,
+    /// What "Mở" does: none, url (open in the browser), conn (copy a
+    /// connection string). `{port}` in the template is the local port.
+    #[serde(default = "none")]
+    pub open_kind: String,
+    #[serde(default)]
+    pub open_template: String,
+    #[serde(default)]
+    pub auto_start: bool,
+    #[serde(default = "yes")]
+    pub auto_reconnect: bool,
+}
+
+fn loopback() -> String {
+    "127.0.0.1".into()
+}
+fn none() -> String {
+    "none".into()
+}
+fn yes() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(tag = "state", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum RunState {
+    Off,
+    Connecting,
+    Running { since: u64, active: u32, total: u64, rx: u64, tx: u64 },
+    Retrying { attempt: u32, error: String, next_at: u64 },
+    Error { code: String, detail: Option<String> },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelView {
+    #[serde(flatten)]
+    pub spec: Spec,
+    pub run: RunState,
+    /// `ssh …` doing the same, for copying and the action log.
+    pub command: String,
+}
+
+#[derive(Default)]
+pub(crate) struct Stats {
+    pub(crate) active: AtomicU32,
+    pub(crate) total: AtomicU64,
+    /// Bytes to this Mac / from this Mac.
+    pub(crate) rx: AtomicU64,
+    pub(crate) tx: AtomicU64,
+}
+
+struct Run {
+    stop: watch::Sender<bool>,
+    state: RunState,
+    stats: Arc<Stats>,
+}
+
+pub struct Tunnels {
+    app: AppHandle,
+    path: PathBuf,
+    specs: Mutex<Vec<Spec>>,
+    runs: Mutex<HashMap<String, Run>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoreFile {
+    version: u32,
+    tunnels: Vec<Spec>,
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// The same tunnel as an ssh command line.
+pub fn command_for(spec: &Spec, target: &str) -> String {
+    let fwd = match spec.kind {
+        Kind::Local => format!("-L {}:{}:{}", spec.bind, spec.port, spec.dest),
+        Kind::Socks => format!("-D {}:{}", spec.bind, spec.port),
+        Kind::Remote => format!("-R {}:{}", spec.port, spec.dest),
+    };
+    let keep = if spec.auto_reconnect { " -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes" } else { "" };
+    format!("ssh -N {fwd}{keep} {target}")
+}
+
+/// "host:port" with the host possibly a [v6] literal.
+fn split_dest(dest: &str) -> Option<(String, u16)> {
+    let (host, port) = dest.rsplit_once(':')?;
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    let port: u16 = port.parse().ok()?;
+    let host_ok = !host.is_empty() && host.chars().all(|c| c.is_ascii_alphanumeric() || ".-_:".contains(c));
+    (host_ok && port > 0).then(|| (host.to_string(), port))
+}
+
+fn validate(spec: &Spec) -> AppResult<()> {
+    if spec.name.trim().is_empty() {
+        return Err(AppError::field("name_required", "name"));
+    }
+    if spec.port == 0 {
+        return Err(AppError::field("invalid_port", "port"));
+    }
+    if !matches!(spec.bind.as_str(), "127.0.0.1" | "0.0.0.0") {
+        return Err(AppError::field("invalid_bind", "bind"));
+    }
+    if spec.kind != Kind::Socks && split_dest(&spec.dest).is_none() {
+        return Err(AppError::field("invalid_dest", "dest"));
+    }
+    if !matches!(spec.open_kind.as_str(), "none" | "url" | "conn") {
+        return Err(AppError::field("invalid_open", "openKind"));
+    }
+    Ok(())
+}
+
+impl Tunnels {
+    pub fn load(app: AppHandle, path: PathBuf) -> AppResult<Self> {
+        let specs = match fs::read_to_string(&path) {
+            Ok(text) => serde_json::from_str::<StoreFile>(&text)?.tunnels,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(e.into()),
+        };
+        Ok(Self { app, path, specs: Mutex::new(specs), runs: Mutex::new(HashMap::new()) })
+    }
+
+    fn persist(&self, specs: &[Spec]) -> AppResult<()> {
+        if let Some(dir) = self.path.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        let tmp = self.path.with_extension("json.tmp");
+        fs::write(&tmp, serde_json::to_vec_pretty(&StoreFile { version: 1, tunnels: specs.to_vec() })?)?;
+        fs::rename(&tmp, &self.path)?;
+        Ok(())
+    }
+
+    fn command(&self, spec: &Spec) -> String {
+        let store = self.app.state::<ServerStore>();
+        let target = ssh_target_args(&store, &spec.server_id, &spec.user).unwrap_or_else(|| format!("{}@?", spec.user));
+        command_for(spec, &target)
+    }
+
+    fn view(&self, spec: &Spec) -> TunnelView {
+        let run = self.runs.lock().unwrap().get(&spec.id).map(|r| self.live_state(r)).unwrap_or(RunState::Off);
+        TunnelView { command: self.command(spec), spec: spec.clone(), run }
+    }
+
+    /// The stored state with the live counters filled in.
+    fn live_state(&self, r: &Run) -> RunState {
+        match &r.state {
+            RunState::Running { since, .. } => RunState::Running {
+                since: *since,
+                active: r.stats.active.load(Ordering::Relaxed),
+                total: r.stats.total.load(Ordering::Relaxed),
+                rx: r.stats.rx.load(Ordering::Relaxed),
+                tx: r.stats.tx.load(Ordering::Relaxed),
+            },
+            other => other.clone(),
+        }
+    }
+
+    fn emit(&self, id: &str) {
+        let spec = self.specs.lock().unwrap().iter().find(|s| s.id == id).cloned();
+        if let Some(spec) = spec {
+            let _ = self.app.emit("tunnel", self.view(&spec));
+        }
+    }
+
+    fn set_state(&self, id: &str, state: RunState) {
+        if let Some(r) = self.runs.lock().unwrap().get_mut(id) {
+            r.state = state;
+        }
+        self.emit(id);
+    }
+
+    pub fn list(&self) -> Vec<TunnelView> {
+        let specs = self.specs.lock().unwrap().clone();
+        specs.iter().map(|s| self.view(s)).collect()
+    }
+
+    /// Start every tunnel marked "tự bật khi mở Portway".
+    pub fn start_auto(self: &Arc<Self>) {
+        let ids: Vec<String> = self.specs.lock().unwrap().iter().filter(|s| s.auto_start).map(|s| s.id.clone()).collect();
+        for id in ids {
+            let _ = self.start(&id);
+        }
+    }
+
+    pub fn start(self: &Arc<Self>, id: &str) -> AppResult<()> {
+        let spec = self.specs.lock().unwrap().iter().find(|s| s.id == id).cloned().ok_or_else(|| AppError::new("not_found"))?;
+        {
+            let mut runs = self.runs.lock().unwrap();
+            if runs.get(id).is_some_and(|r| !matches!(r.state, RunState::Off | RunState::Error { .. })) {
+                return Ok(());
+            }
+            let (stop, _) = watch::channel(false);
+            runs.insert(id.to_string(), Run { stop, state: RunState::Connecting, stats: Arc::new(Stats::default()) });
+        }
+        self.emit(id);
+        let me = self.clone();
+        tauri::async_runtime::spawn(async move { me.run(spec).await });
+        Ok(())
+    }
+
+    pub fn stop(&self, id: &str) {
+        let run = self.runs.lock().unwrap().remove(id);
+        if let Some(r) = run {
+            let _ = r.stop.send(true);
+        }
+        self.emit(id);
+    }
+
+    fn stopped(&self, id: &str, rx: &watch::Receiver<bool>) -> bool {
+        *rx.borrow() || !self.runs.lock().unwrap().contains_key(id)
+    }
+
+    async fn run(self: Arc<Self>, spec: Spec) {
+        let id = spec.id.clone();
+        let (mut stop, stats) = match self.runs.lock().unwrap().get(&id) {
+            Some(r) => (r.stop.subscribe(), r.stats.clone()),
+            None => return,
+        };
+        let audit = self.app.state::<AuditLog>().inner().clone();
+        let command = self.command(&spec);
+
+        // Local listeners are bound once and survive reconnects, so a busy
+        // port is reported at once and apps pointed at it keep working.
+        let listener = match spec.kind {
+            Kind::Remote => None,
+            _ => match TcpListener::bind((spec.bind.as_str(), spec.port)).await {
+                Ok(l) => Some(l),
+                Err(e) => {
+                    let code = if e.kind() == std::io::ErrorKind::AddrInUse { "port_busy" } else { "bind_failed" };
+                    self.set_state(&id, RunState::Error { code: code.into(), detail: Some(format!("{}:{}: {e}", spec.bind, spec.port)) });
+                    audit.record(&spec.server_id, &spec.user, "tunnelStart", &command, false, Some(e.to_string()));
+                    return;
+                }
+            },
+        };
+        let handle_slot: Arc<Mutex<Option<Arc<russh::client::Handle<Client>>>>> = Arc::new(Mutex::new(None));
+        let accept = listener.map(|l| {
+            let slot = handle_slot.clone();
+            let stats = stats.clone();
+            let spec = spec.clone();
+            tauri::async_runtime::spawn(accept_loop(l, spec, slot, stats))
+        });
+
+        let mut attempt = 0u32;
+        let mut logged = false;
+        loop {
+            if self.stopped(&id, &stop) {
+                break;
+            }
+            self.set_state(&id, if attempt == 0 { RunState::Connecting } else { RunState::Connecting });
+            let forward: Option<Forward> = (spec.kind == Kind::Remote).then(|| remote_forward(spec.dest.clone(), stats.clone()));
+            let span = trace::start(&spec.server_id, &spec.user, trace::Kind::Connect, Some(format!("Tunnel · {}", spec.name)), &command, false);
+            let opened = {
+                let store = self.app.state::<ServerStore>();
+                let sessions = self.app.state::<Sessions>();
+                open_for_tunnel(&store, &sessions, &spec.server_id, &spec.user, forward).await
+            };
+            let handle = match opened {
+                Ok(h) => Arc::new(h),
+                Err(e) => {
+                    let text = e.detail.clone().unwrap_or_else(|| e.code.to_string());
+                    span.fail(&text, |_| {});
+                    // Asking the user something (password, host key) cannot be retried away.
+                    let fatal = matches!(e.code, "needs_secret" | "host_key_unknown" | "auth_failed" | "key_missing" | "key_unreadable" | "not_found" | "no_account");
+                    if fatal || !spec.auto_reconnect {
+                        if !logged {
+                            audit.record(&spec.server_id, &spec.user, "tunnelStart", &command, false, Some(text));
+                        }
+                        self.set_state(&id, RunState::Error { code: e.code.to_string(), detail: e.detail.clone() });
+                        break;
+                    }
+                    let wait = RETRY[(attempt as usize).min(RETRY.len() - 1)];
+                    attempt += 1;
+                    self.set_state(&id, RunState::Retrying { attempt, error: text, next_at: now_ms() + wait * 1000 });
+                    if sleep_or_stop(&mut stop, wait).await {
+                        break;
+                    }
+                    continue;
+                }
+            };
+            span.ok(|_| {});
+            if spec.kind == Kind::Remote {
+                if let Err(e) = handle.tcpip_forward("localhost", spec.port as u32).await {
+                    let text = format!("Server không cho mở cổng {} (đang bận, dưới 1024, hoặc sshd tắt AllowTcpForwarding): {e}", spec.port);
+                    audit.record(&spec.server_id, &spec.user, "tunnelStart", &command, false, Some(text.clone()));
+                    self.set_state(&id, RunState::Error { code: "remote_forward_refused".into(), detail: Some(text) });
+                    let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+                    break;
+                }
+            }
+            if !logged {
+                audit.record(&spec.server_id, &spec.user, "tunnelStart", &command, true, None);
+                logged = true;
+            }
+            *handle_slot.lock().unwrap() = Some(handle.clone());
+            attempt = 0;
+            // Totals keep counting across reconnects; "since" is this connection.
+            self.set_state(&id, RunState::Running { since: now_ms(), active: 0, total: 0, rx: 0, tx: 0 });
+
+            // Push the counters while running; notice the connection dropping.
+            let mut last = (0u64, 0u64, 0u32, 0u64);
+            let dropped = loop {
+                tokio::select! {
+                    _ = stop.changed() => break false,
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                }
+                if self.stopped(&id, &stop) {
+                    break false;
+                }
+                if handle.is_closed() {
+                    break true;
+                }
+                let now = (
+                    stats.rx.load(Ordering::Relaxed),
+                    stats.tx.load(Ordering::Relaxed),
+                    stats.active.load(Ordering::Relaxed),
+                    stats.total.load(Ordering::Relaxed),
+                );
+                if now != last {
+                    last = now;
+                    self.emit(&id);
+                }
+            };
+            *handle_slot.lock().unwrap() = None;
+            if !dropped {
+                let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+                break;
+            }
+            if !spec.auto_reconnect {
+                self.set_state(&id, RunState::Error { code: "connection_lost".into(), detail: None });
+                break;
+            }
+            attempt += 1;
+            self.set_state(&id, RunState::Retrying { attempt, error: "Mất kết nối tới server".into(), next_at: now_ms() + RETRY[0] * 1000 });
+            if sleep_or_stop(&mut stop, RETRY[0]).await {
+                break;
+            }
+        }
+        if let Some(a) = accept {
+            a.abort();
+        }
+        if self.stopped(&id, &stop) {
+            audit.record(&spec.server_id, &spec.user, "tunnelStop", &command, true, None);
+        }
+    }
+
+    pub fn save(self: &Arc<Self>, mut spec: Spec) -> AppResult<TunnelView> {
+        validate(&spec)?;
+        spec.name = spec.name.trim().to_string();
+        let restart;
+        {
+            let mut specs = self.specs.lock().unwrap();
+            if let Some(other) = specs.iter().find(|s| s.id != spec.id && s.kind != Kind::Remote && spec.kind != Kind::Remote && s.port == spec.port) {
+                return Err(AppError::detail("port_taken", &other.name));
+            }
+            match specs.iter_mut().find(|s| s.id == spec.id) {
+                Some(s) => {
+                    restart = *s != spec;
+                    *s = spec.clone();
+                }
+                None => {
+                    if spec.id.is_empty() {
+                        spec.id = uuid::Uuid::new_v4().to_string();
+                    }
+                    specs.push(spec.clone());
+                    restart = false;
+                }
+            }
+            self.persist(&specs)?;
+        }
+        // A running tunnel picks up its new settings.
+        let running = self.runs.lock().unwrap().contains_key(&spec.id);
+        if restart && running {
+            self.stop(&spec.id);
+            let _ = self.start(&spec.id);
+        }
+        Ok(self.view(&spec))
+    }
+
+    pub fn delete(&self, id: &str) -> AppResult<()> {
+        self.stop(id);
+        let mut specs = self.specs.lock().unwrap();
+        specs.retain(|s| s.id != id);
+        self.persist(&specs)
+    }
+}
+
+/// Wait `secs`, or less if asked to stop; true when stopping.
+async fn sleep_or_stop(stop: &mut watch::Receiver<bool>, secs: u64) -> bool {
+    tokio::select! {
+        _ = stop.changed() => true,
+        _ = tokio::time::sleep(Duration::from_secs(secs)) => *stop.borrow(),
+    }
+}
+
+async fn accept_loop(listener: TcpListener, spec: Spec, slot: Arc<Mutex<Option<Arc<russh::client::Handle<Client>>>>>, stats: Arc<Stats>) {
+    loop {
+        let (sock, peer) = match listener.accept().await {
+            Ok(x) => x,
+            Err(_) => {
+                // e.g. out of file descriptors: back off instead of spinning.
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                continue;
+            }
+        };
+        // Between reconnects there is no connection: refuse by closing.
+        let Some(handle) = slot.lock().unwrap().clone() else { continue };
+        let stats = stats.clone();
+        let spec = spec.clone();
+        tauri::async_runtime::spawn(async move {
+            stats.active.fetch_add(1, Ordering::Relaxed);
+            stats.total.fetch_add(1, Ordering::Relaxed);
+            let _ = match spec.kind {
+                Kind::Local => serve_local(sock, peer, &spec.dest, &handle, &stats).await,
+                Kind::Socks => serve_socks(sock, peer, &handle, &stats).await,
+                Kind::Remote => Ok(()),
+            };
+            stats.active.fetch_sub(1, Ordering::Relaxed);
+        });
+    }
+}
+
+pub(crate) async fn serve_local(sock: TcpStream, peer: SocketAddr, dest: &str, handle: &russh::client::Handle<Client>, stats: &Arc<Stats>) -> std::io::Result<()> {
+    let (host, port) = split_dest(dest).ok_or_else(|| std::io::Error::other("bad dest"))?;
+    let channel = handle
+        .channel_open_direct_tcpip(host, port as u32, peer.ip().to_string(), peer.port() as u32)
+        .await
+        .map_err(std::io::Error::other)?;
+    pipe(sock, channel.into_stream(), stats).await
+}
+
+/// Minimal SOCKS5: no authentication, CONNECT only.
+pub(crate) async fn serve_socks(mut sock: TcpStream, peer: SocketAddr, handle: &russh::client::Handle<Client>, stats: &Arc<Stats>) -> std::io::Result<()> {
+    let mut head = [0u8; 2];
+    sock.read_exact(&mut head).await?;
+    if head[0] != 5 {
+        return Err(std::io::Error::other("not socks5"));
+    }
+    let mut methods = vec![0u8; head[1] as usize];
+    sock.read_exact(&mut methods).await?;
+    if !methods.contains(&0) {
+        sock.write_all(&[5, 0xff]).await?;
+        return Ok(());
+    }
+    sock.write_all(&[5, 0]).await?;
+    let mut req = [0u8; 4];
+    sock.read_exact(&mut req).await?;
+    let host = match req[3] {
+        1 => {
+            let mut a = [0u8; 4];
+            sock.read_exact(&mut a).await?;
+            IpAddr::from(a).to_string()
+        }
+        3 => {
+            let mut len = [0u8; 1];
+            sock.read_exact(&mut len).await?;
+            let mut name = vec![0u8; len[0] as usize];
+            sock.read_exact(&mut name).await?;
+            String::from_utf8_lossy(&name).into_owned()
+        }
+        4 => {
+            let mut a = [0u8; 16];
+            sock.read_exact(&mut a).await?;
+            IpAddr::from(a).to_string()
+        }
+        _ => {
+            sock.write_all(&[5, 8, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
+            return Ok(());
+        }
+    };
+    let mut port = [0u8; 2];
+    sock.read_exact(&mut port).await?;
+    let port = u16::from_be_bytes(port);
+    if req[1] != 1 {
+        // Only CONNECT; BIND and UDP ASSOCIATE are not supported.
+        sock.write_all(&[5, 7, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
+        return Ok(());
+    }
+    match handle.channel_open_direct_tcpip(host, port as u32, peer.ip().to_string(), peer.port() as u32).await {
+        Ok(channel) => {
+            sock.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
+            pipe(sock, channel.into_stream(), stats).await
+        }
+        Err(_) => {
+            // General failure: the server could not reach the target.
+            sock.write_all(&[5, 5, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
+            Ok(())
+        }
+    }
+}
+
+/// Connections the server forwards to us go to `dest` on this Mac.
+pub(crate) fn remote_forward(dest: String, stats: Arc<Stats>) -> Forward {
+    Arc::new(move |channel, _port| {
+        let dest = dest.clone();
+        let stats = stats.clone();
+        tauri::async_runtime::spawn(async move {
+            stats.active.fetch_add(1, Ordering::Relaxed);
+            stats.total.fetch_add(1, Ordering::Relaxed);
+            if let Some((host, port)) = split_dest(&dest) {
+                if let Ok(sock) = TcpStream::connect((host.as_str(), port)).await {
+                    let _ = pipe(sock, channel.into_stream(), &stats).await;
+                }
+            }
+            stats.active.fetch_sub(1, Ordering::Relaxed);
+        });
+    })
+}
+
+/// Copy both ways until either side closes, counting bytes.
+async fn pipe<S: AsyncRead + AsyncWrite + Unpin>(sock: TcpStream, mut remote: S, stats: &Arc<Stats>) -> std::io::Result<()> {
+    let mut local = Counted { inner: sock, stats: stats.clone() };
+    tokio::io::copy_bidirectional(&mut local, &mut remote).await.map(|_| ())
+}
+
+/// The local socket, counting what it reads (sent out: tx) and writes (rx).
+struct Counted {
+    inner: TcpStream,
+    stats: Arc<Stats>,
+}
+
+impl AsyncRead for Counted {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let r = Pin::new(&mut self.inner).poll_read(cx, buf);
+        let n = buf.filled().len() - before;
+        self.stats.tx.fetch_add(n as u64, Ordering::Relaxed);
+        r
+    }
+}
+
+impl AsyncWrite for Counted {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+        let r = Pin::new(&mut self.inner).poll_write(cx, buf);
+        if let Poll::Ready(Ok(n)) = &r {
+            self.stats.rx.fetch_add(*n as u64, Ordering::Relaxed);
+        }
+        r
+    }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+// ------------------------------------------------------------------ commands
+
+#[tauri::command]
+pub fn tunnels_list(tunnels: tauri::State<'_, Arc<Tunnels>>) -> Vec<TunnelView> {
+    tunnels.list()
+}
+
+#[tauri::command]
+pub fn tunnel_save(tunnels: tauri::State<'_, Arc<Tunnels>>, spec: Spec) -> AppResult<TunnelView> {
+    tunnels.save(spec)
+}
+
+#[tauri::command]
+pub fn tunnel_delete(tunnels: tauri::State<'_, Arc<Tunnels>>, id: String) -> AppResult<()> {
+    tunnels.delete(&id)
+}
+
+#[tauri::command]
+pub fn tunnel_start(tunnels: tauri::State<'_, Arc<Tunnels>>, id: String) -> AppResult<()> {
+    tunnels.start(&id)
+}
+
+#[tauri::command]
+pub fn tunnel_stop(tunnels: tauri::State<'_, Arc<Tunnels>>, id: String) {
+    tunnels.stop(&id)
+}
+
+/// A free local port from `start` up, skipping ports other tunnels use.
+#[tauri::command]
+pub fn tunnel_free_port(tunnels: tauri::State<'_, Arc<Tunnels>>, start: u16, except: Option<String>) -> AppResult<u16> {
+    let taken: Vec<u16> = tunnels
+        .specs
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|s| Some(&s.id) != except.as_ref() && s.kind != Kind::Remote)
+        .map(|s| s.port)
+        .collect();
+    (start.max(1024)..=65535)
+        .find(|p| !taken.contains(p) && std::net::TcpListener::bind(("127.0.0.1", *p)).is_ok())
+        .ok_or_else(|| AppError::new("no_free_port"))
+}
+
+/// Whether a local port can be listened on right now.
+#[tauri::command]
+pub fn tunnel_port_free(tunnels: tauri::State<'_, Arc<Tunnels>>, port: u16, bind: String, except: Option<String>) -> bool {
+    let running_here = tunnels
+        .specs
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|s| Some(&s.id) == except.as_ref() && s.port == port && tunnels.runs.lock().unwrap().contains_key(&s.id));
+    running_here || std::net::TcpListener::bind((bind.as_str(), port)).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spec(kind: Kind, dest: &str) -> Spec {
+        Spec {
+            id: "t".into(),
+            name: "db".into(),
+            kind,
+            server_id: "s".into(),
+            user: "root".into(),
+            port: 15432,
+            bind: "127.0.0.1".into(),
+            dest: dest.into(),
+            open_kind: "none".into(),
+            open_template: String::new(),
+            auto_start: false,
+            auto_reconnect: true,
+        }
+    }
+
+    #[test]
+    fn builds_equivalent_commands() {
+        assert_eq!(
+            command_for(&spec(Kind::Local, "127.0.0.1:5432"), "-p 2201 root@h"),
+            "ssh -N -L 127.0.0.1:15432:127.0.0.1:5432 -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes -p 2201 root@h"
+        );
+        let mut s = spec(Kind::Socks, "");
+        s.auto_reconnect = false;
+        assert_eq!(command_for(&s, "root@h"), "ssh -N -D 127.0.0.1:15432 root@h");
+        let mut r = spec(Kind::Remote, "localhost:3000");
+        r.auto_reconnect = false;
+        assert_eq!(command_for(&r, "root@h"), "ssh -N -R 15432:localhost:3000 root@h");
+    }
+
+    #[test]
+    fn checks_specs() {
+        assert!(validate(&spec(Kind::Local, "db-internal:5432")).is_ok());
+        assert!(validate(&spec(Kind::Local, "[::1]:5432")).is_ok());
+        assert_eq!(validate(&spec(Kind::Local, "5432")).unwrap_err().code, "invalid_dest");
+        assert_eq!(validate(&spec(Kind::Local, "a b:1")).unwrap_err().code, "invalid_dest");
+        assert!(validate(&spec(Kind::Socks, "")).is_ok());
+        let mut s = spec(Kind::Local, "x:1");
+        s.bind = "192.168.1.5".into();
+        assert_eq!(validate(&s).unwrap_err().code, "invalid_bind");
+    }
+
+    #[tokio::test]
+    async fn counts_bytes_both_ways() {
+        let stats = Arc::new(Stats::default());
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        let client = tokio::spawn(async move {
+            let mut c = TcpStream::connect(addr).await.unwrap();
+            c.write_all(b"ping!").await.unwrap();
+            let mut buf = [0u8; 4];
+            c.read_exact(&mut buf).await.unwrap();
+            buf
+        });
+        let (sock, _) = l.accept().await.unwrap();
+        let (mut a, b) = tokio::io::duplex(64);
+        let st = stats.clone();
+        let piping = tokio::spawn(async move { pipe(sock, b, &st).await });
+        let mut got = [0u8; 5];
+        a.read_exact(&mut got).await.unwrap();
+        a.write_all(b"pong").await.unwrap();
+        assert_eq!(&client.await.unwrap(), b"pong");
+        assert_eq!(&got, b"ping!");
+        drop(a);
+        let _ = piping.await;
+        assert_eq!((stats.tx.load(Ordering::Relaxed), stats.rx.load(Ordering::Relaxed)), (5, 4));
+    }
+}

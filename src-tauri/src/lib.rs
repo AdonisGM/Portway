@@ -13,6 +13,7 @@ mod ssh;
 mod ssh_config;
 mod trace;
 mod transfers;
+mod tunnels;
 
 use tauri::Manager;
 
@@ -135,6 +136,13 @@ pub fn run() {
             firewall::firewall_delete,
             firewall::firewall_enable,
             firewall::firewall_disable,
+            tunnels::tunnels_list,
+            tunnels::tunnel_save,
+            tunnels::tunnel_delete,
+            tunnels::tunnel_start,
+            tunnels::tunnel_stop,
+            tunnels::tunnel_free_port,
+            tunnels::tunnel_port_free,
             docker::docker_overview,
             docker::docker_stats,
             docker::docker_container,
@@ -156,6 +164,10 @@ pub fn run() {
             app.manage(audit::AuditLog::load(data_dir.join("audit.jsonl")));
             app.manage(std::sync::Arc::new(transfers::Transfers::new(app.handle().clone())));
             trace::init(app.handle().clone());
+            let tunnels = std::sync::Arc::new(tunnels::Tunnels::load(app.handle().clone(), data_dir.join("tunnels.json"))
+                .map_err(|e| format!("cannot load tunnels.json: {} {}", e.code, e.detail.unwrap_or_default()))?);
+            app.manage(tunnels.clone());
+            tunnels.start_auto();
 
             // Hidden from the first frame; the splash shows them again when it fades.
             if let Some(window) = app.get_webview_window("main") {

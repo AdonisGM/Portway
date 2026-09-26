@@ -42,7 +42,13 @@ pub(crate) struct Client {
     /// Fingerprint the user accepted for an unknown host, if any.
     trust: Option<String>,
     issue: Arc<Mutex<Option<HostKeyIssue>>>,
+    /// Remote port forwarding: gets each connection the server forwards.
+    forward: Option<Forward>,
 }
+
+/// Called with a channel the server opened for a remote forward and the
+/// server port it came in on.
+pub(crate) type Forward = Arc<dyn Fn(russh::Channel<client::Msg>, u32) + Send + Sync>;
 
 impl client::Handler for Client {
     type Error = russh::Error;
@@ -71,6 +77,27 @@ impl client::Handler for Client {
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        // Only tunnels ask for remote forwards; anything else is refused.
+        match &self.forward {
+            Some(f) => {
+                reply.accept().await;
+                f(channel, connected_port);
+            }
+            None => drop(reply),
+        }
+        Ok(())
     }
 }
 
@@ -226,6 +253,10 @@ enum Opened {
 
 /// Connect, check the host key and authenticate.
 async fn open(target: &Target, credential: Credential, trust: Option<String>) -> AppResult<Opened> {
+    open_with(target, credential, trust, None).await
+}
+
+async fn open_with(target: &Target, credential: Credential, trust: Option<String>, forward: Option<Forward>) -> AppResult<Opened> {
     let issue = Arc::new(Mutex::new(None));
     let handler = Client {
         host: target.host.clone(),
@@ -233,6 +264,7 @@ async fn open(target: &Target, credential: Credential, trust: Option<String>) ->
         known_hosts: target.known_hosts.clone(),
         trust,
         issue: issue.clone(),
+        forward,
     };
     let config = Arc::new(client::Config {
         keepalive_interval: Some(Duration::from_secs(15)),
@@ -276,6 +308,66 @@ async fn open(target: &Target, credential: Credential, trust: Option<String>) ->
         return Ok(Opened::Rejected);
     }
     Ok(Opened::Ready(handle))
+}
+
+/// A connection of its own for a tunnel, without asking anything: it reuses
+/// the credential of a session opened in this run, else the key (with a
+/// passphrase from the Keychain) or the password saved in the Keychain. The
+/// host key must already be trusted.
+pub(crate) async fn open_for_tunnel(
+    store: &ServerStore,
+    sessions: &Sessions,
+    server_id: &str,
+    user: &str,
+    forward: Option<Forward>,
+) -> AppResult<Handle<Client>> {
+    let saved = sessions.saved.lock().unwrap().get(&session_key(server_id, user)).cloned();
+    let (target, credential) = match saved {
+        Some(s) => (s.target, s.credential),
+        None => {
+            let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
+            let account = server.accounts.iter().find(|a| a.user == user).cloned().ok_or_else(|| AppError::new("no_account"))?;
+            let credential = match &account.auth {
+                Auth::Key { path } => {
+                    let file = expand_tilde(path);
+                    if !file.is_file() {
+                        return Err(AppError::detail("key_missing", path));
+                    }
+                    let stored = keychain(&passphrase_account(path)).and_then(|e| e.get_password().ok());
+                    match keys::load_secret_key(&file, stored.as_deref()) {
+                        Ok(k) => Credential::Key(Arc::new(k)),
+                        Err(keys::Error::KeyIsEncrypted) => return Err(AppError::detail("needs_secret", "passphrase")),
+                        Err(e) => return Err(AppError::detail("key_unreadable", e)),
+                    }
+                }
+                Auth::Password => match keychain(&password_account(server_id, user)).and_then(|e| e.get_password().ok()) {
+                    Some(p) => Credential::Password(p),
+                    None => return Err(AppError::detail("needs_secret", "password")),
+                },
+            };
+            (Target { host: server.host.clone(), port: server.port, user: user.to_string(), known_hosts: ssh_dir().join("known_hosts") }, credential)
+        }
+    };
+    match open_with(&target, credential, None, forward).await? {
+        Opened::Ready(h) => Ok(h),
+        Opened::HostKey(_) => Err(AppError::new("host_key_unknown")),
+        Opened::Rejected => Err(AppError::detail("auth_failed", format!("{user}@{}: Permission denied", target.host))),
+    }
+}
+
+/// `ssh` options for an account, as shown in tunnel commands: port and key.
+pub(crate) fn ssh_target_args(store: &ServerStore, server_id: &str, user: &str) -> Option<String> {
+    let server = store.list().into_iter().find(|s| s.id == server_id)?;
+    let account = server.accounts.iter().find(|a| a.user == user)?;
+    let mut parts = Vec::new();
+    if server.port != 22 {
+        parts.push(format!("-p {}", server.port));
+    }
+    if let Auth::Key { path } = &account.auth {
+        parts.push(format!("-i {path}"));
+    }
+    parts.push(format!("{user}@{}", server.host));
+    Some(parts.join(" "))
 }
 
 /// The ssh command line for an account, as shown to the user (not shell-quoted).
@@ -1642,6 +1734,74 @@ mod tests {
         let del = format!("ufw delete {}", rule.spec.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" "));
         assert_eq!(exec_priv(&session, &del, EXEC_TIMEOUT).await.unwrap().code, Some(0));
         assert!(!exec_priv(&session, "ufw show added", EXEC_TIMEOUT).await.unwrap().stdout.contains("7777"));
+
+        // Tunnels through pw-ubuntu. Local and SOCKS reach its web server that
+        // only listens on 127.0.0.1:5000; remote brings the server back to a
+        // listener on this Mac.
+        {
+            use crate::tunnels::{remote_forward, serve_local, serve_socks, Stats};
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            use tokio::net::{TcpListener, TcpStream};
+            let back = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let back_addr = back.local_addr().unwrap();
+            tokio::spawn(async move {
+                while let Ok((mut s, _)) = back.accept().await {
+                    let mut buf = [0u8; 1024];
+                    let _ = s.read(&mut buf).await;
+                    let _ = s.write_all(b"HTTP/1.0 200 OK\r\nContent-Length: 12\r\n\r\nfrom-the-mac").await;
+                }
+            });
+            let stats = Arc::new(Stats::default());
+            let fwd = remote_forward(back_addr.to_string(), stats.clone());
+            let fp = match open(&target(2201, "root"), Credential::Key(key.clone()), None).await.unwrap() {
+                Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) => Some(fingerprint),
+                _ => None,
+            };
+            let Opened::Ready(h) = open_with(&target(2201, "root"), Credential::Key(key.clone()), fp, Some(fwd)).await.unwrap() else { panic!("tunnel connection") };
+            let h = Arc::new(h);
+
+            let get = |mut s: TcpStream| async move {
+                s.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
+                let mut out = String::new();
+                s.read_to_string(&mut out).await.unwrap();
+                out
+            };
+            // local
+            let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = l.local_addr().unwrap();
+            let (hh, st) = (h.clone(), stats.clone());
+            tokio::spawn(async move {
+                let (sock, peer) = l.accept().await.unwrap();
+                serve_local(sock, peer, "127.0.0.1:5000", &hh, &st).await.unwrap();
+            });
+            assert!(get(TcpStream::connect(addr).await.unwrap()).await.ends_with("portway\n"), "local forward reaches the loopback-only server");
+            // socks5
+            let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = l.local_addr().unwrap();
+            let (hh, st) = (h.clone(), stats.clone());
+            tokio::spawn(async move {
+                let (sock, peer) = l.accept().await.unwrap();
+                serve_socks(sock, peer, &hh, &st).await.unwrap();
+            });
+            let mut s = TcpStream::connect(addr).await.unwrap();
+            s.write_all(&[5, 1, 0]).await.unwrap();
+            let mut r = [0u8; 2];
+            s.read_exact(&mut r).await.unwrap();
+            assert_eq!(r, [5, 0]);
+            s.write_all(&[5, 1, 0, 3, 9]).await.unwrap();
+            s.write_all(b"localhost").await.unwrap();
+            s.write_all(&5000u16.to_be_bytes()).await.unwrap();
+            let mut r = [0u8; 10];
+            s.read_exact(&mut r).await.unwrap();
+            assert_eq!(r[1], 0, "socks CONNECT succeeded");
+            assert!(get(s).await.ends_with("portway\n"));
+            // remote
+            h.tcpip_forward("localhost", 17777).await.unwrap();
+            let out = exec(&session, "curl -s --max-time 5 http://localhost:17777/").await.unwrap().stdout;
+            assert_eq!(out, "from-the-mac");
+            assert!(stats.total.load(std::sync::atomic::Ordering::Relaxed) >= 1 && stats.rx.load(std::sync::atomic::Ordering::Relaxed) > 0);
+            let _ = h.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+        }
 
         // Nothing listening: refused.
         let err = open(&target(2299, "root"), Credential::Key(key), None).await.err().unwrap();

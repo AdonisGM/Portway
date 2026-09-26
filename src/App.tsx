@@ -5,6 +5,7 @@ import { ServersProvider } from './app/servers'
 import { SplashScreen } from './components/splash'
 import { ToastProvider } from './components/toast'
 import { TraceProvider } from './app/trace'
+import { TunnelsProvider } from './app/tunnels'
 import { TransfersProvider } from './app/transfers'
 import { AppShell } from './layout/app-shell'
 
@@ -21,8 +22,10 @@ export default function App() {
           <ToastProvider>
             <TransfersProvider>
               <TraceProvider>
-                <AppShell />
-                <SplashScreen ready={ready} />
+                <TunnelsProvider>
+                  <AppShell />
+                  <SplashScreen ready={ready} />
+                </TunnelsProvider>
               </TraceProvider>
             </TransfersProvider>
           </ToastProvider>

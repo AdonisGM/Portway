@@ -41,6 +41,8 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   ufwReplace: 'Sửa rule firewall',
   ufwEnable: 'Bật firewall',
   ufwDisable: 'Tắt firewall',
+  tunnelStart: 'Bật tunnel',
+  tunnelStop: 'Tắt tunnel',
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')

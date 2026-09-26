@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.0.23"
+version = "0.0.24"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"
@@ -29,7 +29,7 @@ tauri-plugin-dialog = "2"
 russh = "0.63"
 russh-sftp = "3"
 keyring = { version = "3", features = ["apple-native"] }
-tokio = { version = "1", features = ["time", "sync", "net", "rt"] }
+tokio = { version = "1", features = ["time", "sync", "net", "rt", "io-util", "macros"] }
 
 # Hide/show the native traffic lights while the splash screen is up.
 [target.'cfg(target_os = "macos")'.dependencies]

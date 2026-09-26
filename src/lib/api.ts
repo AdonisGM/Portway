@@ -289,6 +289,32 @@ export type FirewallState =
   | { kind: 'ufw'; active: boolean; incoming: string; outgoing: string; rules: FwRule[] }
 export type FwRuleInput = { action: 'allow' | 'deny' | 'limit'; port: string; proto: 'tcp' | 'udp' | 'any'; from: string | null; comment: string | null }
 
+export type TunnelKind = 'local' | 'socks' | 'remote'
+export type TunnelSpec = {
+  id: string
+  name: string
+  kind: TunnelKind
+  serverId: string
+  user: string
+  /** Port on this Mac (local, socks) or on the server (remote). */
+  port: number
+  bind: '127.0.0.1' | '0.0.0.0'
+  /** host:port seen from the server (local) or from this Mac (remote); '' for socks. */
+  dest: string
+  openKind: 'none' | 'url' | 'conn'
+  /** `{port}` is replaced by the local port. */
+  openTemplate: string
+  autoStart: boolean
+  autoReconnect: boolean
+}
+export type TunnelRun =
+  | { state: 'off' }
+  | { state: 'connecting' }
+  | { state: 'running'; since: number; active: number; total: number; rx: number; tx: number }
+  | { state: 'retrying'; attempt: number; error: string; nextAt: number }
+  | { state: 'error'; code: string; detail: string | null }
+export type Tunnel = TunnelSpec & { run: TunnelRun; command: string }
+
 export type TraceKind = 'exec' | 'sftp' | 'connect' | 'transfer'
 export type TraceStatus = 'waiting' | 'running' | 'ok' | 'error'
 /** One thing Portway did on a server, from the debug trace. */
@@ -401,6 +427,14 @@ type Api = {
   servicesJournal(serverId: string, user: string, unit: string, tail: number, cursor?: string | null): Promise<JournalPage>
   servicesUnitFile(serverId: string, user: string, unit: string): Promise<string>
   servicesAction(serverId: string, user: string, unit: string, action: ServiceAction): Promise<void>
+  tunnels(): Promise<Tunnel[]>
+  saveTunnel(spec: TunnelSpec): Promise<Tunnel>
+  deleteTunnel(id: string): Promise<void>
+  startTunnel(id: string): Promise<void>
+  stopTunnel(id: string): Promise<void>
+  /** A free local port from `start` up, skipping other tunnels' ports. */
+  freePort(start: number, except?: string): Promise<number>
+  portFree(port: number, bind: string, except?: string): Promise<boolean>
   traceList(): Promise<TraceEntry[]>
   traceClear(): Promise<void>
   dockerOverview(serverId: string, user: string): Promise<DockerState>
@@ -468,6 +502,13 @@ const tauriApi: Api = {
   servicesJournal: (serverId, user, unit, tail, cursor) => invoke('services_journal', { serverId, user, unit, tail, cursor }),
   servicesUnitFile: (serverId, user, unit) => invoke('services_unit_file', { serverId, user, unit }),
   servicesAction: (serverId, user, unit, action) => invoke('services_action', { serverId, user, unit, action }),
+  tunnels: () => invoke('tunnels_list'),
+  saveTunnel: (spec) => invoke('tunnel_save', { spec }),
+  deleteTunnel: (id) => invoke('tunnel_delete', { id }),
+  startTunnel: (id) => invoke('tunnel_start', { id }),
+  stopTunnel: (id) => invoke('tunnel_stop', { id }),
+  freePort: (start, except) => invoke('tunnel_free_port', { start, except }),
+  portFree: (port, bind, except) => invoke('tunnel_port_free', { port, bind, except }),
   traceList: () => invoke('trace_list'),
   traceClear: () => invoke('trace_clear'),
   dockerOverview: (serverId, user) => invoke('docker_overview', { serverId, user }),
@@ -633,6 +674,13 @@ function browserApi(): Api {
     servicesJournal: async () => fail('needs_app'),
     servicesUnitFile: async () => fail('needs_app'),
     servicesAction: async () => fail('needs_app'),
+    tunnels: async () => [],
+    saveTunnel: async () => fail('needs_app'),
+    deleteTunnel: async () => fail('needs_app'),
+    startTunnel: async () => fail('needs_app'),
+    stopTunnel: async () => fail('needs_app'),
+    freePort: async (start) => start,
+    portFree: async () => true,
     traceList: async () => [],
     traceClear: async () => {},
     dockerOverview: async () => fail('needs_app'),

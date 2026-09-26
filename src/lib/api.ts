@@ -62,7 +62,14 @@ export type HostKeyIssue =
   | { kind: 'unknown'; fingerprint: string; algorithm: string }
   | { kind: 'changed'; fingerprint: string; algorithm: string; line: number }
 
-export type HostInfo = { os: string | null; hostname: string; kernel: string; uptimeSecs: number }
+export type HostInfo = {
+  os: string | null
+  hostname: string
+  kernel: string
+  uptimeSecs: number
+  /** The docker CLI is installed; the Docker module shows only then. */
+  docker: boolean
+}
 
 export type ConnectResult =
   | { status: 'connected'; info: HostInfo }
@@ -146,7 +153,9 @@ export type AuditEntry = {
   serverId: string
   user: string
   /** connect, reconnect, disconnect, trustHostKey, openTerminal, sudoOn, sudoOff,
-   *  mkdir, touch, rename, remove, chmod, chown, download, upload */
+   *  mkdir, touch, rename, remove, chmod, chown, download, upload, dockerStart,
+   *  dockerStop, dockerRestart, composeUp, composePullUp, composeRestart,
+   *  composeDown, dockerDaemonStart, imagePrune, volumeRemove */
   action: string
   command: string
   ok: boolean
@@ -179,6 +188,49 @@ export type FileEntry = {
 }
 
 export type Listing = { path: string; dir: FileEntry; entries: FileEntry[]; denied: boolean; user: string }
+
+export type DockerPort = { hostIp: string; hostPort: number; containerPort: number; proto: string; public: boolean }
+export type DockerMount = { kind: string; name: string | null; source: string; destination: string; rw: boolean }
+export type Container = {
+  id: string
+  name: string
+  image: string
+  imageId: string
+  /** created, running, paused, restarting, removing, exited, dead */
+  state: string
+  exitCode: number
+  health: string | null
+  healthFailures: number
+  restarts: number
+  policy: string
+  /** RFC 3339 */
+  created: string
+  startedAt: string | null
+  finishedAt: string | null
+  command: string
+  ports: DockerPort[]
+  mounts: DockerMount[]
+  env: { key: string; value: string }[]
+  networks: string[]
+  project: string | null
+  service: string | null
+  configFiles: string[]
+  /** Every compose file is still on the server. */
+  configFound: boolean
+  workingDir: string | null
+}
+export type DockerState =
+  | { kind: 'notInstalled' }
+  | { kind: 'noAccess'; detail: string }
+  | { kind: 'daemonDown'; detail: string; systemd: boolean }
+  | { kind: 'ok'; version: string; compose: string | null; containers: Container[] }
+/** `cpu` is a share of all the server's cores (0–100); `mem` in bytes. */
+export type DockerStats = { cores: number; rows: { id: string; cpu: number; mem: number }[] }
+export type DockerLogLine = { ts: string; text: string; err: boolean }
+export type DockerImage = { id: string; repo: string; tag: string; created: string; size: number; usedBy: string[] }
+export type DockerVolume = { name: string; driver: string; mountpoint: string; usedBy: string[] }
+export type ComposeAction = 'up' | 'pullUp' | 'restart' | 'down'
+export type TerminalTool = 'htop' | 'dockerExec' | 'dockerLogs' | 'dockerDaemonLog'
 
 export type Transfer = {
   id: string
@@ -252,7 +304,20 @@ type Api = {
   /** Slow on servers with large volumes (docker system df). */
   dockerDisk(serverId: string, user: string): Promise<DockerDisk>
   /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop), `cwd` starts in a directory. */
-  openTerminal(serverId: string, user: string, tool?: 'htop', cwd?: string): Promise<void>
+  openTerminal(serverId: string, user: string, tool?: TerminalTool, cwd?: string, container?: string): Promise<void>
+  dockerOverview(serverId: string, user: string): Promise<DockerState>
+  dockerStats(serverId: string, user: string): Promise<DockerStats>
+  dockerContainer(serverId: string, user: string, name: string, action: 'start' | 'stop' | 'restart'): Promise<void>
+  /** Returns docker compose's output. */
+  dockerCompose(serverId: string, user: string, project: string, files: string[], workingDir: string | null, action: ComposeAction): Promise<string>
+  dockerStartDaemon(serverId: string, user: string): Promise<void>
+  dockerLogs(serverId: string, user: string, id: string, tail: number, since?: string): Promise<DockerLogLine[]>
+  dockerImages(serverId: string, user: string): Promise<DockerImage[]>
+  /** Returns the reclaimed space as Docker prints it, e.g. "1.2GB". */
+  dockerImagePrune(serverId: string, user: string, all: boolean): Promise<string>
+  dockerVolumes(serverId: string, user: string): Promise<DockerVolume[]>
+  dockerVolumeSizes(serverId: string, user: string): Promise<Record<string, number>>
+  dockerVolumeRemove(serverId: string, user: string, name: string): Promise<void>
   sftpList(serverId: string, user: string, path: string): Promise<Listing>
   sftpMkdir(serverId: string, user: string, dir: string, name: string): Promise<string>
   sftpTouch(serverId: string, user: string, dir: string, name: string): Promise<string>
@@ -291,7 +356,19 @@ const tauriApi: Api = {
   ports: (serverId, user) => invoke('server_ports', { serverId, user }),
   disks: (serverId, user) => invoke('server_disks', { serverId, user }),
   dockerDisk: (serverId, user) => invoke('server_docker_disk', { serverId, user }),
-  openTerminal: (serverId, user, tool, cwd) => invoke('open_terminal', { serverId, user, tool, cwd }),
+  openTerminal: (serverId, user, tool, cwd, container) => invoke('open_terminal', { serverId, user, tool, cwd, container }),
+  dockerOverview: (serverId, user) => invoke('docker_overview', { serverId, user }),
+  dockerStats: (serverId, user) => invoke('docker_stats', { serverId, user }),
+  dockerContainer: (serverId, user, name, action) => invoke('docker_container', { serverId, user, name, action }),
+  dockerCompose: (serverId, user, project, files, workingDir, action) =>
+    invoke('docker_compose', { serverId, user, project, files, workingDir, action }),
+  dockerStartDaemon: (serverId, user) => invoke('docker_start_daemon', { serverId, user }),
+  dockerLogs: (serverId, user, id, tail, since) => invoke('docker_logs', { serverId, user, id, tail, since }),
+  dockerImages: (serverId, user) => invoke('docker_images', { serverId, user }),
+  dockerImagePrune: (serverId, user, all) => invoke('docker_image_prune', { serverId, user, all }),
+  dockerVolumes: (serverId, user) => invoke('docker_volumes', { serverId, user }),
+  dockerVolumeSizes: (serverId, user) => invoke('docker_volume_sizes', { serverId, user }),
+  dockerVolumeRemove: (serverId, user, name) => invoke('docker_volume_remove', { serverId, user, name }),
   sftpList: (serverId, user, path) => invoke('sftp_list', { serverId, user, path }),
   sftpMkdir: (serverId, user, dir, name) => invoke('sftp_mkdir', { serverId, user, dir, name }),
   sftpTouch: (serverId, user, dir, name) => invoke('sftp_touch', { serverId, user, dir, name }),
@@ -430,6 +507,17 @@ function browserApi(): Api {
     async openTerminal() {
       fail('needs_app')
     },
+    dockerOverview: async () => fail('needs_app'),
+    dockerStats: async () => fail('needs_app'),
+    dockerContainer: async () => fail('needs_app'),
+    dockerCompose: async () => fail('needs_app'),
+    dockerStartDaemon: async () => fail('needs_app'),
+    dockerLogs: async () => fail('needs_app'),
+    dockerImages: async () => fail('needs_app'),
+    dockerImagePrune: async () => fail('needs_app'),
+    dockerVolumes: async () => fail('needs_app'),
+    dockerVolumeSizes: async () => fail('needs_app'),
+    dockerVolumeRemove: async () => fail('needs_app'),
     sftpList: async () => fail('needs_app'),
     sftpMkdir: async () => fail('needs_app'),
     sftpTouch: async () => fail('needs_app'),

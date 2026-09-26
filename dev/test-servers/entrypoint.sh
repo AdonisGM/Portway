@@ -17,4 +17,11 @@ if [ "${PORTWAY_UFW:-}" = 1 ] && command -v ufw >/dev/null 2>&1; then
   ufw allow 9000/tcp >/dev/null
   ufw --force enable >/dev/null || echo "ufw could not be enabled" >&2
 fi
+# Private Docker daemon from compose.yml's dind service, shared through /dind.
+# deploy is in the docker group here, so it reaches Docker without sudo.
+if [ -d /dind ]; then
+  getent group docker >/dev/null || groupadd -g 2375 docker
+  usermod -aG docker deploy
+  ln -sf /dind/docker.sock /var/run/docker.sock
+fi
 exec /usr/sbin/sshd -D -e

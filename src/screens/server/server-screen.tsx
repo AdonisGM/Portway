@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useConnections, type Connection } from '../../app/connections'
 import { useNav, type ModuleId } from '../../app/nav'
 import { useServers } from '../../app/servers'
@@ -10,6 +11,7 @@ import { copyText } from '../../lib/clipboard'
 import { hostPort, sshCommand } from '../servers/format'
 import { ConnectPrompt } from './connect-prompt'
 import { connectError, formatUptime } from './format'
+import { DockerScreen } from '../docker/docker-screen'
 import { FilesScreen } from '../files/files-screen'
 import { Overview } from './overview'
 import { SudoBanner, SudoPrompt } from './sudo'
@@ -20,6 +22,14 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
   const conns = useConnections()
   const server = byId(serverId)
   const conn = conns.get(serverId, user)
+  const nav = useNav()
+
+  // The Docker menu entry is hidden on servers without Docker; leave the module
+  // if the session turns out not to have it (e.g. opened before connecting).
+  const noDocker = conn?.status === 'connected' && !conn.info.docker
+  useEffect(() => {
+    if (module === 'docker' && noDocker) nav.openModule('overview')
+  }, [module, noDocker, nav])
 
   if (!server) {
     return <div className="rounded-xl border border-line bg-surface p-8 text-center text-muted">Server này không còn trong danh sách.</div>
@@ -27,7 +37,7 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
 
   // The header never scrolls; only the area under it does. Modules that manage
   // their own scrolling (the file browser) get exactly that area's height.
-  const fill = module === 'files'
+  const fill = module === 'files' || module === 'docker'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -56,6 +66,8 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
                   <Overview server={server} user={user} />
                 ) : module === 'files' ? (
                   <FilesScreen server={server} user={user} />
+                ) : module === 'docker' ? (
+                  <DockerScreen server={server} user={user} />
                 ) : (
                   <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">
                     Mục {MODULE_LABELS[module]} sẽ làm ở bước sau

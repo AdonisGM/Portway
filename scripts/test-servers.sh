@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start, stop or inspect the local SSH test servers (dev/test-servers).
-# Usage: scripts/test-servers.sh [up|down|status|logs]
+# Usage: scripts/test-servers.sh [up|down|status|logs|seed]
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../dev/test-servers"
 
@@ -15,5 +15,7 @@ case "${1:-up}" in
   down) docker compose down ;;
   status) docker compose ps ;;
   logs) docker compose logs -f ;;
-  *) echo "Usage: $0 [up|down|status|logs]" >&2; exit 1 ;;
+  # Sample containers, images and volumes in pw-debian's private Docker daemon.
+  seed) docker compose exec -T debian sh < seed-docker.sh ;;
+  *) echo "Usage: $0 [up|down|status|logs|seed]" >&2; exit 1 ;;
 esac

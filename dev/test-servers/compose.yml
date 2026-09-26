@@ -14,7 +14,7 @@ services:
   # NET_ADMIN, so a firewall can be turned on inside this container only.
   ubuntu:
     <<: *server
-    build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "ubuntu:24.04", DOCKER_CLI: "27.3.1", EXTRA_PKGS: "ufw iptables" } }
+    build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "ubuntu:24.04", DOCKER_CLI: "27.3.1", COMPOSE: "2.29.7", EXTRA_PKGS: "ufw iptables" } }
     cap_add: [NET_ADMIN]
     environment: { PORTWAY_UFW: "1" }
     hostname: pw-ubuntu
@@ -23,14 +23,36 @@ services:
       - ${PORTWAY_TEST_PUBKEY:-${HOME}/.ssh/id_ed25519.pub}:/authorized_keys:ro
       - /var/run/docker.sock:/var/run/docker.sock
 
+  # Docker CLI talking to its own private daemon (dind below), never the host's:
+  # safe for trying stop, remove and prune. deploy is in the docker group.
   debian:
     <<: *server
-    build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "debian:12" } }
+    build: { context: ., dockerfile: Dockerfile.debian, args: { BASE: "debian:12", DOCKER_CLI: "27.3.1", COMPOSE: "2.29.7" } }
     hostname: pw-debian
     ports: ["127.0.0.1:2202:22"]
+    volumes:
+      - ${PORTWAY_TEST_PUBKEY:-${HOME}/.ssh/id_ed25519.pub}:/authorized_keys:ro
+      - dind-sock:/dind
+    depends_on: [dind]
+
+  # Docker daemon for pw-debian only. Its socket (group 2375 = docker in
+  # pw-debian) is shared through the dind-sock volume; nothing is published.
+  dind:
+    image: docker:27-dind
+    privileged: true
+    restart: unless-stopped
+    environment: { DOCKER_TLS_CERTDIR: "" }
+    command: ["--host=unix:///dind/docker.sock", "--group=2375"]
+    volumes:
+      - dind-sock:/dind
+      - dind-data:/var/lib/docker
 
   alpine:
     <<: *server
     build: { context: ., dockerfile: Dockerfile.alpine }
     hostname: pw-alpine
     ports: ["127.0.0.1:2203:22"]
+
+volumes:
+  dind-sock:
+  dind-data:

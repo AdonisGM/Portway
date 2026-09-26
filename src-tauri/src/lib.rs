@@ -1,5 +1,6 @@
 mod audit;
 mod disks;
+mod docker;
 mod error;
 mod files;
 mod keys;
@@ -91,6 +92,17 @@ pub fn run() {
             ssh::server_disks,
             ssh::server_docker_disk,
             ssh::open_terminal,
+            docker::docker_overview,
+            docker::docker_stats,
+            docker::docker_container,
+            docker::docker_compose,
+            docker::docker_start_daemon,
+            docker::docker_logs,
+            docker::docker_images,
+            docker::docker_image_prune,
+            docker::docker_volumes,
+            docker::docker_volume_sizes,
+            docker::docker_volume_remove,
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;

@@ -84,7 +84,11 @@ type Kid = { icon: LucideIcon; label: string; count?: number; active: boolean; o
 
 function ServerMenu() {
   const nav = useNav()
+  const conns = useConnections()
   const s = nav.screen.kind === 'server' ? nav.screen : null
+  // Docker shows only once the session is up and found the docker CLI.
+  const conn = s ? conns.get(s.serverId, s.user) : undefined
+  const hasDocker = (conn?.status === 'connected' || conn?.status === 'reconnecting') && conn.info.docker
   const inModule = (m: ModuleId) => s?.module === m
   // Sub-views only; counts appear once each module reads real data.
   const docker = (view: DockerView, icon: LucideIcon, label: string): Kid => ({
@@ -100,11 +104,12 @@ function ServerMenu() {
     onClick: () => nav.openModule('services', { services: view }),
   })
 
-  const modules: { id: ModuleId; icon: LucideIcon; count?: number; alert?: string; kids?: Kid[] }[] = [
+  const modules: { id: ModuleId; icon: LucideIcon; count?: number; alert?: string; kids?: Kid[]; hidden?: boolean }[] = [
     { id: 'overview', icon: LayoutDashboard },
     { id: 'files', icon: Folder },
     {
       id: 'docker',
+      hidden: !hasDocker,
       icon: Box,
       kids: [
         docker('containers', List, 'Container'),
@@ -125,7 +130,7 @@ function ServerMenu() {
   return (
     <>
       <Sessions />
-      {modules.map((m) => {
+      {modules.filter((m) => !m.hidden).map((m) => {
         const open = !!m.kids && !!nav.expanded[m.id]
         return (
           <div key={m.id} className="flex flex-col gap-px">

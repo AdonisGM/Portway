@@ -82,6 +82,8 @@ pub struct HostInfo {
     pub hostname: String,
     pub kernel: String,
     pub uptime_secs: u64,
+    /// The docker CLI is installed (the Docker module is shown only then).
+    pub docker: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -657,7 +659,7 @@ pub const MARK: &str = "@@PORTWAY@@";
 
 async fn read_host_info(session: &Session) -> AppResult<HostInfo> {
     let script = format!(
-        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null"
+        "cat /etc/os-release 2>/dev/null; echo {MARK}; hostname 2>/dev/null || cat /etc/hostname; echo {MARK}; uname -sr; echo {MARK}; cat /proc/uptime 2>/dev/null; echo {MARK}; command -v docker >/dev/null 2>&1 && echo docker"
     );
     let out = exec(session, &script).await?.stdout_or_err()?;
     let parts: Vec<&str> = out.split(MARK).map(str::trim).collect();
@@ -667,6 +669,7 @@ async fn read_host_info(session: &Session) -> AppResult<HostInfo> {
         hostname: get(1).to_string(),
         kernel: get(2).to_string(),
         uptime_secs: get(3).split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) as u64,
+        docker: get(4) == "docker",
     })
 }
 
@@ -1210,29 +1213,48 @@ pub async fn server_ports(sessions: tauri::State<'_, Sessions>, server_id: Strin
 }
 
 /// Quote a value for a POSIX shell.
+/// Quote for sh. Words made only of characters the shell leaves alone stay as
+/// they are, so logged commands read like typed ones (and match the UI's previews).
 pub(crate) fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
+    let safe = !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "_@%+=:,./-".contains(c));
+    if safe {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
 }
 
 /// Open Terminal.app running `ssh` for this account, through a temporary
 /// .command file so no Automation permission is needed. The command is built
 /// here with every argument quoted, never taken as a string from the UI.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn open_terminal(
     store: tauri::State<ServerStore>,
+    sessions: tauri::State<Sessions>,
     audit: tauri::State<AuditLog>,
     server_id: String,
     user: String,
     tool: Option<String>,
     cwd: Option<String>,
+    container: Option<String>,
 ) -> AppResult<()> {
-    // Remote commands are fixed here; the UI only picks one by name, or a
-    // directory to start the shell in (quoted, never run as code).
-    let remote: Option<String> = match (tool.as_deref(), cwd) {
-        (None, None) => None,
-        (Some("htop"), _) => Some("command -v htop >/dev/null 2>&1 && exec htop || exec top".into()),
-        (None, Some(dir)) => Some(format!("cd {} && exec \"$SHELL\" -l", shell_quote(&dir))),
-        (Some(_), _) => return Err(AppError::new("unknown_tool")),
+    // Docker goes through sudo when this session uses sudo for it; the
+    // terminal asks for the password itself.
+    let sudo = if user != "root" && sessions.get(&server_id, &user).map(|s| s.sudo_on()).unwrap_or(false) { "sudo " } else { "" };
+    // Remote commands are fixed here; the UI only picks one by name, plus a
+    // directory or container name that is quoted, never run as code.
+    let remote: Option<String> = match (tool.as_deref(), cwd, container) {
+        (None, None, _) => None,
+        (Some("htop"), _, _) => Some("command -v htop >/dev/null 2>&1 && exec htop || exec top".into()),
+        (None, Some(dir), _) => Some(format!("cd {} && exec \"$SHELL\" -l", shell_quote(&dir))),
+        (Some("dockerExec"), _, Some(c)) => Some(format!(
+            "{sudo}docker exec -it {} sh -c 'if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi'",
+            shell_quote(&c)
+        )),
+        (Some("dockerLogs"), _, Some(c)) => Some(format!("{sudo}docker logs -f --tail 200 {}", shell_quote(&c))),
+        (Some("dockerDaemonLog"), _, _) => Some(format!("{sudo}journalctl -u docker -n 200 -f")),
+        (Some(_), _, _) => return Err(AppError::new("unknown_tool")),
     };
     let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
     let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
@@ -1421,6 +1443,61 @@ mod tests {
         assert!(matches!(open(&target(2202, "deploy"), Credential::Password("nope".into()), Some(fp)).await.unwrap(), Opened::Rejected));
         assert!(matches!(open(&target(2202, "deploy"), Credential::Password("portway".into()), None).await.unwrap(), Opened::Ready(_)));
 
+        // Docker on pw-debian: its own dind daemon, filled by `scripts/test-servers.sh seed`.
+        // deploy is in the docker group there, so no sudo is needed.
+        use crate::docker::{self, DockerState};
+        let Opened::Ready(d) = open(&target(2202, "deploy"), Credential::Key(key.clone()), None).await.unwrap() else {
+            panic!("deploy@pw-debian should connect")
+        };
+        let debian = Session::new(d, "deploy");
+        assert!(read_host_info(&debian).await.unwrap().docker);
+        let out = exec_priv(&debian, docker::OVERVIEW_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout;
+        let DockerState::Ok { mut containers, compose, .. } = docker::parse_overview(&out) else { panic!("docker overview: {out}") };
+        assert!(compose.is_some(), "compose plugin installed");
+        docker::mark_config_files(&debian, &mut containers).await.unwrap();
+        assert!(containers.iter().filter(|c| c.project.as_deref() == Some("shop")).all(|c| c.config_found), "shop's compose file is on the server");
+        assert!(containers.iter().filter(|c| c.project.is_none()).all(|c| !c.config_found));
+        let db = containers.iter().find(|c| c.name == "shop-db-1").expect("seeded shop-db-1");
+        assert_eq!(db.project.as_deref(), Some("shop"));
+        assert_eq!(db.config_files, vec!["/srv/shop/docker-compose.yml"]);
+        assert!(db.ports.iter().any(|p| p.host_port == 5432 && p.public));
+        assert!(db.env.iter().any(|e| e.key == "POSTGRES_DB" && e.value == "shop"));
+        let job = containers.iter().find(|c| c.name == "shop-migrate-1").expect("seeded migrate job");
+        assert_eq!((job.state.as_str(), job.exit_code, job.policy.as_str()), ("exited", 0, "no"));
+        let flaky = containers.iter().find(|c| c.name == "flaky-worker").expect("seeded flaky-worker");
+        assert!(flaky.restarts > 0 && flaky.policy == "always");
+        let stats = docker::parse_stats(
+            &exec_priv(&debian, "nproc; echo @@PORTWAY@@; docker stats --no-stream --no-trunc --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}'", EXEC_TIMEOUT)
+                .await
+                .unwrap()
+                .stdout,
+        );
+        assert!(stats.rows.iter().any(|r| r.id == db.id && r.mem > 0), "stats for the running db");
+        let logs = exec_priv(&debian, "docker logs --timestamps --tail 20 flaky-worker", EXEC_TIMEOUT).await.unwrap();
+        assert!(docker::parse_log_lines(&logs.stderr, true).iter().any(|l| l.text == "ERROR cannot reach queue"), "{}", logs.stderr);
+        let images = docker::parse_images(&exec_priv(&debian, docker::IMAGES_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout).unwrap();
+        assert!(images.iter().any(|i| i.repo == "portway/demo" && i.used_by.is_empty()));
+        assert!(images.iter().any(|i| i.repo == "<none>"), "the seed leaves a dangling image");
+        assert!(images.iter().any(|i| i.repo == "postgres" && i.used_by.contains(&"shop-db-1".to_string())));
+        let vols = docker::parse_volumes(&exec_priv(&debian, docker::VOLUMES_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout).unwrap();
+        assert!(vols.iter().any(|v| v.name == "old-data" && v.used_by.is_empty()));
+        assert!(vols.iter().any(|v| v.name == "shop_db-data" && v.used_by == vec!["shop-db-1".to_string()]));
+
+        // viewer is not in the docker group: told apart from a stopped daemon.
+        let Opened::Ready(v) = open(&target(2202, "viewer"), Credential::Key(key.clone()), None).await.unwrap() else { panic!("viewer@pw-debian") };
+        let out = exec_priv(&Session::new(v, "viewer"), docker::OVERVIEW_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout;
+        assert!(matches!(docker::parse_overview(&out), DockerState::NoAccess { .. }), "{out}");
+
+        // Alpine has no Docker at all: the module is hidden there.
+        let fp = match open(&target(2203, "root"), Credential::Key(key.clone()), None).await.unwrap() {
+            Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) => fingerprint,
+            _ => panic!("expected an unknown host key"),
+        };
+        let Opened::Ready(a) = open(&target(2203, "root"), Credential::Key(key.clone()), Some(fp)).await.unwrap() else { panic!("root@pw-alpine") };
+        let alpine = Session::new(a, "root");
+        assert!(!read_host_info(&alpine).await.unwrap().docker);
+        assert!(matches!(docker::parse_overview(&exec_priv(&alpine, docker::OVERVIEW_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout), DockerState::NotInstalled));
+
         // Nothing listening: refused.
         let err = open(&target(2299, "root"), Credential::Key(key), None).await.err().unwrap();
         assert_eq!(err.code, "refused");
@@ -1430,7 +1507,9 @@ mod tests {
 
     #[test]
     fn quotes_for_shell() {
-        assert_eq!(shell_quote("root@1.2.3.4"), "'root@1.2.3.4'");
+        assert_eq!(shell_quote("root@1.2.3.4"), "root@1.2.3.4");
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(shell_quote("/srv/new folder"), "'/srv/new folder'");
         assert_eq!(shell_quote("a'b; rm -rf ~"), "'a'\\''b; rm -rf ~'");
     }
 

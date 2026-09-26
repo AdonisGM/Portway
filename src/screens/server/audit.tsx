@@ -20,6 +20,16 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   chown: 'Đổi owner',
   download: 'Tải xuống',
   upload: 'Tải lên',
+  dockerStart: 'Chạy container',
+  dockerStop: 'Dừng container',
+  dockerRestart: 'Khởi động lại container',
+  composeUp: 'Compose up',
+  composePullUp: 'Compose pull + up',
+  composeRestart: 'Compose restart',
+  composeDown: 'Compose down',
+  dockerDaemonStart: 'Khởi động Docker',
+  imagePrune: 'Dọn image Docker',
+  volumeRemove: 'Xoá volume',
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')

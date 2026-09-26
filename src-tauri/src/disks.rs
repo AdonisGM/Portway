@@ -107,7 +107,7 @@ fn parse_mounts(df: &str, proc_mounts: &str) -> Vec<Mount> {
 }
 
 /// Docker sizes: "6.763GB", "630.8kB", "0B" (decimal units).
-fn docker_bytes(s: &str) -> u64 {
+pub(crate) fn docker_bytes(s: &str) -> u64 {
     let s = s.split_whitespace().next().unwrap_or("").trim();
     let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
     let (n, unit) = s.split_at(split);

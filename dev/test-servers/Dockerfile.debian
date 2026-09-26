@@ -23,6 +23,15 @@ RUN if [ -n "$DOCKER_CLI" ]; then \
       | tar -xz --strip-components=1 -C /usr/local/bin docker/docker; \
     fi
 
+# Optional Compose v2 plugin, so `docker compose` works like on a real server.
+ARG COMPOSE=""
+RUN if [ -n "$COMPOSE" ]; then \
+      mkdir -p /usr/local/lib/docker/cli-plugins \
+      && curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+         "https://github.com/docker/compose/releases/download/v${COMPOSE}/docker-compose-linux-$(uname -m)" \
+      && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; \
+    fi
+
 COPY sshd_portway.conf /etc/ssh/sshd_config.d/portway.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

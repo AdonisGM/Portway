@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, isAppError, type AppError, type ConnectOptions, type ConnectResult, type HostInfo } from '../lib/api'
+import { clearSessionCache } from './session-cache'
 import { useServers } from './servers'
 
 /** What the connection needs from the user before it can go on. */
@@ -135,6 +136,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     attempt.current[key] = (attempt.current[key] ?? 0) + 1
     delete pending.current[key]
     set(key, undefined)
+    clearSessionCache(serverId, user)
     await api.disconnect(serverId, user).catch(() => {})
   }, [])
 

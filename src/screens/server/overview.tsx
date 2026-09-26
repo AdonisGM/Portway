@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useConnections } from '../../app/connections'
+import { readCache, writeCache } from '../../app/session-cache'
 import { useToast } from '../../components/toast'
 import { Button, cx } from '../../components/ui/primitives'
 import { StatStrip, StatStripSkeleton, type StatItem } from '../../components/ui/stat-strip'
@@ -13,14 +14,16 @@ import { DisksCard } from './disks'
 
 const POLL_MS = 5000
 
-/** Poll `load` every 5 s while mounted. A closed session marks the connection
- *  lost; other errors are shown and retried on the next tick. */
-function usePoll<T>(serverId: string, user: string, load: (serverId: string, user: string) => Promise<T>) {
+/** Poll `load` every 5 s while mounted. The last result is kept per session
+ *  (`name`), so coming back to a session shows it at once. A closed session
+ *  marks the connection lost; other errors are shown and retried next tick. */
+function usePoll<T>(serverId: string, user: string, name: string, load: (serverId: string, user: string) => Promise<T>) {
   const { markLost } = useConnections()
   const { live } = useLive(serverId, user)
-  const [data, setData] = useState<T | null>(null)
+  const [initial] = useState(() => readCache<T>(serverId, user, name))
+  const [data, setData] = useState<T | null>(initial?.data ?? null)
   const [error, setError] = useState<AppError | null>(null)
-  const [at, setAt] = useState<Date | null>(null)
+  const [at, setAt] = useState<Date | null>(initial?.at ?? null)
 
   useEffect(() => {
     if (!live) return
@@ -30,9 +33,11 @@ function usePoll<T>(serverId: string, user: string, load: (serverId: string, use
       try {
         const d = await load(serverId, user)
         if (!alive) return
+        const now = new Date()
         setData(d)
         setError(null)
-        setAt(new Date())
+        setAt(now)
+        writeCache(serverId, user, name, d, now)
       } catch (e) {
         if (!alive) return
         const err = isAppError(e) ? e : { code: 'unknown', detail: String(e) }
@@ -49,7 +54,7 @@ function usePoll<T>(serverId: string, user: string, load: (serverId: string, use
       alive = false
       clearTimeout(timer)
     }
-  }, [serverId, user, markLost, load, live])
+  }, [serverId, user, name, markLost, load, live])
 
   return { data, error, at, live }
 }
@@ -115,7 +120,7 @@ const loadStats = (s: string, u: string) => api.stats(s, u)
 const loadProcesses = (s: string, u: string) => api.processes(s, u)
 
 function Resources({ server, user }: { server: Server; user: string }) {
-  const { data, error, at, live } = usePoll<Stats>(server.id, user, loadStats)
+  const { data, error, at, live } = usePoll<Stats>(server.id, user, 'stats', loadStats)
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
@@ -133,7 +138,7 @@ const PROC_COLS = 'minmax(140px,1.5fr) 96px 96px minmax(70px,1fr) 64px'
 const barColor = (v: number) => (v >= 85 ? 'var(--danger)' : v >= 70 ? 'var(--warn)' : 'var(--ink2)')
 
 function TopProcesses({ server, user }: { server: Server; user: string }) {
-  const { data, error, at, live } = usePoll<Processes>(server.id, user, loadProcesses)
+  const { data, error, at, live } = usePoll<Processes>(server.id, user, 'processes', loadProcesses)
   const toast = useToast()
   const snapAt = data ? new Date(data.at).toLocaleTimeString('vi-VN') : null
 
@@ -213,7 +218,7 @@ export function Overview({ server, user }: { server: Server; user: string }) {
         <PortsCard server={server} user={user} />
         <DisksCard server={server} user={user} />
       </div>
-      <AuditCard server={server} />
+      <AuditCard server={server} user={user} />
     </div>
   )
 }

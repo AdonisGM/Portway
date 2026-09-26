@@ -1,6 +1,7 @@
 import { RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useConnections } from '../../app/connections'
+import { readCache, writeCache } from '../../app/session-cache'
 import { isAppError, type AppError } from '../../lib/api'
 
 const REFRESH_MS = 60_000
@@ -13,22 +14,37 @@ export function useLive(serverId: string, user: string) {
   return { live: conn?.status === 'connected', sudo: conn?.status === 'connected' && conn.sudo }
 }
 
+type Cached<T> = { value: T; sudo: boolean }
+
 /** Read once, then every minute (or `everyMs`) or on demand: for overview
- *  cards that are heavier than the live 5 s numbers. */
-export function useRefreshed<T>(serverId: string, user: string, load: (serverId: string, user: string) => Promise<T>, everyMs = REFRESH_MS) {
+ *  cards that are heavier than the live 5 s numbers. The last result of each
+ *  session is kept (`name` in the session cache): coming back to a session
+ *  shows it at once, and it is not read again until it is `everyMs` old or
+ *  sudo changed. */
+export function useRefreshed<T>(
+  serverId: string,
+  user: string,
+  name: string,
+  load: (serverId: string, user: string) => Promise<T>,
+  everyMs = REFRESH_MS,
+) {
   const { markLost } = useConnections()
   const { live, sudo } = useLive(serverId, user)
-  const [data, setData] = useState<T | null>(null)
+  const [initial] = useState(() => readCache<Cached<T>>(serverId, user, name))
+  const [data, setData] = useState<T | null>(initial?.data.value ?? null)
   const [error, setError] = useState<AppError | null>(null)
-  const [at, setAt] = useState<Date | null>(null)
+  const [at, setAt] = useState<Date | null>(initial?.at ?? null)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async () => {
     setBusy(true)
     try {
-      setData(await load(serverId, user))
+      const value = await load(serverId, user)
+      const now = new Date()
+      setData(value)
       setError(null)
-      setAt(new Date())
+      setAt(now)
+      writeCache(serverId, user, name, { value, sudo } satisfies Cached<T>, now)
     } catch (e) {
       const err = isAppError(e) ? e : { code: 'unknown', detail: String(e) }
       if (err.code === 'connection_lost' || err.code === 'not_connected') markLost(serverId, user, err)
@@ -36,14 +52,26 @@ export function useRefreshed<T>(serverId: string, user: string, load: (serverId:
     } finally {
       setBusy(false)
     }
-  }, [serverId, user, markLost, load])
+  }, [serverId, user, name, markLost, load, sudo])
 
   useEffect(() => {
     if (!live) return
-    void refresh()
-    const timer = setInterval(refresh, everyMs)
-    return () => clearInterval(timer)
-  }, [refresh, everyMs, live, sudo])
+    const cached = readCache<Cached<T>>(serverId, user, name)
+    const age = cached ? Date.now() - cached.at.getTime() : Infinity
+    const fresh = !!cached && cached.data.sudo === sudo && age < everyMs
+    let interval: ReturnType<typeof setInterval> | undefined
+    const first = setTimeout(
+      () => {
+        void refresh()
+        interval = setInterval(refresh, everyMs)
+      },
+      fresh ? everyMs - age : 0,
+    )
+    return () => {
+      clearTimeout(first)
+      clearInterval(interval)
+    }
+  }, [refresh, everyMs, live, sudo, serverId, user, name])
 
   return { data, error, at, busy, refresh, live }
 }

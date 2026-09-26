@@ -86,7 +86,7 @@ const loadHealth = (s: string, u: string) => api.health(s, u)
 
 export function HealthCard({ server, user }: { server: Server; user: string }) {
   const nav = useNav()
-  const { data: health, error, at, busy, refresh, live } = useRefreshed<Health>(server.id, user, loadHealth)
+  const { data: health, error, at, busy, refresh, live } = useRefreshed<Health>(server.id, user, 'health', loadHealth)
 
   return (
     <div className="flex flex-col gap-1 rounded-xl border border-line bg-surface p-4">

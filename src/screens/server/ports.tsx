@@ -84,7 +84,7 @@ function FirewallTile({ ports, server, user }: { ports: Ports; server: Server; u
 
 /** "Cổng mạng & firewall": what listens, what UFW allows, and what to worry about. */
 export function PortsCard({ server, user }: { server: Server; user: string }) {
-  const { data, error, at, busy, refresh, live } = useRefreshed<Ports>(server.id, user, loadPorts)
+  const { data, error, at, busy, refresh, live } = useRefreshed<Ports>(server.id, user, 'ports', loadPorts)
   const publicCount = data?.listening.filter((l) => l.scope === 'public').length ?? 0
   const listTitle = data?.listening
     .map((l) => `${l.port}/${l.proto} · ${hostPort(l.bind, l.port)}${l.container ? ` · ${l.container}` : l.process ? ` · ${l.process}` : ''}`)

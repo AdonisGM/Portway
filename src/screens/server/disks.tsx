@@ -36,8 +36,8 @@ function reclaimText(r: DockerUsage) {
 
 /** "Ổ đĩa": mounted filesystems and Docker's share of the disk. */
 export function DisksCard({ server, user }: { server: Server; user: string }) {
-  const { data, error, at, busy, refresh: refreshMounts, live } = useRefreshed<Disks>(server.id, user, loadDisks)
-  const docker = useRefreshed<DockerDisk>(server.id, user, loadDockerDisk, DOCKER_EVERY_MS)
+  const { data, error, at, busy, refresh: refreshMounts, live } = useRefreshed<Disks>(server.id, user, 'disks', loadDisks)
+  const docker = useRefreshed<DockerDisk>(server.id, user, 'dockerDisk', loadDockerDisk, DOCKER_EVERY_MS)
   const refresh = () => {
     void refreshMounts()
     void docker.refresh()

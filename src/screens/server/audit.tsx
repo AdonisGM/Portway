@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { readCache, writeCache } from '../../app/session-cache'
 import { Modal } from '../../components/ui/modal'
 import { Button, Chip, TONES } from '../../components/ui/primitives'
 import { api, type AuditEntry, type Server } from '../../lib/api'
@@ -23,8 +24,8 @@ export function auditTime(ms: number, withSeconds = false) {
 const COLS = '90px minmax(0,1fr) minmax(0,1.4fr) 96px'
 
 /** "Thao tác qua Portway": what Portway did on this server for the user. */
-export function AuditCard({ server }: { server: Server }) {
-  const [entries, setEntries] = useState<AuditEntry[] | null>(null)
+export function AuditCard({ server, user }: { server: Server; user: string }) {
+  const [entries, setEntries] = useState<AuditEntry[] | null>(() => readCache<AuditEntry[]>(server.id, user, 'audit')?.data ?? null)
   const [open, setOpen] = useState<AuditEntry | null>(null)
 
   useEffect(() => {
@@ -32,7 +33,11 @@ export function AuditCard({ server }: { server: Server }) {
     const load = () =>
       api
         .auditList(server.id, 8)
-        .then((e) => alive && setEntries(e))
+        .then((e) => {
+          if (!alive) return
+          setEntries(e)
+          writeCache(server.id, user, 'audit', e, new Date())
+        })
         .catch(() => alive && setEntries([]))
     void load()
     // Local and cheap: follow new entries (connects, sudo, terminal…) quickly.
@@ -41,7 +46,7 @@ export function AuditCard({ server }: { server: Server }) {
       alive = false
       clearInterval(t)
     }
-  }, [server.id])
+  }, [server.id, user])
 
   return (
     <div className="flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-4">

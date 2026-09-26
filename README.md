@@ -27,9 +27,11 @@ Ba server SSH chạy bằng Docker, chỉ mở trên `127.0.0.1`, dùng khoá `~
 
 | Server | Cổng | Đăng nhập |
 |---|---|---|
-| Ubuntu 24.04 (`pw-ubuntu`) | 2201 | `root`, `deploy` bằng khoá |
-| Debian 12 (`pw-debian`) | 2202 | `root` bằng khoá, `deploy` bằng khoá hoặc mật khẩu `portway` |
-| Alpine 3.20 (`pw-alpine`) | 2203 | `root`, `deploy` bằng khoá |
+| Ubuntu 24.04 (`pw-ubuntu`) | 2201 | `root`, `deploy`, `viewer` bằng khoá; có Docker CLI (socket của máy) và UFW đang bật |
+| Debian 12 (`pw-debian`) | 2202 | `root`, `deploy`, `viewer` bằng khoá; `deploy` còn đăng nhập được bằng mật khẩu |
+| Alpine 3.20 (`pw-alpine`) | 2203 | `root`, `deploy`, `viewer` bằng khoá |
+
+Mật khẩu của `deploy` và `viewer` là `portway`. `deploy` dùng được sudo (cần mật khẩu), `viewer` không có sudo.
 
 `dev/test-servers/ssh_config` có sẵn các khối `Host` tương ứng để thử tính năng nhập.
 

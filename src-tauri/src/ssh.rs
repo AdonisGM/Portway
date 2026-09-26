@@ -485,8 +485,22 @@ pub enum SudoResult {
     NotAllowed { detail: String },
 }
 
+const SUDO_REFUSED: [&str; 5] = ["not in the sudoers", "may not run sudo", "is not allowed to", "sudo: not found", "command not found"];
+
 fn sudo_refused(stderr: &str) -> bool {
-    ["not in the sudoers", "may not run sudo", "is not allowed to", "sudo: not found", "command not found"].iter().any(|m| stderr.contains(m))
+    SUDO_REFUSED.iter().any(|m| stderr.contains(m))
+}
+
+/// The line that says why sudo refused, without the lecture some systems print
+/// before it ("We trust you have received the usual lecture…").
+fn sudo_reason(stderr: &str) -> String {
+    let lines = stderr.lines().map(str::trim).filter(|l| !l.is_empty());
+    lines
+        .clone()
+        .find(|l| SUDO_REFUSED.iter().any(|m| l.contains(m)))
+        .or_else(|| lines.last())
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Turn on sudo for a session: privileged reads (UFW, Docker, other users'
@@ -510,8 +524,8 @@ pub async fn ssh_sudo(
         return Ok(SudoResult::Enabled);
     }
     if sudo_refused(&probe.stderr) {
-        audit.record(&server_id, &user, "sudoOn", "sudo -n true", false, Some(probe.stderr.trim().to_string()));
-        return Ok(SudoResult::NotAllowed { detail: probe.stderr.trim().to_string() });
+        audit.record(&server_id, &user, "sudoOn", "sudo -n true", false, Some(sudo_reason(&probe.stderr)));
+        return Ok(SudoResult::NotAllowed { detail: sudo_reason(&probe.stderr) });
     }
     let Some(pw) = password.filter(|p| !p.is_empty()) else {
         return Ok(SudoResult::NeedPassword { retry: false });
@@ -523,9 +537,9 @@ pub async fn ssh_sudo(
         audit.record(&server_id, &user, "sudoOn", "sudo -v", true, None);
         return Ok(SudoResult::Enabled);
     }
-    audit.record(&server_id, &user, "sudoOn", "sudo -v", false, Some(check.stderr.trim().to_string()));
+    audit.record(&server_id, &user, "sudoOn", "sudo -v", false, Some(sudo_reason(&check.stderr)));
     if sudo_refused(&check.stderr) {
-        return Ok(SudoResult::NotAllowed { detail: check.stderr.trim().to_string() });
+        return Ok(SudoResult::NotAllowed { detail: sudo_reason(&check.stderr) });
     }
     Ok(SudoResult::NeedPassword { retry: true })
 }
@@ -1326,6 +1340,16 @@ mod tests {
         assert_eq!(exec_priv(&deploy, "id -u", EXEC_TIMEOUT).await.unwrap().stdout.trim(), "0");
         assert_ne!(exec(&deploy, "id -u").await.unwrap().stdout.trim(), "0", "plain exec never uses sudo");
 
+        // A user without sudo: the right password still ends in "not in the sudoers file".
+        let Opened::Ready(viewer) = open(&target(2201, "viewer"), Credential::Key(key.clone()), None).await.unwrap() else {
+            panic!("viewer should connect");
+        };
+        let viewer = Session::new(viewer, "viewer");
+        let refused = run_channel(&viewer, "sudo -S -k -p '' true", Some("portway\n".into()), EXEC_TIMEOUT).await.unwrap();
+        assert_ne!(refused.code, Some(0));
+        assert!(sudo_refused(&refused.stderr), "{}", refused.stderr);
+        assert!(sudo_reason(&refused.stderr).contains("not in the sudoers"));
+
         // A probe running as root under sudo stays out of the process list.
         let bg = deploy.clone();
         let probe = tokio::spawn(async move { exec_priv(&bg, "sleep 4; true", EXEC_TIMEOUT).await });
@@ -1449,6 +1473,14 @@ mod tests {
         assert_eq!(serde_json::to_value(&r).unwrap(), serde_json::json!({ "status": "needPassphrase", "keyPath": "~/.ssh/k", "retry": true }));
         let u = UpdatesHealth::Ok { manager: "apt".into(), upgrades: vec![], index_at: Some(1) };
         assert_eq!(serde_json::to_value(&u).unwrap()["indexAt"], 1);
+    }
+
+    #[test]
+    fn sudo_reason_skips_the_lecture() {
+        let alpine = "\nWe trust you have received the usual lecture from the local System\nAdministrator.\n\n    #1) Respect the privacy of others.\n\nviewer is not in the sudoers file. This incident has been reported to the administrator.\n";
+        assert!(sudo_refused(alpine));
+        assert_eq!(sudo_reason(alpine), "viewer is not in the sudoers file. This incident has been reported to the administrator.");
+        assert_eq!(sudo_reason("Sorry, try again.\nsudo: 1 incorrect password attempt\n"), "sudo: 1 incorrect password attempt");
     }
 
     #[test]

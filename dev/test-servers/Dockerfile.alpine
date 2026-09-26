@@ -10,6 +10,9 @@ RUN apk add --no-cache openssh sudo bash procps \
  && mkdir -p /etc/ssh/sshd_config.d \
  && echo 'Include /etc/ssh/sshd_config.d/*.conf' >> /etc/ssh/sshd_config
 
+# A user without sudo, for trying how Portway handles missing privileges.
+RUN adduser -D -s /bin/bash viewer && echo 'viewer:portway' | chpasswd
+
 COPY sshd_portway.conf /etc/ssh/sshd_config.d/portway.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

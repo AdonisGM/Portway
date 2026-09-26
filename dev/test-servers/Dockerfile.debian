@@ -11,6 +11,10 @@ RUN apt-get update \
  && useradd -m -s /bin/bash -G sudo deploy \
  && echo 'deploy:portway' | chpasswd
 
+# A user without sudo, for trying how Portway handles missing privileges.
+# Separate layer so the host keys generated above stay cached.
+RUN useradd -m -s /bin/bash viewer && echo 'viewer:portway' | chpasswd
+
 # Optional Docker CLI (static binary) so a test server can show real containers
 # through the host's Docker socket mounted by compose.yml.
 ARG DOCKER_CLI=""

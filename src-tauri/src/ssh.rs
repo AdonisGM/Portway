@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::trace;
 use crate::paths::{expand_tilde, ssh_dir};
 use crate::audit::AuditLog;
@@ -338,7 +339,7 @@ async fn open_with(target: &Target, credential: Credential, trust: Option<String
             if let (Some(hop), russh::Error::ChannelOpenFailure(reason)) = (&target.via, &e) {
                 return Err(AppError::detail(
                     "jump_forward",
-                    format!("{} không mở được kết nối tới {}:{} ({reason:?})", hop.name, target.host, target.port),
+                    tr(format!("{} không mở được kết nối tới {}:{} ({reason:?})", hop.name, target.host, target.port), format!("{} couldn't open a connection to {}:{} ({reason:?})", hop.name, target.host, target.port)),
                 ));
             }
             return Err(map_connect_error(e, &target.host, target.port));
@@ -378,7 +379,7 @@ async fn open_hop(hop: &Hop, target: &Target) -> AppResult<Conn> {
         Err(e) if e.code.starts_with("jump_") => Err(e),
         Err(e) => Err(AppError::detail(
             "jump_failed",
-            format!("{} (trên đường tới {}): {}", hop.name, target.host, error_text(&e)),
+            tr(format!("{} (trên đường tới {}): {}", hop.name, target.host, error_text(&e)), format!("{} (on the way to {}): {}", hop.name, target.host, error_text(&e))),
         )),
     }
 }
@@ -600,7 +601,7 @@ pub async fn ssh_connect(
     let target = Target { host: server.host.clone(), port: server.port, user: user.clone(), known_hosts: ssh_dir().join("known_hosts"), via };
     let command = display_ssh_command(&target, key_path.as_deref());
     let trusted = trust_fingerprint.clone();
-    let span = trace::start(&server_id, &user, trace::Kind::Connect, Some("Kết nối SSH".into()), &command, false);
+    let span = trace::start(&server_id, &user, trace::Kind::Connect, Some(tr("Kết nối SSH", "SSH connection")), &command, false);
     let opened = open(&target, credential.clone(), trust_fingerprint).await;
     trace_opened(span, &opened);
     let handle = match opened {
@@ -635,7 +636,7 @@ pub async fn ssh_connect(
     }
 
     let session = Arc::new(Session::new(handle, &server_id, &user));
-    let info = trace::labelled("Đọc thông tin máy", read_host_info(&session)).await?;
+    let info = trace::labelled(tr("Đọc thông tin máy", "Read host info"), read_host_info(&session)).await?;
     if let Some(os) = &info.os {
         store.set_os(&server_id, os)?;
     }
@@ -650,8 +651,8 @@ pub async fn ssh_connect(
 fn trace_opened(span: trace::Span, opened: &AppResult<Opened>) {
     match opened {
         Ok(Opened::Ready(_)) => span.ok(|_| {}),
-        Ok(Opened::HostKey(_)) => span.fail("Dừng lại để hỏi có tin khoá máy chủ không", |_| {}),
-        Ok(Opened::Rejected) => span.fail("Permission denied: server từ chối xác thực", |_| {}),
+        Ok(Opened::HostKey(_)) => span.fail(tr("Dừng lại để hỏi có tin khoá máy chủ không", "Stopped to ask whether to trust the host key"), |_| {}),
+        Ok(Opened::Rejected) => span.fail(tr("Permission denied: server từ chối xác thực", "Permission denied: the server rejected authentication"), |_| {}),
         Err(e) => span.fail(error_text(e), |_| {}),
     }
 }
@@ -670,7 +671,7 @@ pub async fn ssh_reconnect(
     let saved = sessions.saved.lock().unwrap().get(&key).cloned().ok_or_else(|| AppError::new("not_connected"))?;
     let sudo = sessions.map.lock().unwrap().get(&key).and_then(|s| s.sudo.lock().unwrap().clone());
     let command = display_ssh_command(&saved.target, None);
-    let span = trace::start(&server_id, &user, trace::Kind::Connect, Some("Kết nối lại SSH".into()), &command, false);
+    let span = trace::start(&server_id, &user, trace::Kind::Connect, Some(tr("Kết nối lại SSH", "SSH reconnect")), &command, false);
     let opened = open(&saved.target, saved.credential.clone(), None).await;
     trace_opened(span, &opened);
     let handle = match opened {
@@ -679,7 +680,7 @@ pub async fn ssh_reconnect(
             return Err(e);
         }
         Ok(Opened::HostKey(issue)) => {
-            audit.record(&server_id, &user, "reconnect", &command, false, Some("Khoá máy chủ khác với lần kết nối trước".into()));
+            audit.record(&server_id, &user, "reconnect", &command, false, Some(tr("Khoá máy chủ khác với lần kết nối trước", "The host key differs from the last connection")));
             return Ok(ConnectResult::HostKey { issue });
         }
         Ok(Opened::Rejected) => {
@@ -690,7 +691,7 @@ pub async fn ssh_reconnect(
     };
     let session = Arc::new(Session::new(handle, &server_id, &user));
     *session.sudo.lock().unwrap() = sudo;
-    let info = trace::labelled("Đọc thông tin máy", read_host_info(&session)).await?;
+    let info = trace::labelled(tr("Đọc thông tin máy", "Read host info"), read_host_info(&session)).await?;
     if let Some(os) = &info.os {
         store.set_os(&server_id, os)?;
     }
@@ -809,7 +810,7 @@ pub async fn ssh_sudo(
         }
         Ok(SudoResult::NeedPassword { retry: true })
     };
-    let r: AppResult<SudoResult> = trace::labelled("Bật sudo", run).await;
+    let r: AppResult<SudoResult> = trace::labelled(tr("Bật sudo", "Enable sudo"), run).await;
     r
 }
 
@@ -895,7 +896,7 @@ async fn run_channel(session: &Session, line: &str, shown: &str, stdin: Option<S
     // Waiting for a free channel counts towards the timeout too.
     let _permit = match tokio::time::timeout(timeout, session.channels.acquire()).await {
         Err(_) => {
-            span.fail("Hết thời gian chờ kênh SSH trống", |_| {});
+            span.fail(tr("Hết thời gian chờ kênh SSH trống", "Timed out waiting for a free SSH channel"), |_| {});
             return Err(AppError::new("exec_timeout"));
         }
         Ok(Err(e)) => {
@@ -929,11 +930,11 @@ async fn run_channel(session: &Session, line: &str, shown: &str, stdin: Option<S
     };
     match tokio::time::timeout(timeout, run).await {
         Err(_) => {
-            span.fail(format!("Hết thời gian ({} giây)", timeout.as_secs()), |_| {});
+            span.fail(tr(format!("Hết thời gian ({} giây)", timeout.as_secs()), format!("Timed out ({}s)", timeout.as_secs())), |_| {});
             Err(AppError::new("exec_timeout"))
         }
         Ok(Err(e)) if handle.is_closed() => {
-            span.fail(format!("Mất kết nối: {e}"), |_| {});
+            span.fail(tr(format!("Mất kết nối: {e}"), format!("Connection lost: {e}")), |_| {});
             Err(AppError::detail("connection_lost", e))
         }
         Ok(Err(e)) => {
@@ -1105,7 +1106,7 @@ pub async fn server_stats(sessions: tauri::State<'_, Sessions>, server_id: Strin
         *session.last.lock().unwrap() = Some((now_t, now_c));
         Ok(stats)
     };
-    let r: AppResult<Stats> = trace::labelled("Tổng quan · tài nguyên", run).await;
+    let r: AppResult<Stats> = trace::labelled(tr("Tổng quan · tài nguyên", "Overview · resources"), run).await;
     r
 }
 
@@ -1225,7 +1226,7 @@ pub async fn server_processes(sessions: tauri::State<'_, Sessions>, server_id: S
         let session = sessions.get(&server_id, &user)?;
         top_processes(&session).await
     };
-    let r: AppResult<Processes> = trace::labelled("Tổng quan · tiến trình", run).await;
+    let r: AppResult<Processes> = trace::labelled(tr("Tổng quan · tiến trình", "Overview · processes"), run).await;
     r
 }
 
@@ -1513,7 +1514,7 @@ pub async fn server_health(sessions: tauri::State<'_, Sessions>, server_id: Stri
         let session = sessions.get(&server_id, &user)?;
         read_health(&session).await
     };
-    let r: AppResult<Health> = trace::labelled("Tổng quan · tình trạng", run).await;
+    let r: AppResult<Health> = trace::labelled(tr("Tổng quan · tình trạng", "Overview · health"), run).await;
     r
 }
 
@@ -1525,7 +1526,7 @@ pub async fn server_disks(sessions: tauri::State<'_, Sessions>, server_id: Strin
         let out = exec(&session, crate::disks::DISKS_SCRIPT).await?.stdout;
         Ok(crate::disks::parse_disks(&out))
     };
-    let r: AppResult<crate::disks::Disks> = trace::labelled("Tổng quan · ổ đĩa", run).await;
+    let r: AppResult<crate::disks::Disks> = trace::labelled(tr("Tổng quan · ổ đĩa", "Overview · disks"), run).await;
     r
 }
 
@@ -1538,7 +1539,7 @@ pub async fn server_docker_disk(sessions: tauri::State<'_, Sessions>, server_id:
         let out = exec_priv(&session, crate::disks::DOCKER_DF_SCRIPT, Duration::from_secs(120)).await?.stdout;
         Ok(crate::disks::parse_docker_df(out.trim_start()))
     };
-    let r: AppResult<crate::disks::DockerDisk> = trace::labelled("Tổng quan · dung lượng Docker", run).await;
+    let r: AppResult<crate::disks::DockerDisk> = trace::labelled(tr("Tổng quan · dung lượng Docker", "Overview · Docker disk usage"), run).await;
     r
 }
 
@@ -1550,7 +1551,7 @@ pub async fn server_ports(sessions: tauri::State<'_, Sessions>, server_id: Strin
         let out = exec_priv(&session, crate::ports::PORTS_SCRIPT, EXEC_TIMEOUT).await?.stdout;
         Ok(crate::ports::parse_ports(&out))
     };
-    let r: AppResult<crate::ports::Ports> = trace::labelled("Tổng quan · cổng mạng", run).await;
+    let r: AppResult<crate::ports::Ports> = trace::labelled(tr("Tổng quan · cổng mạng", "Overview · ports"), run).await;
     r
 }
 

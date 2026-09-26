@@ -1,13 +1,12 @@
+import { t } from '../../i18n'
 import type { Account, AppError, Auth, Server } from '../../lib/api'
 
-/** Group shown for servers that were saved without one. */
-export const NO_GROUP = 'Chưa phân nhóm'
-
-export const groupLabel = (group: string) => group || NO_GROUP
+/** A server's group, or the label shown for servers saved without one. */
+export const groupLabel = (group: string) => group || t('Chưa phân nhóm')
 
 export const keyName = (path: string) => path.split('/').pop() || path
 
-export const authLabel = (auth: Auth) => (auth.kind === 'password' ? 'Mật khẩu' : keyName(auth.path))
+export const authLabel = (auth: Auth) => (auth.kind === 'password' ? t('Mật khẩu') : keyName(auth.path))
 
 export const hostPort = (host: string, port: number) => (port !== 22 ? `${host}:${port}` : host)
 
@@ -38,28 +37,28 @@ export const parseTags = (text: string) =>
 export function errorMessage(e: AppError): string {
   switch (e.code) {
     case 'required':
-      return e.field === 'name' ? 'Nhập tên hiển thị' : 'Nhập host hoặc IP'
+      return e.field === 'name' ? t('Nhập tên hiển thị') : t('Nhập host hoặc IP')
     case 'name_taken':
-      return 'Đã có server trùng tên này'
+      return t('Đã có server trùng tên này')
     case 'invalid_host':
-      return 'Host không được có khoảng trắng'
+      return t('Host không được có khoảng trắng')
     case 'invalid_port':
-      return 'Cổng phải từ 1 đến 65535'
+      return t('Cổng phải từ 1 đến 65535')
     case 'no_account':
-      return 'Cần ít nhất một tài khoản có tên user'
+      return t('Cần ít nhất một tài khoản có tên user')
     case 'duplicate_user':
-      return `User ${e.detail ?? ''} bị lặp`
+      return t('User {user} bị lặp', { user: e.detail ?? '' })
     case 'no_key':
-      return 'Chọn khoá cho tài khoản'
+      return t('Chọn khoá cho tài khoản')
     case 'not_found':
-      return 'Server này không còn trong danh sách'
+      return t('Server này không còn trong danh sách')
     case 'no_ssh_config':
-      return 'Không tìm thấy ~/.ssh/config'
+      return t('Không tìm thấy ~/.ssh/config')
     case 'jump_missing':
-      return 'Jump host này không còn trong danh sách hoặc không có user đó'
+      return t('Jump host này không còn trong danh sách hoặc không có user đó')
     case 'jump_loop':
-      return 'Chuỗi jump host vòng lại chính server này'
+      return t('Chuỗi jump host vòng lại chính server này')
     default:
-      return e.detail ? `Lỗi: ${e.detail}` : 'Có lỗi xảy ra'
+      return e.detail ? t('Lỗi: {detail}', { detail: e.detail }) : t('Có lỗi xảy ra')
   }
 }

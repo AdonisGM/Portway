@@ -14,6 +14,7 @@ import {
   Palette,
   FolderSync,
   KeyRound,
+  Languages,
   Layers,
   LayoutDashboard,
   List,
@@ -29,7 +30,8 @@ import { useConnections } from '../app/connections'
 import { useServers } from '../app/servers'
 import { useTransfers } from '../app/transfers'
 import { OsBadge } from '../components/os-badge'
-import { MODULE_LABELS } from './meta'
+import { t } from '../i18n'
+import { moduleLabel } from './meta'
 
 /** Second column: the menu of whichever rail area is active. */
 export function Menu() {
@@ -55,17 +57,17 @@ function ConnMenu() {
   const { servers, keys } = useServers()
   return (
     <>
-      <MenuTitle>Quản lý kết nối</MenuTitle>
+      <MenuTitle>{t('Quản lý kết nối')}</MenuTitle>
       <MenuItem
         icon={Server}
-        label="Danh sách server"
+        label={t('Danh sách server')}
         count={servers.length}
         active={nav.screen.kind === 'servers'}
         onClick={() => nav.go({ kind: 'servers' })}
       />
       <MenuItem
         icon={KeyRound}
-        label="Khoá SSH"
+        label={t('Khoá SSH')}
         count={keys.length}
         active={nav.screen.kind === 'keys'}
         onClick={() => nav.go({ kind: 'keys' })}
@@ -76,14 +78,14 @@ function ConnMenu() {
 
 function TransferMenu() {
   const nav = useNav()
-  const running = useTransfers().list.filter((t) => t.status === 'running').length
+  const running = useTransfers().list.filter((x) => x.status === 'running').length
   return (
     <>
-      <MenuTitle>Chuyển tệp</MenuTitle>
+      <MenuTitle>{t('Chuyển tệp')}</MenuTitle>
       <MenuItem
         icon={FolderSync}
-        label="Chuyển tệp"
-        count={running ? `${running} đang chạy` : undefined}
+        label={t('Chuyển tệp')}
+        count={running ? t('{n} đang chạy', { n: running }) : undefined}
         active={nav.screen.kind === 'transfer'}
         onClick={() => nav.go({ kind: 'transfer' })}
       />
@@ -91,20 +93,23 @@ function TransferMenu() {
   )
 }
 
-/** Sections of the settings page; a click scrolls to one. */
-export const SETTINGS_SECTIONS = [
-  { id: 'download', label: 'Tải xuống', icon: Download },
-  { id: 'editor', label: 'Sửa tệp', icon: FilePen },
-  { id: 'appearance', label: 'Giao diện', icon: Palette },
-  { id: 'data', label: 'Dữ liệu', icon: Database },
-  { id: 'about', label: 'Giới thiệu', icon: Info },
-] as const
+/** Sections of the settings page; a click scrolls to one. Built at render
+ *  time so the labels follow the language. */
+export const settingsSections = () =>
+  [
+    { id: 'language', label: t('Ngôn ngữ'), icon: Languages },
+    { id: 'download', label: t('Tải xuống#section'), icon: Download },
+    { id: 'editor', label: t('Sửa tệp#section'), icon: FilePen },
+    { id: 'appearance', label: t('Giao diện'), icon: Palette },
+    { id: 'data', label: t('Dữ liệu'), icon: Database },
+    { id: 'about', label: t('Giới thiệu'), icon: Info },
+  ] as const
 
 function SettingsMenu() {
   return (
     <>
-      <MenuTitle>Cài đặt</MenuTitle>
-      {SETTINGS_SECTIONS.map((s) => (
+      <MenuTitle>{t('Cài đặt')}</MenuTitle>
+      {settingsSections().map((s) => (
         <MenuItem
           key={s.id}
           icon={s.icon}
@@ -170,7 +175,7 @@ function ServerMenu() {
       hidden: !hasDocker,
       icon: Box,
       kids: [
-        docker('containers', List, 'Container'),
+        docker('containers', List, t('Container#menu')),
         docker('compose', Layers, 'Compose'),
         docker('images', Layers, 'Images'),
         docker('volumes', Database, 'Volumes'),
@@ -180,7 +185,7 @@ function ServerMenu() {
       id: 'services',
       icon: Activity,
       hidden: !hasSystemd,
-      kids: [services('services', List, 'Dịch vụ'), services('jobs', Clock, 'Tác vụ định kỳ')],
+      kids: [services('services', List, t('Dịch vụ')), services('jobs', Clock, t('Tác vụ định kỳ'))],
     },
     { id: 'firewall', icon: Shield },
   ]
@@ -194,7 +199,7 @@ function ServerMenu() {
           <div key={m.id} className="flex flex-col gap-px">
             <MenuItem
               icon={m.icon}
-              label={MODULE_LABELS[m.id]}
+              label={moduleLabel(m.id)}
               count={m.alert ?? m.count}
               countTone={m.alert ? 'danger' : 'muted'}
               active={inModule(m.id)}
@@ -239,7 +244,7 @@ function Sessions() {
   return (
     <div className="mb-2.5 flex flex-col gap-0.5 border-b border-line pb-2.5">
       <div className="flex items-center px-2.5 pb-1">
-        <span className="flex-1 text-[11px] tracking-[.06em] text-muted uppercase">Đang kết nối</span>
+        <span className="flex-1 text-[11px] tracking-[.06em] text-muted uppercase">{t('Đang kết nối')}</span>
         <span className="num text-[11px] text-muted">{nav.sessions.length}</span>
       </div>
       {hosts.map((id) => {
@@ -274,7 +279,7 @@ function Sessions() {
                   <span className={`flex-1 font-mono text-[12px] ${active ? 'font-semibold text-ink' : 'text-ink2'}`}>{u.user}</span>
                   <button
                     type="button"
-                    title={`Ngắt kết nối ${u.user}`}
+                    title={t('Ngắt kết nối {user}', { user: u.user })}
                     onClick={(e) => {
                       e.stopPropagation()
                       nav.closeSession(u)

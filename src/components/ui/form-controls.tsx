@@ -4,6 +4,7 @@ import { Portal } from '@ark-ui/react/portal'
 import { Check, ChevronDown } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
 import { cx, Caption, Label } from './primitives'
+import { t } from '../../i18n'
 
 export type Option = { value: string; label: string }
 
@@ -87,7 +88,7 @@ export function SelectField({
   value,
   onChange,
   options,
-  placeholder = 'Chọn',
+  placeholder = t('Chọn'),
   className,
 }: {
   value: string

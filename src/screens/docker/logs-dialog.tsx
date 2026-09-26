@@ -3,6 +3,7 @@ import { Modal } from '../../components/ui/modal'
 import { Button, cx } from '../../components/ui/primitives'
 import { SearchInput } from '../../components/ui/search-input'
 import { SegmentedControl } from '../../components/ui/segmented'
+import { t } from '../../i18n'
 import { isAppError, type Container, type DockerLogLine } from '../../lib/api'
 import type { DockerCtx } from './docker-screen'
 import { logLevel } from './format'
@@ -12,10 +13,10 @@ const FOLLOW_MS = 2000
 const KEEP = 3000
 
 type Level = 'all' | 'warn' | 'error'
-const LEVELS: { id: Level; label: string }[] = [
-  { id: 'all', label: 'Tất cả' },
-  { id: 'warn', label: 'Cảnh báo + lỗi' },
-  { id: 'error', label: 'Lỗi' },
+const levels = (): { id: Level; label: string }[] => [
+  { id: 'all', label: t('Tất cả') },
+  { id: 'warn', label: t('Cảnh báo + lỗi') },
+  { id: 'error', label: t('Lỗi#level') },
 ]
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -58,10 +59,10 @@ export function LogsDialog({ ctx, container, onClose }: { ctx: DockerCtx; contai
         stop = true
       }
     }
-    const t = setInterval(() => void read(last.current), FOLLOW_MS)
+    const timer = setInterval(() => void read(last.current), FOLLOW_MS)
     return () => {
       stop = true
-      clearInterval(t)
+      clearInterval(timer)
     }
   }, [ctx.api, server.id, user, container.id, live])
 
@@ -83,21 +84,21 @@ export function LogsDialog({ ctx, container, onClose }: { ctx: DockerCtx; contai
   return (
     <Modal open onClose={onClose} width={860} title={`Log · ${container.name}`} subtitle={`${cmd} · ${server.name}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <SegmentedControl value={level} onChange={setLevel} options={LEVELS} />
-        <SearchInput value={query} onChange={setQuery} placeholder="Lọc theo chữ" className="w-44 min-w-0" />
+        <SegmentedControl value={level} onChange={setLevel} options={levels()} />
+        <SearchInput value={query} onChange={setQuery} placeholder={t('Lọc theo chữ')} className="w-44 min-w-0" />
         <span className="flex-1" />
         <span className="flex items-center gap-1.5 text-[11.5px] text-muted">
           <span className="size-1.5 rounded-full" style={{ background: live ? 'var(--success)' : 'var(--muted)' }} />
-          {lines ? `${shown.length} dòng` : 'Đang đọc…'}
-          {live ? ' · đang theo dõi' : running ? '' : ' · container không chạy'}
+          {lines ? t('{n} dòng', { n: shown.length }) : t('Đang đọc…')}
+          {live ? ' · ' + t('đang theo dõi') : running ? '' : ' · ' + t('container không chạy')}
         </span>
-        <span title={running ? undefined : 'Container không chạy, chỉ có log cũ'}>
+        <span title={running ? undefined : t('Container không chạy, chỉ có log cũ')}>
           <Button size="xs" onClick={() => setLive(!live)} disabled={!running}>
-            {live ? 'Tạm dừng' : 'Theo dõi trực tiếp'}
+            {live ? t('Tạm dừng') : t('Theo dõi trực tiếp')}
           </Button>
         </span>
         <Button variant="ghost" size="xs" onClick={() => ctx.terminal('dockerLogs', container.name)}>
-          Mở trong Terminal
+          {t('Mở trong Terminal')}
         </Button>
       </div>
       <div ref={box} className="h-[56vh] overflow-auto overscroll-contain rounded-lg border border-line bg-sunken py-1 font-mono text-[11.5px] leading-[1.55]">
@@ -116,7 +117,7 @@ export function LogsDialog({ ctx, container, onClose }: { ctx: DockerCtx; contai
           </div>
         ))}
         {lines && !shown.length && !error && (
-          <div className="px-3 py-6 text-center font-sans text-muted">{q || level !== 'all' ? 'Không có dòng nào khớp bộ lọc' : 'Chưa có log'}</div>
+          <div className="px-3 py-6 text-center font-sans text-muted">{q || level !== 'all' ? t('Không có dòng nào khớp bộ lọc') : t('Chưa có log')}</div>
         )}
       </div>
     </Modal>

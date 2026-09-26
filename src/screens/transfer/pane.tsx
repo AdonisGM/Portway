@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, Folder, FolderPlus, Lock, RotateCw, Te
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useServers } from '../../app/servers'
 import { SelectField, type Option } from '../../components/ui/form-controls'
+import { t } from '../../i18n'
 import { Button, cx } from '../../components/ui/primitives'
 import type { FileEntry } from '../../lib/api'
 import { formatBytes, connectError } from '../server/format'
@@ -76,29 +77,29 @@ export function Pane({
   }
 
   const allOn = p.order.length > 0 && p.selNames.length === p.order.length
-  const count = p.selNames.length ? `Đã chọn ${p.selNames.length}/${p.order.length}` : `${p.order.length} mục`
+  const count = p.selNames.length ? t('Đã chọn {n}/{total}', { n: p.selNames.length, total: p.order.length }) : t('{n} mục', { n: p.order.length })
 
   let body: ReactNode
   if (p.src.kind === 'remote' && !server) {
-    body = <Blank icon={Lock} title="Server không còn trong danh sách" />
+    body = <Blank icon={Lock} title={t('Server không còn trong danh sách')} />
   } else if (p.src.kind === 'remote' && (!p.conn || p.conn.status === 'failed')) {
     const err = p.conn?.status === 'failed' && p.conn.error.code !== 'cancelled' ? connectError(p.conn.error, server!.host, server!.port) : null
     body = (
-      <Blank icon={Lock} title={err ? err.title : `Chưa kết nối ${sourceName(p.src, byId)}`}>
+      <Blank icon={Lock} title={err ? err.title : t('Chưa kết nối {name}', { name: sourceName(p.src, byId) })}>
         {err && <span className="max-w-[360px] leading-normal text-muted">{err.message}</span>}
         <Button size="xs" onClick={onConnect}>
-          {err ? 'Thử lại' : 'Kết nối'}
+          {err ? t('Thử lại') : t('Kết nối')}
         </Button>
       </Blank>
     )
   } else if (p.src.kind === 'remote' && (p.conn?.status === 'connecting' || p.conn?.status === 'prompt')) {
-    body = <div className="p-7 text-center text-muted">Đang kết nối tới {sourceName(p.src, byId)}…</div>
+    body = <div className="p-7 text-center text-muted">{t('Đang kết nối tới {name}…', { name: sourceName(p.src, byId) })}</div>
   } else if (!listing) {
     body = p.error ? (
-      <Blank icon={Lock} title="Không mở được thư mục">
+      <Blank icon={Lock} title={t('Không mở được thư mục')}>
         <span className="max-w-[360px] leading-normal text-muted">{fileError(p.error)}</span>
         <Button size="xs" onClick={() => void p.load('')}>
-          Về thư mục nhà
+          {t('Về thư mục nhà')}
         </Button>
       </Blank>
     ) : (
@@ -107,22 +108,22 @@ export function Pane({
   } else if (listing.denied) {
     body =
       p.src.kind === 'local' ? (
-        <Blank icon={Lock} title="macOS chưa cho Portway đọc thư mục này">
+        <Blank icon={Lock} title={t('macOS chưa cho Portway đọc thư mục này')}>
           <span className="max-w-[360px] leading-normal text-muted">
-            Mở Cài đặt hệ thống › Quyền riêng tư & Bảo mật › Tệp và thư mục, bật quyền cho Portway rồi bấm làm mới.
+            {t('Mở Cài đặt hệ thống › Quyền riêng tư & Bảo mật › Tệp và thư mục, bật quyền cho Portway rồi bấm làm mới.')}
           </span>
         </Blank>
       ) : (
-        <Blank icon={Lock} title="Không có quyền đọc thư mục này">
+        <Blank icon={Lock} title={t('Không có quyền đọc thư mục này')}>
           <span className="max-w-[360px] leading-normal text-muted">
-            {listing.path} thuộc {listing.dir.owner ?? listing.dir.uid}:{listing.dir.group ?? listing.dir.gid}, quyền {octal(listing.dir.mode)}.
+            {t('{path} thuộc {owner}:{group}, quyền {mode}.', { path: listing.path, owner: listing.dir.owner ?? listing.dir.uid ?? '?', group: listing.dir.group ?? listing.dir.gid ?? '?', mode: octal(listing.dir.mode) })}
           </span>
         </Blank>
       )
   } else if (!p.all.length) {
-    body = <Blank icon={Folder} title="Thư mục trống" />
+    body = <Blank icon={Folder} title={t('Thư mục trống')} />
   } else if (!p.shown.length) {
-    body = <div className="p-7 text-center text-muted">Chỉ có tệp ẩn trong thư mục này. Bấm nút con mắt để xem.</div>
+    body = <div className="p-7 text-center text-muted">{t('Chỉ có tệp ẩn trong thư mục này. Bấm nút con mắt để xem.')}</div>
   } else {
     body = p.shown.map((e) => {
       const on = p.selNames.includes(e.name)
@@ -136,7 +137,7 @@ export function Pane({
           onMouseDown={(ev) => onRowMouseDown(ev, e.name)}
           onClick={(ev) => clickRow(ev, e.name)}
           onDoubleClick={() => dir && void p.load(e.path)}
-          title={`${e.name}\nSửa lúc ${fullTime(e.mtime)}`}
+          title={e.name + '\n' + t('Sửa lúc {time}', { time: fullTime(e.mtime) })}
           className={cx(
             'grid cursor-default items-center gap-2.5 border-t border-line px-3 py-[6px] select-none',
             target ? 'bg-accent-soft outline-2 -outline-offset-2 outline-accent' : on ? 'bg-accent-soft' : 'hover:bg-raised',
@@ -146,7 +147,7 @@ export function Pane({
         >
           <button
             type="button"
-            title="Chọn"
+            title={t('Chọn')}
             onMouseDown={(ev) => ev.stopPropagation()}
             onClick={(ev) => {
               ev.stopPropagation()
@@ -161,13 +162,13 @@ export function Pane({
             <Tag text={tagOf(e)} colors={tagColors(e)} />
             <span className={cx('truncate', dir && 'font-semibold', e.readable ? 'text-ink' : 'text-ink2')}>{e.name}</span>
             {!e.readable && (
-              <span title="Không có quyền đọc" className="flex flex-none text-warn">
+              <span title={t('Không có quyền đọc')} className="flex flex-none text-warn">
                 <Lock size={12} strokeWidth={1.8} />
               </span>
             )}
             {otherNames.has(e.name) && (
-              <span title="Thư mục bên kia đã có mục cùng tên" className="flex-none rounded px-1.5 py-px text-[10px] text-warn" style={{ background: 'var(--warn-soft)' }}>
-                trùng tên
+              <span title={t('Thư mục bên kia đã có mục cùng tên')} className="flex-none rounded px-1.5 py-px text-[10px] text-warn" style={{ background: 'var(--warn-soft)' }}>
+                {t('trùng tên')}
               </span>
             )}
           </span>
@@ -189,17 +190,17 @@ export function Pane({
     >
       <div className="flex flex-none items-center gap-1.5 border-b border-line px-2.5 py-2">
         <SelectField value={p.key} onChange={onPickSource} options={sources} className="h-8 min-w-0 flex-1" />
-        <IconButton title="Làm mới" disabled={!p.ready} onClick={() => void p.reload()}>
+        <IconButton title={t('Làm mới')} disabled={!p.ready} onClick={() => void p.reload()}>
           <RotateCw size={14} strokeWidth={1.8} className={cx(p.loading && 'animate-spin')} />
         </IconButton>
-        <IconButton title={p.showHidden ? `Ẩn tệp ẩn (${p.hiddenCount})` : `Hiện tệp ẩn (${p.hiddenCount})`} on={p.showHidden} onClick={() => p.setShowHidden(!p.showHidden)}>
+        <IconButton title={p.showHidden ? t('Ẩn tệp ẩn ({n})', { n: p.hiddenCount }) : t('Hiện tệp ẩn ({n})', { n: p.hiddenCount })} on={p.showHidden} onClick={() => p.setShowHidden(!p.showHidden)}>
           {p.showHidden ? <Eye size={14} strokeWidth={1.8} /> : <EyeOff size={14} strokeWidth={1.8} />}
         </IconButton>
-        <IconButton title={writable ? 'Thư mục mới' : 'Không có quyền ghi vào thư mục này'} disabled={!writable} onClick={onNewFolder}>
+        <IconButton title={writable ? t('Thư mục mới') : t('Không có quyền ghi vào thư mục này')} disabled={!writable} onClick={onNewFolder}>
           <FolderPlus size={14} strokeWidth={1.8} />
         </IconButton>
         <IconButton
-          title={p.src.kind === 'local' ? 'Mở thư mục này trong Terminal' : `Mở trong Terminal (${sourceName(p.src, byId)})`}
+          title={p.src.kind === 'local' ? t('Mở thư mục này trong Terminal') : t('Mở trong Terminal ({name})', { name: sourceName(p.src, byId) })}
           disabled={!listing}
           onClick={onTerminal}
         >
@@ -208,34 +209,34 @@ export function Pane({
       </div>
 
       <div className="flex flex-none flex-col gap-1 border-b border-line px-2.5 py-2">
-        <PathBar path={listing?.path ?? ''} home={p.src.kind === 'local' ? home : null} disabled={!listing} go={(t) => p.load(t)} />
+        <PathBar path={listing?.path ?? ''} home={p.src.kind === 'local' ? home : null} disabled={!listing} go={(to) => p.load(to)} />
         {listing && !listing.denied && !writable && (
           <span className="flex items-center gap-1.5 px-0.5 text-[11px] text-warn">
             <Lock size={11} strokeWidth={1.8} />
-            Chỉ đọc: {listing.user} không có quyền ghi vào thư mục này
+            {t('Chỉ đọc: {user} không có quyền ghi vào thư mục này', { user: listing.user })}
           </span>
         )}
       </div>
 
       <div ref={list} className="min-h-0 flex-1 overflow-auto overscroll-contain transition-opacity" style={{ opacity: p.loading || !p.ready ? 0.6 : 1 }}>
         <div className="sticky top-0 z-[1] grid items-center gap-2.5 bg-sunken px-3 py-[7px] text-[11px] text-muted" style={{ gridTemplateColumns: GRID }}>
-          <button type="button" title="Chọn tất cả" onClick={() => p.select(allOn ? [] : p.order, null)} className="flex cursor-pointer" disabled={!p.order.length}>
+          <button type="button" title={t('Chọn tất cả')} onClick={() => p.select(allOn ? [] : p.order, null)} className="flex cursor-pointer" disabled={!p.order.length}>
             <Box on={allOn} partial={!allOn && p.selNames.length > 0} />
           </button>
           <span className="flex min-w-0 items-center gap-2.5 whitespace-nowrap">
-            <SortButton label="Tên" k="name" sort={p.sort} setSort={p.setSort} />
+            <SortButton label={t('Tên')} k="name" sort={p.sort} setSort={p.setSort} />
             {listing && !listing.denied && <span className={cx('truncate', p.selNames.length ? 'text-ink2' : '')}>{count}</span>}
           </span>
           <span className="flex justify-end">
-            <SortButton label="Cỡ" k="size" sort={p.sort} setSort={p.setSort} />
+            <SortButton label={t('Cỡ')} k="size" sort={p.sort} setSort={p.setSort} />
           </span>
-          <SortButton label="Sửa lúc" k="mtime" sort={p.sort} setSort={p.setSort} />
+          <SortButton label={t('Sửa lúc')} k="mtime" sort={p.sort} setSort={p.setSort} />
         </div>
         {listing && listing.path !== '/' && (
           <div
             onClick={() => void p.load(parentOf(listing.path))}
             data-dir-path={parentOf(listing.path)}
-            title="Lên thư mục cha (⌫)"
+            title={t('Lên thư mục cha (⌫)')}
             className={cx(
               'grid cursor-default items-center gap-2.5 border-t border-line px-3 py-[6px] select-none hover:bg-raised',
               drop?.dir === parentOf(listing.path) && 'bg-accent-soft outline-2 -outline-offset-2 outline-accent',
@@ -326,7 +327,7 @@ function PathBar({ path, home, disabled, go }: { path: string; home: string | nu
     <div
       ref={bar}
       onClick={() => !disabled && setDraft(home && (path === home || path.startsWith(home + '/')) ? '~' + path.slice(home.length) : path)}
-      title="Bấm vào khoảng trống để nhập đường dẫn"
+      title={t('Bấm vào khoảng trống để nhập đường dẫn')}
       className="flex h-7 min-w-0 cursor-text items-center gap-0.5 overflow-x-auto rounded-md border border-line2 bg-sunken px-1.5 font-mono text-[11.5px] [scrollbar-width:none]"
     >
       {path &&

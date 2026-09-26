@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, FileText, Play, RotateCw, Square, SquareTerm
 import { useState, type ReactNode } from 'react'
 import { Button, Chip, cx } from '../../components/ui/primitives'
 import { RowMenu } from '../../components/ui/row-menu'
+import { locale, t } from '../../i18n'
 import type { ComposeAction, Container, DockerStats } from '../../lib/api'
 import { formatBytes } from '../server/format'
 import type { DockerCtx } from './docker-screen'
@@ -65,10 +66,10 @@ export function ContainersView({
           <div className="min-w-[760px]">
             <div className="sticky top-0 z-[2] grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted" style={{ gridTemplateColumns: COLS }}>
               <span>Container</span>
-              <span>Trạng thái</span>
-              <span>Cổng (host → container)</span>
+              <span>{t('Trạng thái')}</span>
+              <span>{t('Cổng (host → container)')}</span>
               <span className="flex flex-col items-end leading-tight">
-                CPU %{stats && <span className="text-[10px]">của {stats.cores} nhân</span>}
+                CPU %{stats && <span className="text-[10px]">{t('của {n} nhân', { n: stats.cores })}</span>}
               </span>
               <span className="text-right">RAM</span>
               <span />
@@ -82,7 +83,7 @@ export function ContainersView({
                   <div className="flex flex-wrap items-center gap-2.5 bg-raised px-3.5 py-[9px]">
                     <button type="button" onClick={() => setClosed({ ...closed, [g.key]: open })} className="flex cursor-pointer items-center gap-2 font-semibold">
                       <Chev size={13} strokeWidth={1.8} />
-                      {g.project?.name ?? 'Container lẻ'} ({g.containers.length})
+                      {g.project?.name ?? t('Container lẻ')} ({g.containers.length})
                     </button>
                     {g.project && g.project.files.length > 0 && (
                       <span className="max-w-[45%] min-w-0 truncate font-mono text-[11px] text-muted select-text" title={g.project.files.join('\n')}>
@@ -121,13 +122,13 @@ export function ContainersView({
                             </Chip>
                           </span>
                           <PortList c={c} />
-                          <span className="num text-right">{running && s ? `${s.cpu.toFixed(1).replace('.', ',')}%` : '—'}</span>
+                          <span className="num text-right">{running && s ? `${s.cpu.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}%` : '—'}</span>
                           <span className="num text-right">{running && s ? formatBytes(s.mem) : '—'}</span>
                           <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-end gap-1">
                             <Button variant="ghost" size="xs" onClick={() => ctx.openLogs(c)}>
                               Log
                             </Button>
-                            <span title={running ? undefined : 'Container không chạy'}>
+                            <span title={running ? undefined : t('Container không chạy')}>
                               <Button variant="ghost" size="xs" disabled={!running} onClick={() => ctx.terminal('dockerExec', c.name)}>
                                 Terminal
                               </Button>
@@ -136,12 +137,12 @@ export function ContainersView({
                               open={menu === c.id}
                               setOpen={(v) => setMenu(v ? c.id : null)}
                               items={[
-                                { label: 'Xem chi tiết', run: () => setSelected(c.id) },
-                                ...(c.ports.length ? [{ label: `Mở tunnel tới cổng ${c.ports[0].hostPort}`, run: () => ctx.openTunnel(c) }] : []),
-                                { label: 'Khởi động lại', run: () => askRestart(ctx, c, containers) },
+                                { label: t('Xem chi tiết'), run: () => setSelected(c.id) },
+                                ...(c.ports.length ? [{ label: t('Mở tunnel tới cổng {port}', { port: c.ports[0].hostPort }), run: () => ctx.openTunnel(c) }] : []),
+                                { label: t('Khởi động lại'), run: () => askRestart(ctx, c, containers) },
                                 running
-                                  ? { label: 'Dừng', run: () => askStop(ctx, c, containers), danger: true }
-                                  : { label: isFinishedJob(c) ? 'Chạy lại' : 'Chạy', run: () => startContainer(ctx, c) },
+                                  ? { label: t('Dừng'), run: () => askStop(ctx, c, containers), danger: true }
+                                  : { label: isFinishedJob(c) ? t('Chạy lại') : t('Chạy'), run: () => startContainer(ctx, c) },
                               ]}
                             />
                           </div>
@@ -151,8 +152,8 @@ export function ContainersView({
                 </div>
               )
             })}
-            {q && !groups.some((g) => g.shown.length) && <div className="p-7 text-center text-muted">Không có container nào khớp "{query.trim()}"</div>}
-            {!containers.length && <div className="p-7 text-center text-muted">Chưa có container nào trên server này.</div>}
+            {q && !groups.some((g) => g.shown.length) && <div className="p-7 text-center text-muted">{t('Không có container nào khớp "{q}"', { q: query.trim() })}</div>}
+            {!containers.length && <div className="p-7 text-center text-muted">{t('Chưa có container nào trên server này.')}</div>}
           </div>
         </div>
       </div>
@@ -162,14 +163,14 @@ export function ContainersView({
 }
 
 function PortList({ c }: { c: Container }) {
-  if (!c.ports.length) return <span className="text-[12px] text-muted">nội bộ</span>
+  if (!c.ports.length) return <span className="text-[12px] text-muted">{t('nội bộ')}</span>
   // Configured but not bound while the container is not running.
   const idle = c.state !== 'running' && c.state !== 'restarting'
   return (
     <span className="flex min-w-0 flex-col gap-1">
       {c.ports.map((p) => (
         <span key={`${p.hostIp}:${p.hostPort}/${p.proto}`} className="flex flex-wrap items-center gap-1.5">
-          <span className={cx('font-mono text-[11.5px]', idle ? 'text-muted' : 'text-ink2')} title={idle ? 'Container không chạy nên cổng này đang đóng' : undefined}>
+          <span className={cx('font-mono text-[11.5px]', idle ? 'text-muted' : 'text-ink2')} title={idle ? t('Container không chạy nên cổng này đang đóng') : undefined}>
             {portText(p)}
           </span>
           {p.public && !idle && (
@@ -178,7 +179,7 @@ function PortList({ c }: { c: Container }) {
               className="cursor-help rounded-[5px] px-1.5 py-px text-[10.5px] whitespace-nowrap"
               style={dataRole(c) ? { background: 'var(--danger-soft)', color: 'var(--danger)' } : { background: 'var(--warn-soft)', color: 'var(--warn)' }}
             >
-              ⚠ công khai
+              ⚠ {t('công khai')}
             </span>
           )}
         </span>
@@ -194,17 +195,19 @@ function dataNote(c: Container, all: Container[]): ReactNode {
   const role = dataRole(c)
   if (!role || !c.project) return undefined
   const others = siblings(c, all)
-  return others.length ? `Container cùng project ${c.project}: ${others.join(', ')}.` : undefined
+  return others.length ? t('Container cùng project {project}: {others}.', { project: c.project, others: others.join(', ') }) : undefined
 }
 
 export function askRestart(ctx: DockerCtx, c: Container, all: Container[]) {
   const role = dataRole(c)
   ctx.confirm({
-    title: `Khởi động lại ${c.name}?`,
-    body: role ? `${c.name} là ${role}. Các container phụ thuộc có thể lỗi trong lúc nó khởi động lại.` : 'Container sẽ ngừng phục vụ vài giây.',
+    title: t('Khởi động lại {name}?', { name: c.name }),
+    body: role
+      ? t('{name} là {role}. Các container phụ thuộc có thể lỗi trong lúc nó khởi động lại.', { name: c.name, role })
+      : t('Container sẽ ngừng phục vụ vài giây.'),
     note: dataNote(c, all),
     command: containerCommand('restart', c.name),
-    confirm: 'Khởi động lại',
+    confirm: t('Khởi động lại'),
     run: () => ctx.act(() => ctx.api.dockerContainer(ctx.server.id, ctx.user, c.name, 'restart')),
   })
 }
@@ -212,11 +215,13 @@ export function askRestart(ctx: DockerCtx, c: Container, all: Container[]) {
 export function askStop(ctx: DockerCtx, c: Container, all: Container[]) {
   const role = dataRole(c)
   ctx.confirm({
-    title: `Dừng ${c.name}?`,
-    body: role ? `${c.name} là ${role}. Các container phụ thuộc có thể lỗi cho tới khi nó chạy lại.` : 'Container sẽ dừng cho tới khi bạn chạy lại.',
+    title: t('Dừng {name}?', { name: c.name }),
+    body: role
+      ? t('{name} là {role}. Các container phụ thuộc có thể lỗi cho tới khi nó chạy lại.', { name: c.name, role })
+      : t('Container sẽ dừng cho tới khi bạn chạy lại.'),
     note: dataNote(c, all),
     command: containerCommand('stop', c.name),
-    confirm: 'Dừng container',
+    confirm: t('Dừng container'),
     danger: true,
     run: () => ctx.act(() => ctx.api.dockerContainer(ctx.server.id, ctx.user, c.name, 'stop')),
   })
@@ -225,16 +230,16 @@ export function askStop(ctx: DockerCtx, c: Container, all: Container[]) {
 export function startContainer(ctx: DockerCtx, c: Container) {
   if (isFinishedJob(c)) {
     ctx.confirm({
-      title: `Chạy lại ${c.name}?`,
-      body: 'Container này sẽ thực thi lại tác vụ của nó (ví dụ migration database).',
-      note: 'Tác vụ chạy với cùng image và biến môi trường như lần trước. Nếu nó không lặp lại được an toàn, kết quả có thể lỗi.',
+      title: t('Chạy lại {name}?', { name: c.name }),
+      body: t('Container này sẽ thực thi lại tác vụ của nó (ví dụ migration database).'),
+      note: t('Tác vụ chạy với cùng image và biến môi trường như lần trước. Nếu nó không lặp lại được an toàn, kết quả có thể lỗi.'),
       command: containerCommand('start', c.name),
-      confirm: 'Chạy lại',
+      confirm: t('Chạy lại'),
       run: () => ctx.act(() => ctx.api.dockerContainer(ctx.server.id, ctx.user, c.name, 'start')),
     })
     return
   }
-  void ctx.runNow(`Đã chạy ${c.name}`, containerCommand('start', c.name), () => ctx.api.dockerContainer(ctx.server.id, ctx.user, c.name, 'start'))
+  void ctx.runNow(t('Đã chạy {name}', { name: c.name }), containerCommand('start', c.name), () => ctx.api.dockerContainer(ctx.server.id, ctx.user, c.name, 'start'))
 }
 
 export function askCompose(ctx: DockerCtx, p: Project, action: ComposeAction) {
@@ -244,22 +249,28 @@ export function askCompose(ctx: DockerCtx, p: Project, action: ComposeAction) {
   const run = () => ctx.act(() => ctx.api.dockerCompose(ctx.server.id, ctx.user, p.name, p.files, p.workingDir, action))
   const command = composeCommand(p.name, p.files, p.workingDir, action)
   const asks = {
-    up: { title: `Up project ${p.name}?`, body: 'Tạo lại container nếu cấu hình thay đổi, chạy các container đang dừng.', confirm: 'Up' },
+    up: { title: `Up project ${p.name}?`, body: t('Tạo lại container nếu cấu hình thay đổi, chạy các container đang dừng.'), confirm: 'Up' },
     pullUp: {
       title: `Pull + Up project ${p.name}?`,
-      body: 'Tải image mới nhất theo tag trong compose rồi tạo lại container nếu image thay đổi.',
+      body: t('Tải image mới nhất theo tag trong compose rồi tạo lại container nếu image thay đổi.'),
       confirm: 'Pull + Up',
     },
     restart: {
       title: `Restart project ${p.name}?`,
-      body: `Khởi động lại toàn bộ ${p.containers.length} container của project. Dịch vụ sẽ gián đoạn trong lúc khởi động lại.`,
-      note: jobs.length ? `Job ${jobs.map((c) => c.name).join(', ')} cũng được chạy lại (docker compose restart gồm cả container đã chạy xong).` : undefined,
+      body: t('Khởi động lại toàn bộ {n} container của project. Dịch vụ sẽ gián đoạn trong lúc khởi động lại.', { n: p.containers.length }),
+      note: jobs.length
+        ? t('Job {jobs} cũng được chạy lại (docker compose restart gồm cả container đã chạy xong).', { jobs: jobs.map((c) => c.name).join(', ') })
+        : undefined,
       confirm: 'Restart',
     },
     down: {
       title: `Down project ${p.name}?`,
-      body: `Dừng và xoá ${p.containers.length} container: ${p.containers.map((c) => c.name).join(', ')}.${networks.length ? ` Network ${networks.join(', ')} cũng bị xoá.` : ''}`,
-      note: `Volume được giữ lại${volumes.length ? ` (${volumes.join(', ')})` : ''}, image không bị xoá. Chạy Up để tạo lại container.`,
+      body:
+        t('Dừng và xoá {n} container: {names}.', { n: p.containers.length, names: p.containers.map((c) => c.name).join(', ') }) +
+        (networks.length ? ' ' + t('Network {networks} cũng bị xoá.', { networks: networks.join(', ') }) : ''),
+      note: volumes.length
+        ? t('Volume được giữ lại ({volumes}), image không bị xoá. Chạy Up để tạo lại container.', { volumes: volumes.join(', ') })
+        : t('Volume được giữ lại, image không bị xoá. Chạy Up để tạo lại container.'),
       confirm: 'Down',
       danger: true,
     },
@@ -270,8 +281,9 @@ export function askCompose(ctx: DockerCtx, p: Project, action: ComposeAction) {
 export function ComposeButtons({ ctx, project }: { ctx: DockerCtx; project: Project }) {
   if (!project.found) {
     return (
-      <span className="text-[11.5px] text-muted" title={`Không tìm thấy trên server: ${project.files.join(', ')}. Project có thể đã được chạy từ máy khác hoặc file đã bị chuyển đi.`}>
-        File compose không có trên server
+      <span className="text-[11.5px] text-muted" title={t('Không tìm thấy trên server: {files}. Project có thể đã được chạy từ máy khác hoặc file đã bị chuyển đi.', { files: project.files.join(', ') })}
+      >
+        {t('File compose không có trên server')}
       </span>
     )
   }
@@ -298,8 +310,8 @@ function Details({ ctx, c, containers, onClose }: { ctx: DockerCtx; c: Container
   if (!c) {
     return (
       <div className="flex w-[340px] flex-none flex-col gap-1.5 rounded-xl border border-line bg-surface p-3.5">
-        <span className="font-semibold">Chưa chọn container</span>
-        <span className="leading-relaxed text-muted">Bấm vào một dòng để xem trạng thái, health check, cổng, volume và biến môi trường.</span>
+        <span className="font-semibold">{t('Chưa chọn container')}</span>
+        <span className="leading-relaxed text-muted">{t('Bấm vào một dòng để xem trạng thái, health check, cổng, volume và biến môi trường.')}</span>
       </div>
     )
   }
@@ -308,25 +320,25 @@ function Details({ ctx, c, containers, onClose }: { ctx: DockerCtx; c: Container
   const rows: [string, ReactNode, boolean?, string?][] = [
     [
       'Health check',
-      c.health ? (c.health === 'unhealthy' ? `unhealthy · ${c.healthFailures} lần kiểm tra lỗi liên tiếp` : c.health) : 'Không có',
+      c.health ? (c.health === 'unhealthy' ? t('unhealthy · {n} lần kiểm tra lỗi liên tiếp', { n: c.healthFailures }) : c.health) : t('Không có'),
       false,
       c.health === 'healthy' ? 'var(--success)' : c.health === 'unhealthy' ? 'var(--warn)' : 'var(--muted)',
     ],
-    ['Số lần restart', `${c.restarts} lần`, false, c.restarts > 5 ? 'var(--danger)' : undefined],
+    [t('Số lần restart'), t('{n} lần', { n: c.restarts }), false, c.restarts > 5 ? 'var(--danger)' : undefined],
     ['Restart policy', c.policy, true],
     ['Image', c.image, true],
-    ['Lệnh', c.command || '—', true],
-    ['Ngày tạo', dateTime(c.created)],
+    [t('Lệnh'), c.command || '—', true],
+    [t('Ngày tạo'), dateTime(c.created)],
     ['Network', c.networks.join(', ') || '—', true],
-    ['Project', c.project ? `${c.project}${c.service ? ` · service ${c.service}` : ''}` : 'Container lẻ (docker run)'],
+    ['Project', c.project ? `${c.project}${c.service ? ` · service ${c.service}` : ''}` : t('Container lẻ (docker run)')],
   ]
   const acts: { label: string; icon: LucideIcon; run: () => void; ok: boolean; why?: string; meta?: string; danger?: boolean }[] = [
-    { label: 'Xem log', icon: FileText, run: () => ctx.openLogs(c), ok: true, meta: 'docker logs' },
-    { label: 'Mở Terminal trong container', icon: SquareTerminal, run: () => ctx.terminal('dockerExec', c.name), ok: running, why: 'Container không chạy', meta: 'exec' },
-    { label: 'Khởi động lại', icon: RotateCw, run: () => askRestart(ctx, c, containers), ok: true, meta: 'restart' },
+    { label: t('Xem log'), icon: FileText, run: () => ctx.openLogs(c), ok: true, meta: 'docker logs' },
+    { label: t('Mở Terminal trong container'), icon: SquareTerminal, run: () => ctx.terminal('dockerExec', c.name), ok: running, why: t('Container không chạy'), meta: 'exec' },
+    { label: t('Khởi động lại'), icon: RotateCw, run: () => askRestart(ctx, c, containers), ok: true, meta: 'restart' },
     running
-      ? { label: 'Dừng container', icon: Square, run: () => askStop(ctx, c, containers), ok: true, meta: 'stop', danger: true }
-      : { label: isFinishedJob(c) ? 'Chạy lại' : 'Chạy', icon: Play, run: () => startContainer(ctx, c), ok: true, meta: 'start' },
+      ? { label: t('Dừng container'), icon: Square, run: () => askStop(ctx, c, containers), ok: true, meta: 'stop', danger: true }
+      : { label: isFinishedJob(c) ? t('Chạy lại') : t('Chạy'), icon: Play, run: () => startContainer(ctx, c), ok: true, meta: 'start' },
   ]
 
   return (
@@ -339,7 +351,7 @@ function Details({ ctx, c, containers, onClose }: { ctx: DockerCtx; c: Container
             <span className="text-[11px] text-muted">{upLabel(c)}</span>
           </span>
         </div>
-        <button type="button" title="Đóng" onClick={onClose} className="flex size-6 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-sunken">
+        <button type="button" title={t('Đóng')} onClick={onClose} className="flex size-6 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-sunken">
           <X size={14} strokeWidth={1.8} />
         </button>
       </div>
@@ -378,8 +390,8 @@ function Details({ ctx, c, containers, onClose }: { ctx: DockerCtx; c: Container
         ))}
       </div>
 
-      <Section title="Cổng">
-        {c.ports.length ? <PortList c={c} /> : <span className="text-muted">Không publish cổng nào (nội bộ)</span>}
+      <Section title={t('Cổng#ports')}>
+        {c.ports.length ? <PortList c={c} /> : <span className="text-muted">{t('Không publish cổng nào (nội bộ)')}</span>}
       </Section>
 
       <Section title="Volume">
@@ -387,16 +399,16 @@ function Details({ ctx, c, containers, onClose }: { ctx: DockerCtx; c: Container
           c.mounts.map((m) => (
             <span key={m.destination} className="font-mono text-[11.5px] [overflow-wrap:anywhere] text-ink2 select-text">
               {m.name ?? m.source} → {m.destination}
-              {m.rw ? '' : ' (chỉ đọc)'}
+              {m.rw ? '' : ' (' + t('chỉ đọc') + ')'}
               <span className="text-muted"> · {m.kind}</span>
             </span>
           ))
         ) : (
-          <span className="text-muted">Không gắn volume</span>
+          <span className="text-muted">{t('Không gắn volume')}</span>
         )}
       </Section>
 
-      <Section title="Biến môi trường" hint={c.env.length ? 'bấm để hiện giá trị' : undefined}>
+      <Section title={t('Biến môi trường')} hint={c.env.length ? t('bấm để hiện giá trị') : undefined}>
         {c.env.length ? (
           <div className="flex flex-col overflow-hidden rounded-lg border border-line">
             {c.env.map((e) => {
@@ -414,14 +426,14 @@ function Details({ ctx, c, containers, onClose }: { ctx: DockerCtx; c: Container
                     {e.key}
                   </span>
                   <span className={cx('font-mono text-[11.5px] [overflow-wrap:anywhere]', on ? 'text-ink select-text' : 'text-muted')}>
-                    {on ? e.value || '(trống)' : '••••••••'}
+                    {on ? e.value || t('(trống)') : '••••••••'}
                   </span>
                 </button>
               )
             })}
           </div>
         ) : (
-          <span className="text-muted">Không có</span>
+          <span className="text-muted">{t('Không có')}</span>
         )}
       </Section>
     </div>

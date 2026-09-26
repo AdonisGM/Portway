@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { ArrowDown, ArrowLeft, Copy, Eraser, Pause, Play, RotateCw, WrapText } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useConnections } from '../../app/connections'
+import { locale, t } from '../../i18n'
 import { useToast } from '../../components/toast'
 import { Button, cx } from '../../components/ui/primitives'
 import { SearchInput } from '../../components/ui/search-input'
@@ -105,7 +106,7 @@ export function LogTail({ server, user, path, sudo, onClose }: { server: Server;
       .catch((e) => {
         const err = isAppError(e) ? e : { code: 'unknown', detail: String(e) }
         if (err.code === 'connection_lost' || err.code === 'not_connected') markLost(server.id, user, err)
-        setStatus({ kind: 'ended', error: err.code === 'too_many_tails' ? `Đang theo dõi quá ${err.detail} tệp trên phiên này` : fileError(err) })
+        setStatus({ kind: 'ended', error: err.code === 'too_many_tails' ? t('Đang theo dõi quá {n} tệp trên phiên này', { n: err.detail ?? '' }) : fileError(err) })
       })
     return () => {
       alive = false
@@ -167,7 +168,7 @@ export function LogTail({ server, user, path, sudo, onClose }: { server: Server;
 
   const copyShown = () => {
     const text = shown.map((l) => l.text).join('\n')
-    void copyText(text).then(() => toast({ title: `Đã sao chép ${shown.length} dòng`, detail: path }))
+    void copyText(text).then(() => toast({ title: t('Đã sao chép {n} dòng', { n: shown.length }), detail: path }))
   }
 
   const live = status.kind === 'live'
@@ -176,7 +177,7 @@ export function LogTail({ server, user, path, sudo, onClose }: { server: Server;
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={onClose}>
           <ArrowLeft size={14} strokeWidth={1.8} />
-          Danh sách tệp
+          {t('Danh sách tệp')}
         </Button>
         <div className="flex min-w-[220px] flex-1 flex-col">
           <span className="truncate font-mono text-[12.5px] font-semibold" title={path}>
@@ -188,49 +189,53 @@ export function LogTail({ server, user, path, sudo, onClose }: { server: Server;
               style={{ background: live ? (paused ? 'var(--warn)' : 'var(--success)') : status.kind === 'starting' ? 'var(--muted)' : 'var(--danger)' }}
             />
             {status.kind === 'starting'
-              ? 'Đang mở…'
+              ? t('Đang mở…')
               : status.kind === 'ended'
-                ? (status.error ?? 'Đã dừng')
+                ? (status.error ?? t('Đã dừng'))
                 : paused
-                  ? `Tạm dừng${heldCount ? ` · ${heldCount} dòng mới đang chờ` : ''}`
-                  : `Đang theo dõi · tail -F${sudo ? ' qua sudo' : ''}`}
-            {dropped > 0 && ` · bỏ qua ${dropped.toLocaleString('vi-VN')} dòng vì ghi quá nhanh`}
+                  ? heldCount
+                    ? t('Tạm dừng · {n} dòng mới đang chờ', { n: heldCount })
+                    : t('Tạm dừng#status')
+                  : sudo
+                    ? t('Đang theo dõi · tail -F qua sudo')
+                    : t('Đang theo dõi · tail -F')}
+            {dropped > 0 && t(' · bỏ qua {n} dòng vì ghi quá nhanh', { n: dropped.toLocaleString(locale()) })}
           </span>
         </div>
         {status.kind === 'ended' ? (
           <Button size="sm" onClick={restart}>
             <RotateCw size={14} strokeWidth={1.8} />
-            Theo dõi lại
+            {t('Theo dõi lại')}
           </Button>
         ) : (
           <Button size="sm" disabled={!live} onClick={() => (paused ? resume() : setPaused(true))}>
             {paused ? <Play size={14} strokeWidth={1.8} /> : <Pause size={14} strokeWidth={1.8} />}
-            {paused ? 'Tiếp tục' : 'Tạm dừng'}
+            {paused ? t('Tiếp tục') : t('Tạm dừng')}
           </Button>
         )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <SearchInput value={query} onChange={setQuery} placeholder="Lọc dòng (chữ, hoặc /regex/)" className={cx('w-72 min-w-0', bad && '[&_input]:text-danger')} />
+        <SearchInput value={query} onChange={setQuery} placeholder={t('Lọc dòng (chữ, hoặc /regex/)')} className={cx('w-72 min-w-0', bad && '[&_input]:text-danger')} />
         <SegmentedControl
           value={level}
           onChange={setLevel}
           options={[
-            { id: 'all', label: `Tất cả ${lines.length}` },
-            { id: 'error', label: `Lỗi ${errors}` },
-            { id: 'warn', label: `Lỗi + cảnh báo ${errors + warns}` },
+            { id: 'all', label: t('Tất cả {n}', { n: lines.length }) },
+            { id: 'error', label: t('Lỗi {n}', { n: errors }) },
+            { id: 'warn', label: t('Lỗi + cảnh báo {n}', { n: errors + warns }) },
           ]}
         />
         <span className="flex-1" />
-        {(query || level !== 'all') && <span className="num text-[11px] text-muted">{shown.length} dòng khớp</span>}
-        <IconButton title={wrap ? 'Không ngắt dòng' : 'Ngắt dòng dài'} on={wrap} onClick={() => setWrap(!wrap)}>
+        {(query || level !== 'all') && <span className="num text-[11px] text-muted">{t('{n} dòng khớp', { n: shown.length })}</span>}
+        <IconButton title={wrap ? t('Không ngắt dòng') : t('Ngắt dòng dài')} on={wrap} onClick={() => setWrap(!wrap)}>
           <WrapText size={14} strokeWidth={1.8} />
         </IconButton>
-        <IconButton title="Sao chép các dòng đang hiện" onClick={copyShown}>
+        <IconButton title={t('Sao chép các dòng đang hiện')} onClick={copyShown}>
           <Copy size={14} strokeWidth={1.8} />
         </IconButton>
         <IconButton
-          title="Xoá màn hình (không đụng tới tệp)"
+          title={t('Xoá màn hình (không đụng tới tệp)')}
           onClick={() => {
             setLines([])
             held.current = []
@@ -253,7 +258,7 @@ export function LogTail({ server, user, path, sudo, onClose }: { server: Server;
         <div ref={box} onScroll={onScroll} className="min-h-0 flex-1 overflow-auto overscroll-contain py-1.5 font-mono text-[11.5px] leading-[1.55]">
           {shown.length === 0 ? (
             <div className="p-7 text-center font-sans text-muted">
-              {status.kind === 'starting' ? 'Đang đọc…' : lines.length ? 'Không có dòng nào khớp bộ lọc.' : 'Tệp chưa có dòng nào. Dòng mới sẽ hiện ở đây ngay khi được ghi.'}
+              {status.kind === 'starting' ? t('Đang đọc…') : lines.length ? t('Không có dòng nào khớp bộ lọc.') : t('Tệp chưa có dòng nào. Dòng mới sẽ hiện ở đây ngay khi được ghi.')}
             </div>
           ) : (
             shown.map((l) => (
@@ -275,7 +280,7 @@ export function LogTail({ server, user, path, sudo, onClose }: { server: Server;
             className="absolute right-4 bottom-3 flex cursor-pointer items-center gap-1.5 rounded-full border border-line2 bg-surface px-3 py-1.5 text-[11.5px] shadow-pop"
           >
             <ArrowDown size={13} strokeWidth={1.8} />
-            Xuống dòng mới nhất
+            {t('Xuống dòng mới nhất')}
           </button>
         )}
       </div>

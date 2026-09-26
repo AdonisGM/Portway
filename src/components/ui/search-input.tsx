@@ -1,12 +1,13 @@
 // Ported from HomeUI (home/apps/web/src/components/ui/toolbar.tsx).
 import { Search, X } from 'lucide-react'
 import { cx } from './primitives'
+import { t } from '../../i18n'
 
 /** The one search box of the app. */
 export function SearchInput({
   value,
   onChange,
-  placeholder = 'Tìm',
+  placeholder = t('Tìm'),
   className,
 }: {
   value: string
@@ -33,7 +34,7 @@ export function SearchInput({
         className="w-full min-w-0 border-none bg-transparent text-[12.5px] text-ink outline-none select-text"
       />
       {value ? (
-        <button type="button" onClick={() => onChange('')} title="Xoá ô tìm" className="flex-none cursor-pointer text-muted hover:text-ink">
+        <button type="button" onClick={() => onChange('')} title={t('Xoá ô tìm')} className="flex-none cursor-pointer text-muted hover:text-ink">
           <X size={13} strokeWidth={2} />
         </button>
       ) : null}

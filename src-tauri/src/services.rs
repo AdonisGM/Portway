@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::ssh::{exec_priv, shell_quote, shown_as_run, Sessions, MARK};
 use crate::trace;
 
@@ -80,7 +81,7 @@ pub(crate) fn parse_all(out: &str) -> Vec<UnitBrief> {
 #[tauri::command]
 pub async fn services_all(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<Vec<UnitBrief>> {
     let session = sessions.get(&server_id, &user)?;
-    let out = trace::labelled("Dịch vụ · danh sách unit", exec_priv(&session, ALL_SCRIPT, READ_TIMEOUT)).await?;
+    let out = trace::labelled(tr("Dịch vụ · danh sách unit", "Services · list units"), exec_priv(&session, ALL_SCRIPT, READ_TIMEOUT)).await?;
     Ok(parse_all(&out.stdout))
 }
 
@@ -167,7 +168,7 @@ pub async fn services_status(sessions: tauri::State<'_, Sessions>, server_id: St
     let session = sessions.get(&server_id, &user)?;
     let list = units.join(" ");
     let cmd = format!("systemctl show --no-pager --timestamp=unix -p {PROPS} -- {list}");
-    let out = trace::labelled("Dịch vụ · trạng thái unit", exec_priv(&session, &cmd, READ_TIMEOUT)).await?;
+    let out = trace::labelled(tr("Dịch vụ · trạng thái unit", "Services · unit status"), exec_priv(&session, &cmd, READ_TIMEOUT)).await?;
     if out.code != Some(0) && out.stdout.trim().is_empty() {
         return Err(AppError::detail("systemctl", out.stderr.trim()));
     }
@@ -251,7 +252,7 @@ pub async fn services_journal(
     // and exits 0; say so instead of showing an empty log. Checked where the
     // command runs, so sudo counts.
     let script = format!("{cmd}; echo {MARK}; id -u; id -Gn");
-    let out = trace::labelled("Dịch vụ · đọc journal", exec_priv(&session, &script, READ_TIMEOUT)).await?;
+    let out = trace::labelled(tr("Dịch vụ · đọc journal", "Services · read journal"), exec_priv(&session, &script, READ_TIMEOUT)).await?;
     let (body, who) = out.stdout.split_once(MARK).unwrap_or((&out.stdout, ""));
     let mut page = parse_journal(body, &out.stderr);
     page.limited |= !can_read_journal(who);
@@ -266,7 +267,7 @@ pub async fn services_journal(
 pub async fn services_unit_file(sessions: tauri::State<'_, Sessions>, server_id: String, user: String, unit: String) -> AppResult<String> {
     check_units(std::slice::from_ref(&unit))?;
     let session = sessions.get(&server_id, &user)?;
-    let out = trace::labelled("Dịch vụ · đọc file unit", exec_priv(&session, &format!("systemctl cat --no-pager -- {unit}"), READ_TIMEOUT)).await?;
+    let out = trace::labelled(tr("Dịch vụ · đọc file unit", "Services · read unit file"), exec_priv(&session, &format!("systemctl cat --no-pager -- {unit}"), READ_TIMEOUT)).await?;
     if out.code != Some(0) {
         return Err(AppError::detail("systemctl", out.stderr.trim()));
     }
@@ -302,7 +303,7 @@ pub async fn services_action(
     }
     let log = format!("service{}{}", action[..1].to_uppercase(), &action[1..]);
     let shown = shown_as_run(&session, &cmd);
-    let out = trace::labelled("Dịch vụ · thao tác", exec_priv(&session, &format!("{cmd} 2>&1"), Duration::from_secs(120))).await;
+    let out = trace::labelled(tr("Dịch vụ · thao tác", "Services · action"), exec_priv(&session, &format!("{cmd} 2>&1"), Duration::from_secs(120))).await;
     let out = match out {
         Ok(o) => o,
         Err(e) => {

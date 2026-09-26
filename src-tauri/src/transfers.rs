@@ -16,6 +16,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::trace;
 use crate::files::{join, sftp, sftp_err};
 use crate::paths::home_dir;
@@ -378,24 +379,25 @@ fn spawn(state: Arc<Transfers>, session: Arc<Session>, dest: Option<Arc<Session>
         let Some(first) = state.list.lock().unwrap().iter().find(|t| t.id == id).cloned() else { return };
         let job = first.job.clone();
         let (action, cmd, label) = match &job {
-            Job::Download { remote, .. } => ("download", format!("sftp get -r {} {}", shell_quote(remote), first.to), format!("Tải xuống {}", first.name)),
+            Job::Download { remote, .. } => ("download", format!("sftp get -r {} {}", shell_quote(remote), first.to), tr(format!("Tải xuống {}", first.name), format!("Download {}", first.name))),
             Job::Upload { local, remote_dir, .. } => (
                 "upload",
                 format!("sftp put -r {} {}", shell_quote(&local.to_string_lossy()), shell_quote(remote_dir)),
-                format!("Tải lên {}", first.name),
+                tr(format!("Tải lên {}", first.name), format!("Upload {}", first.name)),
             ),
             Job::Copy { remote, dest_dir, .. } => {
                 let d = dest.as_deref();
                 (
                     "copy",
                     format!(
-                        "sftp get -r {} | sftp put -r {}@{}:{}  (qua máy này)",
+                        "sftp get -r {} | sftp put -r {}@{}:{}  {}",
                         shell_quote(remote),
                         d.map(|d| d.user.as_str()).unwrap_or("?"),
                         first.to.split(':').next().unwrap_or("?"),
-                        shell_quote(dest_dir)
+                        shell_quote(dest_dir),
+                        tr("(qua máy này)", "(via this Mac)")
                     ),
-                    format!("Chép {} sang {}", first.name, first.to),
+                    tr(format!("Chép {} sang {}", first.name, first.to), format!("Copy {} to {}", first.name, first.to)),
                 )
             }
         };
@@ -407,7 +409,7 @@ fn spawn(state: Arc<Transfers>, session: Arc<Session>, dest: Option<Arc<Session>
                 t.status = Status::Cancelled;
                 t.finished_at = Some(now_ms());
             });
-            span.fail("Đã huỷ trước khi chạy", |_| {});
+            span.fail(tr("Đã huỷ trước khi chạy", "Cancelled before it started"), |_| {});
             return;
         }
         span.running();
@@ -444,7 +446,7 @@ fn spawn(state: Arc<Transfers>, session: Arc<Session>, dest: Option<Arc<Session>
                     t.speed = 0.0;
                     t.finished_at = Some(now_ms());
                 });
-                span.fail(if cancelled { "Đã huỷ".to_string() } else { msg.clone() }, |e| e.out_bytes = Some(done));
+                span.fail(if cancelled { tr("Đã huỷ", "Cancelled") } else { msg.clone() }, |e| e.out_bytes = Some(done));
                 if !cancelled {
                     audit.record(&audit_server, &audit_user, action, cmd, false, Some(msg));
                 }

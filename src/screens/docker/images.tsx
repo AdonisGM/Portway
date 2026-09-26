@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../../components/ui/modal'
 import { Button, Chip, cx, TONES } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import { isAppError, type AppError, type DockerImage } from '../../lib/api'
 import { formatBytes } from '../server/format'
 import { Header, type DockerCtx } from './docker-screen'
@@ -41,13 +42,13 @@ function useImages(ctx: DockerCtx) {
 export function ImagesView({ ctx, onPrune }: { ctx: DockerCtx; onPrune: () => void }) {
   const { images, error } = useImages(ctx)
   const ids = new Set(images?.map((i) => i.id))
-  const sub = images ? `${ids.size} image · ${formatBytes(totalSize(images))}` : error ? '' : 'Đang đọc…'
+  const sub = images ? `${t('{n} image', { n: ids.size })} · ${formatBytes(totalSize(images))}` : error ? '' : t('Đang đọc…')
 
   return (
     <>
       <Header title="Docker · Images" sub={sub}>
         <Button size="sm" onClick={onPrune} disabled={!images}>
-          Dọn image thừa
+          {t('Dọn image thừa')}
         </Button>
       </Header>
       {error && <span className="font-mono text-[11.5px] text-danger select-text">{error.detail ?? error.code}</span>}
@@ -56,9 +57,9 @@ export function ImagesView({ ctx, onPrune }: { ctx: DockerCtx; onPrune: () => vo
           <div className="sticky top-0 z-[1] grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted" style={{ gridTemplateColumns: COLS }}>
             <span>Image</span>
             <span>ID</span>
-            <span className="text-right">Dung lượng</span>
-            <span>Ngày tạo</span>
-            <span>Đang dùng</span>
+            <span className="text-right">{t('Dung lượng')}</span>
+            <span>{t('Ngày tạo')}</span>
+            <span>{t('Đang dùng')}</span>
           </div>
           {(images ?? []).map((i) => {
             const none = i.repo === '<none>'
@@ -72,21 +73,24 @@ export function ImagesView({ ctx, onPrune }: { ctx: DockerCtx; onPrune: () => vo
                 <span className="num text-muted">{imageDate(i.created)}</span>
                 <span className="min-w-0">
                   <Chip tone={none && !i.usedBy.length ? TONES.warn : i.usedBy.length ? TONES.success : TONES.neutral} className="max-w-full truncate">
-                    {i.usedBy.length ? `đang dùng bởi ${i.usedBy.join(', ')}` : none ? 'lơ lửng' : 'không dùng'}
+                    {i.usedBy.length ? t('đang dùng bởi {containers}', { containers: i.usedBy.join(', ') }) : none ? t('lơ lửng') : t('không dùng')}
                   </Chip>
                 </span>
               </div>
             )
           })}
-          {images && !images.length && <div className="p-7 text-center text-muted">Chưa có image nào.</div>}
+          {images && !images.length && <div className="p-7 text-center text-muted">{t('Chưa có image nào.')}</div>}
         </div>
         {images && images.length > 0 && (
           <div className="flex flex-none flex-wrap items-center gap-3 border-t border-line bg-raised px-3.5 py-2 text-[11.5px] text-muted">
             <span className="flex-1">
-              {ids.size} image · tổng {formatBytes(totalSize(images))}
+              {t('{n} image', { n: ids.size })} · {t('tổng {size}', { size: formatBytes(totalSize(images)) })}
             </span>
             <span>
-              Lơ lửng {formatBytes(totalSize(dangling(images)))} · không dùng {formatBytes(totalSize(unused(images).filter((i) => i.repo !== '<none>')))}
+              {t('Lơ lửng {dangling} · không dùng {unused}', {
+                dangling: formatBytes(totalSize(dangling(images))),
+                unused: formatBytes(totalSize(unused(images).filter((i) => i.repo !== '<none>'))),
+              })}
             </span>
           </div>
         )}
@@ -111,7 +115,7 @@ export function PruneDialog({ ctx, onClose }: { ctx: DockerCtx; onClose: () => v
     setFail(null)
     try {
       const reclaimed = await ctx.api.dockerImagePrune(ctx.server.id, ctx.user, all)
-      ctx.toast({ title: `Đã thu hồi ${reclaimed}`, detail: command })
+      ctx.toast({ title: t('Đã thu hồi {size}', { size: reclaimed }), detail: command })
       onClose()
       await ctx.reload()
     } catch (e) {
@@ -122,11 +126,13 @@ export function PruneDialog({ ctx, onClose }: { ctx: DockerCtx; onClose: () => v
   }
 
   const options: { id: boolean; label: string; desc: string; warn?: boolean }[] = [
-    { id: false, label: 'Chỉ image lơ lửng (an toàn)', desc: 'Image không có tag, thường là bản build cũ bị ghi đè. Không container nào dùng.' },
+    { id: false, label: t('Chỉ image lơ lửng (an toàn)'), desc: t('Image không có tag, thường là bản build cũ bị ghi đè. Không container nào dùng.') },
     {
       id: true,
-      label: 'Tất cả image không dùng',
-      desc: `Kể cả image còn tag mà không container nào dùng, có thể là bản cần để rollback${example ? ` (ví dụ ${refOf(example)})` : ''}.`,
+      label: t('Tất cả image không dùng'),
+      desc: example
+        ? t('Kể cả image còn tag mà không container nào dùng, có thể là bản cần để rollback (ví dụ {ref}).', { ref: refOf(example) })
+        : t('Kể cả image còn tag mà không container nào dùng, có thể là bản cần để rollback.'),
       warn: true,
     },
   ]
@@ -136,15 +142,15 @@ export function PruneDialog({ ctx, onClose }: { ctx: DockerCtx; onClose: () => v
       open
       onClose={() => !pending && onClose()}
       width={540}
-      title="Dọn image thừa"
-      subtitle={`docker image prune trên ${ctx.server.name}`}
+      title={t('Dọn image thừa')}
+      subtitle={t('docker image prune trên {server}', { server: ctx.server.name })}
       footer={
         <>
           <Button onClick={onClose} disabled={pending}>
-            Huỷ
+            {t('Huỷ')}
           </Button>
           <Button variant="danger" onClick={() => void go()} disabled={pending || !count}>
-            {pending ? 'Đang xoá…' : `Xoá ${count} image`}
+            {pending ? t('Đang xoá…') : t('Xoá {n} image', { n: count })}
           </Button>
         </>
       }
@@ -171,9 +177,9 @@ export function PruneDialog({ ctx, onClose }: { ctx: DockerCtx; onClose: () => v
         })}
       </div>
       <div className="flex max-h-44 flex-col overflow-auto rounded-lg border border-line">
-        {!images && !error && <span className="px-2.5 py-2 text-muted">Đang đọc danh sách image…</span>}
+        {!images && !error && <span className="px-2.5 py-2 text-muted">{t('Đang đọc danh sách image…')}</span>}
         {error && <span className="px-2.5 py-2 text-danger">{error.detail ?? error.code}</span>}
-        {images && !list.length && <span className="px-2.5 py-2 text-muted">Không có image nào để xoá.</span>}
+        {images && !list.length && <span className="px-2.5 py-2 text-muted">{t('Không có image nào để xoá.')}</span>}
         {list.map((i) => (
           <div key={`${i.id}|${refOf(i)}`} className="flex items-center gap-3 border-t border-line px-2.5 py-1.5 first:border-t-0">
             <span className="flex-1 truncate font-mono text-[11.5px]">
@@ -186,9 +192,9 @@ export function PruneDialog({ ctx, onClose }: { ctx: DockerCtx; onClose: () => v
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
         <span className="flex-1 font-medium">
-          Xoá {count} image · thu hồi khoảng {formatBytes(totalSize(list))}
+          {t('Xoá {n} image · thu hồi khoảng {size}', { n: count, size: formatBytes(totalSize(list)) })}
         </span>
-        <span className="text-muted">Không xoá volume.</span>
+        <span className="text-muted">{t('Không xoá volume.')}</span>
       </div>
       <span className="rounded-md bg-sunken px-2.5 py-2 font-mono text-[11.5px] select-text">{command}</span>
       {fail && <span className="rounded-md bg-danger-soft px-2 py-1.5 font-mono text-[11.5px] break-all text-danger select-text">{fail}</span>}

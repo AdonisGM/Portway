@@ -5,6 +5,7 @@ import { useServers } from '../../app/servers'
 import { useToast } from '../../components/toast'
 import { TextInput } from '../../components/ui/form-controls'
 import { Button, Chip, cx } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import { api, isAppError, type JournalLine, type Server, type ServiceAction, type Unit } from '../../lib/api'
 import type { ActionAsk } from '../server/action-confirm'
 import { formatBytes } from '../server/format'
@@ -58,21 +59,21 @@ export function UnitsView({
       await api.servicesAction(server.id, user, unit, action)
       toast({ title, detail: viaSudo + serviceCommand(unit, action) })
     } catch (e) {
-      toast({ title: 'Không chạy được lệnh', detail: errText(e) })
+      toast({ title: t('Không chạy được lệnh'), detail: errText(e) })
     }
     await reload()
   }
 
   const restart = (u: Unit) =>
     onAsk({
-      title: `Khởi động lại ${u.name}?`,
+      title: t('Khởi động lại {name}?', { name: u.name }),
       body: isSsh(u.name)
-        ? 'Phiên SSH đang mở vẫn giữ. Nếu cấu hình sshd đang lỗi, bạn có thể không kết nối lại được.'
+        ? t('Phiên SSH đang mở vẫn giữ. Nếu cấu hình sshd đang lỗi, bạn có thể không kết nối lại được.')
         : u.name === 'docker.service'
-          ? 'Tất cả container sẽ dừng rồi chạy lại theo restart policy.'
-          : 'Dịch vụ gián đoạn trong lúc khởi động lại.',
+          ? t('Tất cả container sẽ dừng rồi chạy lại theo restart policy.')
+          : t('Dịch vụ gián đoạn trong lúc khởi động lại.'),
       command: serviceCommand(u.name, 'restart'),
-      confirm: 'Khởi động lại',
+      confirm: t('Khởi động lại'),
       run: async () => {
         await api.servicesAction(server.id, user, u.name, 'restart')
         await reload()
@@ -83,11 +84,11 @@ export function UnitsView({
     if (isSsh(u.name)) return setSshStop(u.name)
     const n = stopNote(u.name)
     onAsk({
-      title: `Dừng ${u.name}?`,
+      title: t('Dừng {name}?', { name: u.name }),
       body: n.body,
       note: n.note,
       command: serviceCommand(u.name, 'stop'),
-      confirm: 'Dừng',
+      confirm: t('Dừng'),
       danger: true,
       run: async () => {
         await api.servicesAction(server.id, user, u.name, 'stop')
@@ -96,7 +97,7 @@ export function UnitsView({
     })
   }
 
-  const start = (u: Unit) => void runNow(u.name, 'start', `Đã chạy ${u.name}`)
+  const start = (u: Unit) => void runNow(u.name, 'start', t('Đã chạy {name}', { name: u.name }))
   const unwatch = (u: Unit) => {
     if (selected === u.name) setSelected(null)
     // Drop the unit and any alias of it that was watched under that name.
@@ -104,9 +105,9 @@ export function UnitsView({
   }
   const toggleBoot = (u: Unit) => {
     const b = bootOf(u.fileState)
-    if (!b.toggleable) return toast({ title: 'Không bật/tắt được', detail: b.hint })
-    if (!priv) return toast({ title: 'Cần quyền root', detail: 'Dùng sudo hoặc kết nối bằng root để bật/tắt khi khởi động' })
-    void runNow(u.name, b.on ? 'disable' : 'enable', b.on ? 'Đã tắt tự khởi động' : 'Đã bật tự khởi động')
+    if (!b.toggleable) return toast({ title: t('Không bật/tắt được'), detail: b.hint })
+    if (!priv) return toast({ title: t('Cần quyền root'), detail: t('Dùng sudo hoặc kết nối bằng root để bật/tắt khi khởi động') })
+    void runNow(u.name, b.on ? 'disable' : 'enable', b.on ? t('Đã tắt tự khởi động') : t('Đã bật tự khởi động'))
   }
 
   return (
@@ -116,9 +117,9 @@ export function UnitsView({
           <div className="min-w-[760px]">
             <div className="sticky top-0 z-[2] grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted" style={{ gridTemplateColumns: COLS }}>
               <span>Unit</span>
-              <span>Mô tả</span>
-              <span>Trạng thái</span>
-              <span>Khi khởi động</span>
+              <span>{t('Mô tả')}</span>
+              <span>{t('Trạng thái')}</span>
+              <span>{t('Khi khởi động')}</span>
               <span className="text-right">RAM</span>
               <span />
             </div>
@@ -159,7 +160,15 @@ export function UnitsView({
                     <button
                       type="button"
                       onClick={() => toggleBoot(u)}
-                      title={!boot.toggleable ? boot.hint : !priv ? 'Cần quyền root' : boot.on ? 'Đang tự bật khi khởi động · bấm để tắt' : 'Không tự bật · bấm để bật'}
+                      title={
+                        !boot.toggleable
+                          ? boot.hint
+                          : !priv
+                            ? t('Cần quyền root')
+                            : boot.on
+                              ? t('Đang tự bật khi khởi động · bấm để tắt')
+                              : t('Không tự bật · bấm để bật')
+                      }
                       className={cx(
                         'flex h-[18px] w-8 flex-none items-center rounded-full border p-px transition-colors',
                         boot.on ? 'justify-end border-accent bg-accent' : 'justify-start border-line2 bg-sunken',
@@ -168,7 +177,7 @@ export function UnitsView({
                     >
                       <span className={cx('size-3.5 rounded-full', boot.on ? 'bg-accent-fg' : 'bg-muted')} />
                     </button>
-                    <span className="truncate text-[11px] text-muted">{boot.toggleable ? (boot.on ? 'tự bật' : 'tắt') : u.fileState}</span>
+                    <span className="truncate text-[11px] text-muted">{boot.toggleable ? (boot.on ? t('tự bật') : t('tắt#boot')) : u.fileState}</span>
                   </span>
                   <span className="num text-right">{u.memory != null ? formatBytes(u.memory) : '—'}</span>
                   <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-end gap-1">
@@ -179,12 +188,12 @@ export function UnitsView({
                       open={menu === u.name}
                       setOpen={(v) => setMenu(v ? u.name : null)}
                       items={[
-                        { label: 'Khởi động lại', run: () => restart(u), ok: priv, why: 'Cần quyền root' },
+                        { label: t('Khởi động lại'), run: () => restart(u), ok: priv, why: t('Cần quyền root') },
                         running
-                          ? { label: 'Dừng', run: () => stop(u), ok: priv, why: 'Cần quyền root', danger: true }
-                          : { label: 'Chạy', run: () => start(u), ok: priv, why: 'Cần quyền root' },
-                        { label: 'Xem file unit', run: () => setFile(u.name), ok: u.loadState !== 'not-found' },
-                        { label: 'Bỏ theo dõi', run: () => unwatch(u), ok: true },
+                          ? { label: t('Dừng'), run: () => stop(u), ok: priv, why: t('Cần quyền root'), danger: true }
+                          : { label: t('Chạy'), run: () => start(u), ok: priv, why: t('Cần quyền root') },
+                        { label: t('Xem file unit'), run: () => setFile(u.name), ok: u.loadState !== 'not-found' },
+                        { label: t('Bỏ theo dõi'), run: () => unwatch(u), ok: true },
                       ]}
                     />
                   </div>
@@ -193,10 +202,10 @@ export function UnitsView({
             })}
             {units && !rows.length && (
               <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-                <span className="text-[14px] font-semibold">{q ? `Không có unit nào khớp "${query.trim()}"` : 'Chưa theo dõi unit nào'}</span>
-                <span className="text-muted">Chọn các unit bạn muốn thấy ở đây.</span>
+                <span className="text-[14px] font-semibold">{q ? t('Không có unit nào khớp "{q}"', { q: query.trim() }) : t('Chưa theo dõi unit nào')}</span>
+                <span className="text-muted">{t('Chọn các unit bạn muốn thấy ở đây.')}</span>
                 <Button size="xs" onClick={onPick}>
-                  + Theo dõi unit
+                  + {t('Theo dõi unit')}
                 </Button>
               </div>
             )}
@@ -217,7 +226,7 @@ export function UnitsView({
           stop: () => sel && stop(sel),
           start: () => sel && start(sel),
           unwatch: () => sel && unwatch(sel),
-          resetFailed: () => sel && void runNow(sel.name, 'resetFailed', 'Đã xoá trạng thái lỗi'),
+          resetFailed: () => sel && void runNow(sel.name, 'resetFailed', t('Đã xoá trạng thái lỗi')),
         }}
       />
 
@@ -231,7 +240,7 @@ export function UnitsView({
           unit={sshStop}
           onClose={() => setSshStop(null)}
           onDone={() => {
-            toast({ title: `Đã dừng ${sshStop}`, detail: viaSudo + serviceCommand(sshStop, 'stop') })
+            toast({ title: t('Đã dừng {name}', { name: sshStop }), detail: viaSudo + serviceCommand(sshStop, 'stop') })
             setSshStop(null)
             void reload()
           }}
@@ -270,8 +279,8 @@ function Details({ server, user, priv, unit, onClose, actions }: { server: Serve
   if (!unit) {
     return (
       <div className="flex w-[340px] flex-none flex-col gap-1.5 rounded-xl border border-line bg-surface p-3.5">
-        <span className="font-semibold">Chưa chọn unit</span>
-        <span className="leading-relaxed text-muted">Bấm vào một dòng để xem trạng thái, PID, log lỗi và file unit.</span>
+        <span className="font-semibold">{t('Chưa chọn unit')}</span>
+        <span className="leading-relaxed text-muted">{t('Bấm vào một dòng để xem trạng thái, PID, log lỗi và file unit.')}</span>
       </div>
     )
   }
@@ -280,22 +289,28 @@ function Details({ server, user, priv, unit, onClose, actions }: { server: Serve
   const boot = bootOf(unit.fileState)
   const running = unit.activeState === 'active' || unit.activeState === 'activating' || unit.activeState === 'reloading'
   const since =
-    unit.activeState === 'active' ? `chạy từ ${localTime(unit.activeSince)}` : unit.inactiveSince ? `${failed ? 'lỗi lúc' : 'dừng lúc'} ${localTime(unit.inactiveSince)}` : ''
+    unit.activeState === 'active'
+      ? t('chạy từ {time}', { time: localTime(unit.activeSince) })
+      : unit.inactiveSince
+        ? failed
+          ? t('lỗi lúc {time}', { time: localTime(unit.inactiveSince) })
+          : t('dừng lúc {time}', { time: localTime(unit.inactiveSince) })
+        : ''
   const rows: [string, ReactNode, boolean?, string?][] = [
-    ['Chạy từ', unit.activeState === 'active' ? `${localTime(unit.activeSince)} (giờ máy bạn)` : '—'],
+    [t('Chạy từ'), unit.activeState === 'active' ? t('{time} (giờ máy bạn)', { time: localTime(unit.activeSince) }) : '—'],
     ['PID', unit.mainPid ?? '—', true],
     ['RAM', unit.memory != null ? formatBytes(unit.memory) : '—'],
-    ['Số lần restart', `${unit.restarts} lần`, false, unit.restarts > 3 ? 'var(--danger)' : undefined],
-    ['Khi khởi động', `${unit.fileState || '—'}${boot.toggleable ? (boot.on ? ' · tự bật' : ' · không tự bật') : ''}`],
-    ['Chạy bằng user', unit.runAs ?? 'root', true],
+    [t('Số lần restart'), t('{n} lần', { n: unit.restarts }), false, unit.restarts > 3 ? 'var(--danger)' : undefined],
+    [t('Khi khởi động'), (unit.fileState || '—') + (boot.toggleable ? ' · ' + (boot.on ? t('tự bật') : t('không tự bật')) : '')],
+    [t('Chạy bằng user'), unit.runAs ?? 'root', true],
   ]
   const acts: { label: string; icon: LucideIcon; run: () => void; ok: boolean; why?: string; meta?: string; danger?: boolean }[] = [
-    { label: 'Xem log', icon: FileText, run: actions.journal, ok: true, meta: 'journalctl' },
-    { label: 'Khởi động lại', icon: RotateCw, run: actions.restart, ok: priv, why: 'Cần quyền root', meta: 'restart' },
+    { label: t('Xem log'), icon: FileText, run: actions.journal, ok: true, meta: 'journalctl' },
+    { label: t('Khởi động lại'), icon: RotateCw, run: actions.restart, ok: priv, why: t('Cần quyền root'), meta: 'restart' },
     running
-      ? { label: 'Dừng', icon: Square, run: actions.stop, ok: priv, why: 'Cần quyền root', meta: 'stop', danger: true }
-      : { label: 'Chạy', icon: Play, run: actions.start, ok: priv, why: 'Cần quyền root', meta: 'start' },
-    { label: 'Bỏ theo dõi', icon: EyeOff, run: actions.unwatch, ok: true },
+      ? { label: t('Dừng'), icon: Square, run: actions.stop, ok: priv, why: t('Cần quyền root'), meta: 'stop', danger: true }
+      : { label: t('Chạy'), icon: Play, run: actions.start, ok: priv, why: t('Cần quyền root'), meta: 'start' },
+    { label: t('Bỏ theo dõi'), icon: EyeOff, run: actions.unwatch, ok: true },
   ]
 
   return (
@@ -308,13 +323,13 @@ function Details({ server, user, priv, unit, onClose, actions }: { server: Serve
             <span className="text-[11px] text-muted">{since}</span>
           </span>
         </div>
-        <button type="button" title="Đóng" onClick={onClose} className="flex size-6 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-sunken">
+        <button type="button" title={t('Đóng')} onClick={onClose} className="flex size-6 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-sunken">
           <X size={14} strokeWidth={1.8} />
         </button>
       </div>
 
       <div className="flex flex-col gap-1">
-        <span className="text-[11px] text-muted">Tên hiển thị</span>
+        <span className="text-[11px] text-muted">{t('Tên hiển thị')}</span>
         {editing ? (
           <form
             className="flex items-center gap-1.5"
@@ -325,7 +340,7 @@ function Details({ server, user, priv, unit, onClose, actions }: { server: Serve
           >
             <TextInput value={draft} onChange={setDraft} placeholder={unit.name.replace(/\.service$/, '')} autoFocus />
             <Button size="xs" variant="primary" type="submit">
-              Lưu
+              {t('Lưu')}
             </Button>
           </form>
         ) : (
@@ -339,7 +354,7 @@ function Details({ server, user, priv, unit, onClose, actions }: { server: Serve
                 setEditing(true)
               }}
             >
-              Sửa
+              {t('Sửa')}
             </Button>
           </div>
         )}
@@ -352,12 +367,18 @@ function Details({ server, user, priv, unit, onClose, actions }: { server: Serve
             <span className="flex-1 font-semibold text-danger">
               {st.label} · {localTime(unit.inactiveSince)}
             </span>
-            <Button size="xs" onClick={actions.resetFailed} disabled={!priv} title={priv ? 'systemctl reset-failed' : 'Cần quyền root'}>
-              Xoá trạng thái lỗi
+            <Button size="xs" onClick={actions.resetFailed} disabled={!priv} title={priv ? 'systemctl reset-failed' : t('Cần quyền root')}>
+              {t('Xoá trạng thái lỗi')}
             </Button>
           </div>
           <pre className="m-0 max-h-48 overflow-auto rounded-md bg-surface/60 px-2 py-1.5 font-mono text-[11px] leading-[1.5] break-all whitespace-pre-wrap text-ink2 select-text">
-            {tail === undefined ? 'Đang đọc journal…' : tail === null ? `User ${user} không được đọc journal hệ thống. Bật sudo để xem log lỗi.` : tail.length ? tail.map((l) => l.message).join('\n') : 'Journal chưa có dòng nào.'}
+            {tail === undefined
+              ? t('Đang đọc journal…')
+              : tail === null
+                ? t('User {user} không được đọc journal hệ thống. Bật sudo để xem log lỗi.', { user })
+                : tail.length
+                  ? tail.map((l) => l.message).join('\n')
+                  : t('Journal chưa có dòng nào.')}
           </pre>
         </div>
       )}
@@ -397,13 +418,13 @@ function Details({ server, user, priv, unit, onClose, actions }: { server: Serve
       </div>
 
       <div className="flex flex-col gap-1">
-        <span className="text-[11px] tracking-[.06em] text-muted uppercase">File unit</span>
+        <span className="text-[11px] tracking-[.06em] text-muted uppercase">{t('File unit')}</span>
         <div className="flex items-center gap-2">
           <span className="flex-1 truncate font-mono text-[11.5px] text-ink2 select-text" title={unit.fragmentPath}>
             {unit.fragmentPath || '—'}
           </span>
           <Button size="xs" variant="ghost" onClick={actions.file} disabled={!unit.fragmentPath}>
-            Xem file
+            {t('Xem file')}
           </Button>
         </div>
       </div>

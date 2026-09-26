@@ -4,11 +4,13 @@ import { useTransfers } from '../app/transfers'
 import { useTunnels } from '../app/tunnels'
 import { api } from '../lib/api'
 import { useNav, type RailId } from '../app/nav'
+import { t } from '../i18n'
 
-const ITEMS: { id: RailId; label: string; icon: LucideIcon }[] = [
-  { id: 'conn', label: 'Quản lý kết nối', icon: LayoutGrid },
-  { id: 'server', label: 'Server đang kết nối', icon: Server },
-  { id: 'transfer', label: 'Chuyển tệp', icon: FolderSync },
+/** Built at render time so the labels follow the language. */
+const items = (): { id: RailId; label: string; icon: LucideIcon }[] => [
+  { id: 'conn', label: t('Quản lý kết nối'), icon: LayoutGrid },
+  { id: 'server', label: t('Server đang kết nối'), icon: Server },
+  { id: 'transfer', label: t('Chuyển tệp'), icon: FolderSync },
   { id: 'tunnels', label: 'Tunnel', icon: ArrowLeftRight },
 ]
 
@@ -16,11 +18,11 @@ const ITEMS: { id: RailId; label: string; icon: LucideIcon }[] = [
 export function Rail() {
   const nav = useNav()
   const tunnels = useTunnels()
-  const moving = useTransfers().list.filter((t) => t.status === 'running' || t.status === 'queued').length
+  const moving = useTransfers().list.filter((x) => x.status === 'running' || x.status === 'queued').length
 
   return (
     <nav className="flex w-[60px] flex-none flex-col items-center gap-2 border-r border-line bg-rail py-3">
-      {ITEMS.map(({ id, label, icon: Icon }) => {
+      {items().map(({ id, label, icon: Icon }) => {
         const active = nav.rail === id
         return (
           <button
@@ -50,7 +52,7 @@ export function Rail() {
       <span className="flex-1" />
       <button
         type="button"
-        title="Cài đặt"
+        title={t('Cài đặt')}
         aria-current={nav.rail === 'settings' ? 'page' : undefined}
         onClick={() => nav.goRail('settings')}
         className={`flex size-10 cursor-pointer items-center justify-center rounded-[11px] border hover:border-muted ${
@@ -71,7 +73,7 @@ function DebugButton() {
   return (
     <button
       type="button"
-      title={running ? `Nhật ký gỡ lỗi · ${running} việc đang chạy` : 'Nhật ký gỡ lỗi (mở cửa sổ riêng)'}
+      title={running ? t('Nhật ký gỡ lỗi · {n} việc đang chạy', { n: running }) : t('Nhật ký gỡ lỗi (mở cửa sổ riêng)')}
       onClick={() => void api.openDebugWindow()}
       className="relative flex size-10 cursor-pointer items-center justify-center rounded-[11px] border border-line2 text-ink2 hover:border-muted"
     >

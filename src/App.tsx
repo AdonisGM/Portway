@@ -10,12 +10,16 @@ import { TraceProvider } from './app/trace'
 import { TunnelsProvider } from './app/tunnels'
 import { TransfersProvider } from './app/transfers'
 import { AppShell } from './layout/app-shell'
+import { useLang } from './i18n/use-lang'
 
 export default function App() {
   // Nothing to wait for at startup yet (later: opening the encrypted server vault),
   // so the app is ready once mounted; the splash still plays the full logo build.
   const [ready, setReady] = useState(false)
   useEffect(() => setReady(true), [])
+  // The tree is built here, so a language change re-renders all of it (every
+  // t() call reads the new language) while every provider keeps its state.
+  useLang()
 
   return (
     <SettingsProvider>

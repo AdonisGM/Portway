@@ -20,6 +20,7 @@ use std::time::Duration;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::firewalld;
 use crate::servers::ServerStore;
 use crate::ssh::{exec_priv, open_for_tunnel, shell_quote, Session, Sessions, MARK};
@@ -428,7 +429,7 @@ async fn read_state(session: &Session) -> AppResult<FirewallState> {
 #[tauri::command]
 pub async fn firewall_state(sessions: tauri::State<'_, Sessions>, server_id: String, user: String) -> AppResult<FirewallState> {
     let session = sessions.get(&server_id, &user)?;
-    trace::labelled("Firewall · đọc rule", read_state(&session)).await
+    trace::labelled(tr("Firewall · đọc rule", "Firewall · read rules"), read_state(&session)).await
 }
 
 /// A rule to add, from the "Mở cổng" form.
@@ -544,11 +545,11 @@ impl Plan {
         let mut out: Vec<String> = self.apply.iter().map(s).collect();
         if self.check {
             if self.commit.is_empty() {
-                out.push("# Portway mở một kết nối SSH mới để kiểm tra. Không kết nối được thì hoàn tác:".into());
+                out.push(tr("# Portway mở một kết nối SSH mới để kiểm tra. Không kết nối được thì hoàn tác:", "# Portway opens a new SSH connection to check. If it can't connect, it undoes:"));
             } else {
-                out.push("# Portway mở một kết nối SSH mới để kiểm tra. Được thì lưu vĩnh viễn:".into());
+                out.push(tr("# Portway mở một kết nối SSH mới để kiểm tra. Được thì lưu vĩnh viễn:", "# Portway opens a new SSH connection to check. If it works, it saves permanently:"));
                 out.extend(self.commit.iter().map(s));
-                out.push("# Không kết nối được thì hoàn tác:".into());
+                out.push(tr("# Không kết nối được thì hoàn tác:", "# If it can't connect, it undoes:"));
             }
             out.extend(self.rollback.iter().map(|c| format!("#   {}", s(c))));
         } else {
@@ -732,13 +733,13 @@ pub async fn firewall_apply(
             return Err(fail(e));
         }
         if p.check {
-            let span = trace::start(&server_id, &user, trace::Kind::Connect, Some("Firewall · kiểm tra kết nối SSH mới".into()), "ssh (kết nối thử)", false);
+            let span = trace::start(&server_id, &user, trace::Kind::Connect, Some(tr("Firewall · kiểm tra kết nối SSH mới", "Firewall · test new SSH connection")), &tr("ssh (kết nối thử)", "ssh (test connection)"), false);
             if let Err(e) = can_still_connect(&store, &sessions, &server_id, &user).await {
                 span.fail(&e, |_| {});
                 let undone = run_all(&session, &p.rollback).await;
                 let detail = match undone {
-                    Ok(()) => format!("Sau thay đổi, không mở được kết nối SSH mới ({e}). Portway đã hoàn tác."),
-                    Err(u) => format!("Sau thay đổi, không mở được kết nối SSH mới ({e}). Hoàn tác cũng lỗi: {u}. Giữ phiên này mở và sửa ngay."),
+                    Ok(()) => tr(format!("Sau thay đổi, không mở được kết nối SSH mới ({e}). Portway đã hoàn tác."), format!("After the change, a new SSH connection couldn't be opened ({e}). Portway undid it.")),
+                    Err(u) => tr(format!("Sau thay đổi, không mở được kết nối SSH mới ({e}). Hoàn tác cũng lỗi: {u}. Giữ phiên này mở và sửa ngay."), format!("After the change, a new SSH connection couldn't be opened ({e}). Undoing also failed: {u}. Keep this session open and fix it now.")),
                 };
                 audit.record(&server_id, &user, action, &shown, false, Some(detail.clone()));
                 return Err(AppError::detail("lockout_prevented", detail));
@@ -746,12 +747,12 @@ pub async fn firewall_apply(
             span.ok(|_| {});
         }
         if let Err(e) = run_all(&session, &p.commit).await {
-            return Err(fail(format!("Đã áp dụng nhưng chưa lưu vĩnh viễn: {e}")));
+            return Err(fail(tr(format!("Đã áp dụng nhưng chưa lưu vĩnh viễn: {e}"), format!("Applied but not saved permanently: {e}"))));
         }
         audit.record(&server_id, &user, action, &shown, true, None);
         Ok(())
     };
-    trace::labelled("Firewall · thay đổi", run).await
+    trace::labelled(tr("Firewall · thay đổi", "Firewall · change"), run).await
 }
 
 

@@ -23,6 +23,7 @@ use tokio::sync::watch;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::files::{sftp, sftp_err};
 use crate::servers::ServerStore;
 use crate::ssh::{exec_input, exec_priv, shell_quote, Session, Sessions};
@@ -251,7 +252,7 @@ async fn sync_once(edits: &Arc<Edits>, sessions: &Sessions, audit: &AuditLog, id
         Err(_) => {
             edits.update(id, |e| {
                 e.edit.status = Status::Pending;
-                e.edit.error = Some("Chưa có kết nối tới server; sẽ tải lên khi kết nối lại".into());
+                e.edit.error = Some(tr("Chưa có kết nối tới server; sẽ tải lên khi kết nối lại", "Not connected to the server; will upload when reconnected"));
             });
             return;
         }
@@ -285,7 +286,7 @@ async fn sync_once(edits: &Arc<Edits>, sessions: &Sessions, audit: &AuditLog, id
         Ok(None) => {
             edits.update(id, |e| {
                 e.edit.status = Status::Conflict;
-                e.edit.error = Some("Tệp trên server đã đổi từ lúc Portway mở nó".into());
+                e.edit.error = Some(tr("Tệp trên server đã đổi từ lúc Portway mở nó", "The file on the server changed since Portway opened it"));
             });
         }
         Err(err) => {
@@ -294,7 +295,7 @@ async fn sync_once(edits: &Arc<Edits>, sessions: &Sessions, audit: &AuditLog, id
             let lost = matches!(err.code, "connection_lost" | "not_connected");
             edits.update(id, |e| {
                 e.edit.status = if lost { Status::Pending } else { Status::Error };
-                e.edit.error = Some(if lost { "Mất kết nối; sẽ tải lên khi kết nối lại".into() } else { text });
+                e.edit.error = Some(if lost { tr("Mất kết nối; sẽ tải lên khi kết nối lại", "Connection lost; will upload when reconnected") } else { text });
                 // Try this content again next round only when the network is back.
                 if !lost {
                     e.known.local = now_local;

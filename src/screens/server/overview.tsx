@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { locale, t } from '../../i18n'
 import { useConnections } from '../../app/connections'
 import { readCache, writeCache } from '../../app/session-cache'
 import { useToast } from '../../components/toast'
@@ -63,10 +64,10 @@ function Live({ ok, error, at, live }: { ok: boolean; error: AppError | null; at
   return (
     <span
       className="inline-flex items-center gap-[5px] text-[11px] whitespace-nowrap text-muted"
-      title={at ? `Cập nhật lúc ${at.toLocaleTimeString('vi-VN')}` : undefined}
+      title={at ? t('Cập nhật lúc {time}', { time: at.toLocaleTimeString(locale()) }) : undefined}
     >
       <span className={cx('size-1.5 rounded-full', !live ? 'bg-muted' : error ? 'bg-warn' : ok ? 'bg-success' : 'bg-muted')} />
-      {!live ? 'tạm dừng' : error ? 'không đọc được, đang thử lại' : ok ? 'trực tiếp · 5 giây' : 'đang đọc…'}
+      {!live ? t('tạm dừng') : error ? t('không đọc được, đang thử lại') : ok ? t('trực tiếp · 5 giây') : t('đang đọc…')}
     </span>
   )
 }
@@ -89,9 +90,9 @@ function resourceItems(s: Stats): StatItem[] {
   const netUnit = unitOf(Math.max(s.netRxRate ?? 0, s.netTxRate ?? 0, 1))
   return [
     {
-      label: 'CPU (% hiện tại)',
+      label: t('CPU (% hiện tại)'),
       value: s.cpuPercent != null ? formatPercent(s.cpuPercent) : '—',
-      hint: `load ${formatDecimal(s.load[0])} · ${s.cores} nhân`,
+      hint: t('load {load} · {n} nhân', { load: formatDecimal(s.load[0]), n: s.cores }),
     },
     {
       label: 'RAM',
@@ -102,15 +103,15 @@ function resourceItems(s: Stats): StatItem[] {
     {
       label: 'Disk /',
       value: formatPercent(diskPct),
-      hint: `còn ${formatBytes(s.diskAvail)}`,
+      hint: t('còn {size}', { size: formatBytes(s.diskAvail) }),
       hintTone: diskPct >= 85 ? 'var(--warn)' : undefined,
     },
     {
-      label: 'Mạng',
+      label: t('Mạng'),
       value: net != null ? `${formatBytes(net)}/s` : '—',
       hint:
         s.netTxRate != null && s.netRxRate != null
-          ? `ra ${inUnit(s.netTxRate, netUnit)} · vào ${inUnit(s.netRxRate, netUnit)} ${unitName(netUnit)}/s`
+          ? t('ra {out} · vào {in} {unit}/s', { out: inUnit(s.netTxRate, netUnit), in: inUnit(s.netRxRate, netUnit), unit: unitName(netUnit) })
           : undefined,
     },
   ]
@@ -124,7 +125,7 @@ function Resources({ server, user }: { server: Server; user: string }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-[13px] font-semibold">Tài nguyên</span>
+        <span className="flex-1 text-[13px] font-semibold">{t('Tài nguyên')}</span>
         <Live ok={!!data} error={error} at={at} live={live} />
       </div>
       {data ? <StatStrip items={resourceItems(data)} /> : <StatStripSkeleton />}
@@ -140,26 +141,26 @@ const barColor = (v: number) => (v >= 85 ? 'var(--danger)' : v >= 70 ? 'var(--wa
 function TopProcesses({ server, user }: { server: Server; user: string }) {
   const { data, error, at, live } = usePoll<Processes>(server.id, user, 'processes', loadProcesses)
   const toast = useToast()
-  const snapAt = data ? new Date(data.at).toLocaleTimeString('vi-VN') : null
+  const snapAt = data ? new Date(data.at).toLocaleTimeString(locale()) : null
 
   const openTop = () =>
-    api.openTerminal(server.id, user, 'htop').catch((e) => toast({ title: 'Không mở được Terminal', detail: isAppError(e) ? (e.detail ?? e.code) : String(e) }))
+    api.openTerminal(server.id, user, 'htop').catch((e) => toast({ title: t('Không mở được Terminal'), detail: isAppError(e) ? (e.detail ?? e.code) : String(e) }))
 
   return (
     <div className="flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-[15px] font-semibold">Tiến trình dùng nhiều nhất</span>
-          <span className="text-[11px] text-muted">{snapAt ? `Ảnh chụp lúc ${snapAt}` : 'Đang đọc danh sách tiến trình…'}</span>
+          <span className="text-[15px] font-semibold">{t('Tiến trình dùng nhiều nhất')}</span>
+          <span className="text-[11px] text-muted">{snapAt ? t('Ảnh chụp lúc {time}', { time: snapAt }) : t('Đang đọc danh sách tiến trình…')}</span>
         </div>
         <Live ok={!!data} error={error} at={at} live={live} />
       </div>
 
       <div className="grid gap-3 px-0.5 text-[11px] text-muted" style={{ gridTemplateColumns: PROC_COLS }}>
-        <span>Tiến trình</span>
+        <span>{t('Tiến trình')}</span>
         <span>User</span>
         <span>Container</span>
-        <span>CPU (% hiện tại)</span>
+        <span>{t('CPU (% hiện tại)')}</span>
         <span className="text-right">RAM</span>
       </div>
 
@@ -197,7 +198,7 @@ function TopProcesses({ server, user }: { server: Server; user: string }) {
       <ErrorLine error={error} />
       <div className="flex justify-end">
         <Button variant="ghost" size="xs" onClick={openTop}>
-          htop trong Terminal
+          {t('htop trong Terminal')}
         </Button>
       </div>
     </div>

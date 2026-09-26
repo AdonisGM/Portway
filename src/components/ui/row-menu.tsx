@@ -1,4 +1,5 @@
 import { cx } from './primitives'
+import { t } from '../../i18n'
 
 export type RowMenuItem = {
   label: string
@@ -15,7 +16,7 @@ export function RowMenu({ open, setOpen, items }: { open: boolean; setOpen: (v: 
     <div className="relative">
       <button
         type="button"
-        title="Thêm thao tác"
+        title={t('Thêm thao tác')}
         onClick={() => setOpen(!open)}
         className="flex size-[26px] cursor-pointer items-center justify-center rounded-md border border-line2 text-[14px] leading-none hover:border-muted"
       >

@@ -3,6 +3,7 @@ import { Checkbox } from '../../components/ui/checkbox'
 import { Field, TextInput } from '../../components/ui/form-controls'
 import { Modal } from '../../components/ui/modal'
 import { Button, cx } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import { api, isAppError, type FileEntry } from '../../lib/api'
 import { fileError, joinPath, modeString, octal, parentOf, q } from './format'
 
@@ -16,7 +17,7 @@ type Props = { action: FileAction; serverId: string; user: string; dir: string; 
 function Command({ text }: { text: string }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[11px] text-muted">Lệnh tương ứng</span>
+      <span className="text-[11px] text-muted">{t('Lệnh tương ứng')}</span>
       <span className="rounded-md bg-sunken px-2 py-1.5 font-mono text-[11.5px] leading-normal break-all text-ink2 select-text">{text}</span>
     </div>
   )
@@ -54,16 +55,16 @@ function NameDialog({ action, serverId, user, dir, onClose, onDone }: Props) {
   const [name, setName] = useState(rename?.name ?? '')
   const { busy, error, setError, run } = useRun(onDone)
   const n = name.trim()
-  const title = action.mode === 'newdir' ? 'Thư mục mới' : action.mode === 'newfile' ? 'Tệp mới' : `Đổi tên ${rename!.name}`
+  const title = action.mode === 'newdir' ? t('Thư mục mới') : action.mode === 'newfile' ? t('Tệp mới') : t('Đổi tên {name}', { name: rename!.name })
   // Quote the real name only; an empty one shows as a bare "…".
   const at = (d: string) => (n ? q(joinPath(d, n)) : q(joinPath(d, '')) + '…')
   const cmd =
     action.mode === 'newdir' ? `mkdir ${at(dir)}` : action.mode === 'newfile' ? `touch ${at(dir)}` : `mv ${q(rename!.path)} ${at(parentOf(rename!.path))}`
   const submit = () => {
     if (!n || (rename && n === rename.name)) return
-    if (action.mode === 'newdir') void run(() => api.sftpMkdir(serverId, user, dir, n), `Đã tạo thư mục ${n}`, cmd, n)
-    else if (action.mode === 'newfile') void run(() => api.sftpTouch(serverId, user, dir, n), `Đã tạo tệp ${n}`, cmd, n)
-    else void run(() => api.sftpRename(serverId, user, rename!.path, n), `Đã đổi tên thành ${n}`, cmd, n)
+    if (action.mode === 'newdir') void run(() => api.sftpMkdir(serverId, user, dir, n), t('Đã tạo thư mục {name}', { name: n }), cmd, n)
+    else if (action.mode === 'newfile') void run(() => api.sftpTouch(serverId, user, dir, n), t('Đã tạo tệp {name}', { name: n }), cmd, n)
+    else void run(() => api.sftpRename(serverId, user, rename!.path, n), t('Đã đổi tên thành {name}', { name: n }), cmd, n)
   }
   return (
     <Modal
@@ -74,9 +75,9 @@ function NameDialog({ action, serverId, user, dir, onClose, onDone }: Props) {
       subtitle={rename ? parentOf(rename.path) : dir}
       footer={
         <>
-          <Button onClick={onClose}>Huỷ</Button>
+          <Button onClick={onClose}>{t('Huỷ')}</Button>
           <Button variant="primary" onClick={submit} disabled={busy || !n || (!!rename && n === rename.name)}>
-            {rename ? 'Đổi tên' : 'Tạo'}
+            {rename ? t('Đổi tên') : t('Tạo')}
           </Button>
         </>
       }
@@ -88,7 +89,7 @@ function NameDialog({ action, serverId, user, dir, onClose, onDone }: Props) {
           submit()
         }}
       >
-        <Field label="Tên" error={error ?? undefined}>
+        <Field label={t('Tên')} error={error ?? undefined}>
           <TextInput
             value={name}
             onChange={(v) => {
@@ -107,7 +108,7 @@ function NameDialog({ action, serverId, user, dir, onClose, onDone }: Props) {
 }
 
 const WHO = ['Owner', 'Group', 'Others']
-const BITS = ['Đọc', 'Ghi', 'Chạy']
+const bitLabels = () => [t('Đọc'), t('Ghi'), t('Chạy#bit')]
 
 function ChmodDialog({ serverId, user, entries, onClose, onDone }: Props & { entries: FileEntry[] }) {
   const same = entries.every((e) => (e.mode & 0o777) === (entries[0].mode & 0o777))
@@ -128,21 +129,21 @@ function ChmodDialog({ serverId, user, entries, onClose, onDone }: Props & { ent
       open
       onClose={onClose}
       width={480}
-      title="Sửa quyền"
-      subtitle={entries.length === 1 ? entries[0].path : `${entries.length} mục`}
+      title={t('Sửa quyền')}
+      subtitle={entries.length === 1 ? entries[0].path : t('{n} mục', { n: entries.length })}
       footer={
         <>
-          <Button onClick={onClose}>Huỷ</Button>
-          <Button variant="primary" disabled={busy} onClick={() => void run(() => api.sftpChmod(serverId, user, paths, mode, recursive), 'Đã sửa quyền', cmd)}>
-            Áp dụng
+          <Button onClick={onClose}>{t('Huỷ')}</Button>
+          <Button variant="primary" disabled={busy} onClick={() => void run(() => api.sftpChmod(serverId, user, paths, mode, recursive), t('Đã sửa quyền'), cmd)}>
+            {t('Áp dụng')}
           </Button>
         </>
       }
     >
-      {!same && <span className="text-[11.5px] text-warn">Các mục đang có quyền khác nhau; tất cả sẽ được đặt thành {octal(mode)}.</span>}
+      {!same && <span className="text-[11.5px] text-warn">{t('Các mục đang có quyền khác nhau; tất cả sẽ được đặt thành {mode}.', { mode: octal(mode) })}</span>}
       <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line" style={{ gridTemplateColumns: '90px repeat(3, 1fr)' }}>
         <span className="bg-sunken px-2.5 py-1.5" />
-        {BITS.map((b) => (
+        {bitLabels().map((b) => (
           <span key={b} className="bg-sunken px-2.5 py-1.5 text-center text-[11px] text-muted">
             {b}
           </span>
@@ -168,24 +169,24 @@ function ChmodDialog({ serverId, user, entries, onClose, onDone }: Props & { ent
         ))}
       </div>
       <div className="grid grid-cols-2 gap-2.5">
-        <Field label="Dạng số" error={/^[0-7]{3,4}$/.test(text) ? undefined : 'Nhập 3–4 chữ số 0–7'}>
+        <Field label={t('Dạng số')} error={/^[0-7]{3,4}$/.test(text) ? undefined : t('Nhập 3–4 chữ số 0–7')}>
           <TextInput
             value={text}
             numeric
             onChange={(v) => {
-              const t = v.replace(/[^0-7]/g, '').slice(0, 4)
-              setText(t)
-              if (/^[0-7]{3,4}$/.test(t)) setMode(parseInt(t, 8))
+              const digits = v.replace(/[^0-7]/g, '').slice(0, 4)
+              setText(digits)
+              if (/^[0-7]{3,4}$/.test(digits)) setMode(parseInt(digits, 8))
             }}
           />
         </Field>
-        <Field label="Kết quả">
+        <Field label={t('Kết quả')}>
           <span className="flex h-[34px] items-center font-mono text-[13px]">{modeString(mode)}</span>
         </Field>
       </div>
       {hasDir && (
         <Checkbox checked={recursive} onChange={setRecursive}>
-          Áp dụng cho mọi thứ bên trong thư mục (-R)
+          {t('Áp dụng cho mọi thứ bên trong thư mục (-R)')}
         </Checkbox>
       )}
       {error && <span className="text-[11px] text-danger">{error}</span>}
@@ -206,18 +207,18 @@ function ChownDialog({ serverId, user, entries, canChown, onClose, onDone }: Pro
       open
       onClose={onClose}
       width={460}
-      title="Đổi owner"
-      subtitle={entries.length === 1 ? entries[0].path : `${entries.length} mục`}
+      title={t('Đổi owner')}
+      subtitle={entries.length === 1 ? entries[0].path : t('{n} mục', { n: entries.length })}
       footer={
         <>
-          <Button onClick={onClose}>Huỷ</Button>
-          <Button variant="primary" disabled={busy || !canChown || !owner.trim() || !group.trim()} onClick={() => void run(() => api.sftpChown(serverId, user, paths, owner.trim(), group.trim(), recursive), 'Đã đổi owner', cmd)}>
-            Áp dụng
+          <Button onClick={onClose}>{t('Huỷ')}</Button>
+          <Button variant="primary" disabled={busy || !canChown || !owner.trim() || !group.trim()} onClick={() => void run(() => api.sftpChown(serverId, user, paths, owner.trim(), group.trim(), recursive), t('Đã đổi owner'), cmd)}>
+            {t('Áp dụng')}
           </Button>
         </>
       }
     >
-      {!canChown && <span className="text-[11.5px] text-warn">Chỉ root mới đổi được owner. Bật sudo cho phiên này hoặc kết nối bằng root.</span>}
+      {!canChown && <span className="text-[11.5px] text-warn">{t('Chỉ root mới đổi được owner. Bật sudo cho phiên này hoặc kết nối bằng root.')}</span>}
       <div className="grid grid-cols-2 gap-2.5">
         <Field label="Owner">
           <TextInput value={owner} onChange={setOwner} />
@@ -228,7 +229,7 @@ function ChownDialog({ serverId, user, entries, canChown, onClose, onDone }: Pro
       </div>
       {entries.some((e) => e.kind === 'dir') && (
         <Checkbox checked={recursive} onChange={setRecursive}>
-          Áp dụng cho mọi thứ bên trong thư mục (-R)
+          {t('Áp dụng cho mọi thứ bên trong thư mục (-R)')}
         </Checkbox>
       )}
       {error && <span className="text-[11px] text-danger">{error}</span>}
@@ -247,19 +248,20 @@ function DeleteDialog({ serverId, user, entries, onClose, onDone }: Props & { en
       open
       onClose={onClose}
       width={480}
-      title={entries.length === 1 ? `Xoá ${entries[0].name}?` : `Xoá ${entries.length} mục?`}
-      subtitle="Không hoàn tác được"
+      title={entries.length === 1 ? t('Xoá {name}?', { name: entries[0].name }) : t('Xoá {n} mục?', { n: entries.length })}
+      subtitle={t('Không hoàn tác được')}
       footer={
         <>
-          <Button onClick={onClose}>Huỷ</Button>
-          <Button variant="danger" disabled={busy} onClick={() => void run(() => api.sftpRemove(serverId, user, paths), `Đã xoá ${entries.length} mục`, cmd)}>
-            {busy ? 'Đang xoá…' : 'Xoá'}
+          <Button onClick={onClose}>{t('Huỷ')}</Button>
+          <Button variant="danger" disabled={busy} onClick={() => void run(() => api.sftpRemove(serverId, user, paths), t('Đã xoá {n} mục', { n: entries.length }), cmd)}>
+            {busy ? t('Đang xoá…') : t('Xoá')}
           </Button>
         </>
       }
     >
       <span className="leading-relaxed text-ink2">
-        {dirs ? 'Thư mục sẽ bị xoá cùng toàn bộ nội dung bên trong. ' : ''}Link chỉ bị xoá bản thân link, không đụng tới đích.
+        {dirs ? t('Thư mục sẽ bị xoá cùng toàn bộ nội dung bên trong. ') : ''}
+        {t('Link chỉ bị xoá bản thân link, không đụng tới đích.')}
       </span>
       <div className="flex max-h-40 flex-col overflow-auto rounded-lg border border-line">
         {entries.map((e) => (

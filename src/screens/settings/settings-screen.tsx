@@ -13,6 +13,7 @@ import { Button } from '../../components/ui/primitives'
 import { SegmentedControl } from '../../components/ui/segmented'
 import { api, isAppError, type Theme } from '../../lib/api'
 import { pickApp } from '../../lib/pick-app'
+import { t } from '../../i18n'
 
 /** Select value for "no app chosen" (the select treats '' as nothing chosen). */
 const DEFAULT_EDITOR = 'default'
@@ -24,9 +25,9 @@ const shownDir = (dir: string, home: string) => (home && dir.startsWith(home + '
 const errText = (e: unknown) =>
   isAppError(e)
     ? e.code === 'not_a_dir'
-      ? `${e.detail} không phải thư mục`
+      ? t('{path} không phải thư mục', { path: e.detail ?? '' })
       : e.code === 'not_an_app'
-        ? `${e.detail} không phải một ứng dụng (.app)`
+        ? t('{path} không phải một ứng dụng (.app)', { path: e.detail ?? '' })
         : (e.detail ?? e.code)
     : String(e)
 
@@ -62,138 +63,153 @@ export function SettingsScreen() {
 
   const pickDownloadDir = () =>
     run(async () => {
-      const picked = await open({ directory: true, canCreateDirectories: true, title: 'Thư mục tải về mặc định', defaultPath: settings.downloadDir ?? (await downloadDir()) })
+      const picked = await open({ directory: true, canCreateDirectories: true, title: t('Thư mục tải về mặc định'), defaultPath: settings.downloadDir ?? (await downloadDir()) })
       if (typeof picked === 'string') await update({ downloadDir: picked })
-    }, 'Không lưu được thư mục')
+    }, t('Không lưu được thư mục'))
 
   const exportServers = () =>
     run(async () => {
       const day = new Date().toISOString().slice(0, 10)
-      const path = await save({ title: 'Xuất danh sách server', defaultPath: `portway-servers-${day}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
+      const path = await save({ title: t('Xuất danh sách server'), defaultPath: `portway-servers-${day}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
       if (!path) return
       const n = await api.exportServers(path)
-      toast({ title: `Đã xuất ${n} server`, detail: path })
-    }, 'Không xuất được')
+      toast({ title: t('Đã xuất {n} server', { n }), detail: path })
+    }, t('Không xuất được'))
 
   const importServers = () =>
     run(async () => {
-      const path = await open({ title: 'Nhập danh sách server', filters: [{ name: 'JSON', extensions: ['json'] }] })
+      const path = await open({ title: t('Nhập danh sách server'), filters: [{ name: 'JSON', extensions: ['json'] }] })
       if (typeof path !== 'string') return
       const r = await api.importServersFile(path)
       refresh()
       toast({
-        title: r.added.length ? `Đã thêm ${r.added.length} server` : 'Không có server mới',
-        detail: r.skipped.length ? `Bỏ qua ${r.skipped.length} server trùng tên: ${r.skipped.join(', ')}` : `${r.found} server trong tệp`,
+        title: r.added.length ? t('Đã thêm {n} server', { n: r.added.length }) : t('Không có server mới'),
+        detail: r.skipped.length
+          ? t('Bỏ qua {n} server trùng tên: {names}', { n: r.skipped.length, names: r.skipped.join(', ') })
+          : t('{n} server trong tệp', { n: r.found }),
       })
-    }, 'Không nhập được')
+    }, t('Không nhập được'))
 
   return (
     <div className="flex max-w-[760px] flex-col gap-4">
       <div className="flex flex-col gap-0.5">
-        <span className="text-[23px] font-semibold">Cài đặt</span>
-        <span className="text-muted">Lưu trên máy này, áp dụng ngay cho mọi cửa sổ của Portway.</span>
+        <span className="text-[23px] font-semibold">{t('Cài đặt')}</span>
+        <span className="text-muted">{t('Lưu trên máy này, áp dụng ngay cho mọi cửa sổ của Portway.')}</span>
       </div>
 
-      <Section id="download" title="Tải xuống">
-        <Row label="Thư mục tải về mặc định" hint={shownDir(settings.downloadDir ?? systemDownloads, home) || '…'} mono>
-          <div className="flex gap-1.5">
-            <Button size="sm" disabled={!(settings.downloadDir ?? systemDownloads)} onClick={() => void revealItemInDir(settings.downloadDir ?? systemDownloads)}>
-              Mở trong Finder
-            </Button>
-            <Button size="sm" onClick={() => void pickDownloadDir()}>
-              Chọn thư mục…
-            </Button>
-            {settings.downloadDir && (
-              <Button size="sm" variant="ghost" title="Về thư mục Downloads của máy" onClick={() => void run(() => update({ downloadDir: null }), 'Không lưu được')}>
-                Dùng Downloads
-              </Button>
-            )}
-          </div>
-        </Row>
-        <Row
-          label="Hỏi nơi lưu mỗi lần tải"
-          hint={
-            ask
-              ? 'Mỗi lần tải sẽ mở hộp chọn thư mục, mở sẵn ở thư mục mặc định.'
-              : 'Tệp được lưu thẳng vào thư mục mặc định, không hỏi. Tên trùng được thêm (1), (2)…'
-          }
-        >
-          <SegmentedControl
-            value={ask ? 'ask' : 'direct'}
-            onChange={(v) => void run(() => update({ askDownload: v === 'ask' }), 'Không lưu được')}
+      <Section id="language" title={t('Ngôn ngữ')}>
+        <Row label={t('Ngôn ngữ giao diện')} hint={t('Áp dụng ngay cho mọi màn hình và thông báo, không ngắt các kết nối đang mở.')}>
+          <SegmentedControl<'vi' | 'en'>
+            value={settings.language}
+            onChange={(language) => void run(() => update({ language }), t('Không lưu được'))}
             options={[
-              { id: 'ask', label: 'Hỏi mỗi lần' },
-              { id: 'direct', label: 'Lưu thẳng' },
+              { id: 'vi', label: 'Tiếng Việt' }, // i18n-ignore: a language's own name
+              { id: 'en', label: 'English' },
             ]}
           />
         </Row>
       </Section>
 
-      <Section id="editor" title="Sửa tệp">
+      <Section id="download" title={t('Tải xuống#section')}>
+        <Row label={t('Thư mục tải về mặc định')} hint={shownDir(settings.downloadDir ?? systemDownloads, home) || '…'} mono>
+          <div className="flex gap-1.5">
+            <Button size="sm" disabled={!(settings.downloadDir ?? systemDownloads)} onClick={() => void revealItemInDir(settings.downloadDir ?? systemDownloads)}>
+              {t('Mở trong Finder')}
+            </Button>
+            <Button size="sm" onClick={() => void pickDownloadDir()}>
+              {t('Chọn thư mục…')}
+            </Button>
+            {settings.downloadDir && (
+              <Button size="sm" variant="ghost" title={t('Về thư mục Downloads của máy')} onClick={() => void run(() => update({ downloadDir: null }), t('Không lưu được'))}>
+                {t('Dùng Downloads')}
+              </Button>
+            )}
+          </div>
+        </Row>
         <Row
-          label="Mở tệp của server bằng"
-          hint="Tệp được tải về thư mục tạm riêng cho từng server và user; mỗi lần lưu trong app, Portway tải lên lại. Bấm đúp một tệp trong màn Tệp để mở."
+          label={t('Hỏi nơi lưu mỗi lần tải')}
+          hint={
+            ask
+              ? t('Mỗi lần tải sẽ mở hộp chọn thư mục, mở sẵn ở thư mục mặc định.')
+              : t('Tệp được lưu thẳng vào thư mục mặc định, không hỏi. Tên trùng được thêm (1), (2)…')
+          }
+        >
+          <SegmentedControl
+            value={ask ? 'ask' : 'direct'}
+            onChange={(v) => void run(() => update({ askDownload: v === 'ask' }), t('Không lưu được'))}
+            options={[
+              { id: 'ask', label: t('Hỏi mỗi lần') },
+              { id: 'direct', label: t('Lưu thẳng') },
+            ]}
+          />
+        </Row>
+      </Section>
+
+      <Section id="editor" title={t('Sửa tệp#section')}>
+        <Row
+          label={t('Mở tệp của server bằng')}
+          hint={t('Tệp được tải về thư mục tạm riêng cho từng server và user; mỗi lần lưu trong app, Portway tải lên lại. Bấm đúp một tệp trong màn Tệp để mở.')}
         >
           <SelectField
             value={settings.editor ?? DEFAULT_EDITOR}
             onChange={(v) =>
               void run(async () => {
                 if (v !== PICK) return update({ editor: v === DEFAULT_EDITOR ? null : v })
-                const app = await pickApp('Chọn app để sửa tệp của server')
+                const app = await pickApp(t('Chọn app để sửa tệp của server'))
                 if (app) {
                   await update({ editor: app })
                   refreshApps()
                 }
-              }, 'Không lưu được')
+              }, t('Không lưu được'))
             }
             options={[
-              { value: DEFAULT_EDITOR, label: `Mặc định của macOS${systemEditor ? ` (${systemEditor.name})` : ''}` },
+              { value: DEFAULT_EDITOR, label: systemEditor ? t('Mặc định của macOS ({app})', { app: systemEditor.name }) : t('Mặc định của macOS') },
               ...apps.map((a) => ({ value: a.path, label: a.name })),
-              { value: PICK, label: 'Chọn app khác…' },
+              { value: PICK, label: t('Chọn app khác…') },
             ]}
             className="!w-64"
           />
         </Row>
       </Section>
 
-      <Section id="appearance" title="Giao diện">
-        <Row label="Chế độ màu" hint={settings.theme === 'system' ? 'Đổi theo cài đặt Sáng/Tối của macOS.' : undefined}>
+      <Section id="appearance" title={t('Giao diện')}>
+        <Row label={t('Chế độ màu')} hint={settings.theme === 'system' ? t('Đổi theo cài đặt Sáng/Tối của macOS.') : undefined}>
           <SegmentedControl<Theme>
             value={settings.theme}
-            onChange={(theme) => void run(() => update({ theme }), 'Không lưu được')}
+            onChange={(theme) => void run(() => update({ theme }), t('Không lưu được'))}
             options={[
-              { id: 'dark', label: 'Tối' },
-              { id: 'light', label: 'Sáng' },
-              { id: 'system', label: 'Theo macOS' },
+              { id: 'dark', label: t('Tối') },
+              { id: 'light', label: t('Sáng') },
+              { id: 'system', label: t('Theo macOS') },
             ]}
           />
         </Row>
       </Section>
 
-      <Section id="data" title="Dữ liệu">
+      <Section id="data" title={t('Dữ liệu')}>
         <Row
-          label="Danh sách server"
-          hint={`${servers.length} server. Tệp xuất gồm host, cổng, user, nhóm, tag, ghi chú và đường dẫn khoá; mật khẩu và passphrase ở lại Keychain của máy này.`}
+          label={t('Danh sách server')}
+          hint={t('{n} server. Tệp xuất gồm host, cổng, user, nhóm, tag, ghi chú và đường dẫn khoá; mật khẩu và passphrase ở lại Keychain của máy này.', { n: servers.length })}
         >
           <div className="flex gap-1.5">
             <Button size="sm" onClick={() => void importServers()}>
-              Nhập từ tệp…
+              {t('Nhập từ tệp…')}
             </Button>
             <Button size="sm" onClick={() => void exportServers()} disabled={!servers.length}>
-              Xuất ra tệp…
+              {t('Xuất ra tệp…')}
             </Button>
           </div>
         </Row>
-        <Row label="Thư mục dữ liệu" hint={dataPath || '—'} mono>
+        <Row label={t('Thư mục dữ liệu')} hint={dataPath || '—'} mono>
           <Button size="sm" disabled={!dataPath} onClick={() => void revealItemInDir(dataPath)}>
-            Mở trong Finder
+            {t('Mở trong Finder')}
           </Button>
         </Row>
       </Section>
 
-      <Section id="about" title="Giới thiệu">
-        <Row label="Portway" hint="Quản lý server qua SSH · AdonisGM">
-          <span className="num text-ink2">{version ? `Phiên bản ${version}` : ''}</span>
+      <Section id="about" title={t('Giới thiệu')}>
+        <Row label="Portway" hint={t('Quản lý server qua SSH · AdonisGM')}>
+          <span className="num text-ink2">{version ? t('Phiên bản {version}', { version }) : ''}</span>
         </Row>
       </Section>
     </div>

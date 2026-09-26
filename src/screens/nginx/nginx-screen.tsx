@@ -7,6 +7,7 @@ import { readCache, writeCache } from '../../app/session-cache'
 import { useToast } from '../../components/toast'
 import { Modal } from '../../components/ui/modal'
 import { Button, Chip, cx, TONES } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import { api, isAppError, type AppError, type NginxAction, type NginxResult, type NginxSite, type NginxState, type Server } from '../../lib/api'
 import { LogTail } from '../files/log-tail'
 import { fullTime, q } from '../files/format'
@@ -21,33 +22,34 @@ function nameOf(s: NginxSite) {
   if (name) return name
   const l = s.listens[0]
   const at = l ? `${l.addr === '*' ? '' : l.addr}:${l.port}` : s.file.split('/').pop()!
-  return s.names.includes('_') ? `Mặc định ${at}` : at
+  return s.names.includes('_') ? t('Mặc định {at}', { at }) : at
 }
 const parentOf = (p: string) => p.replace(/\/[^/]+$/, '') || '/'
 
-const TYPE_LABEL = { proxy: 'Reverse proxy', static: 'Web tĩnh', redirect: 'Chuyển hướng', fixed: 'Trả lời cố định', other: 'Khác' } as const
+const typeLabel = (kind: NginxSite['target']['kind']) =>
+  ({ proxy: 'Reverse proxy', static: t('Web tĩnh'), redirect: t('Chuyển hướng'), fixed: t('Trả lời cố định'), other: t('Khác') })[kind]
 
 function targetText(s: NginxSite) {
-  const t = s.target
-  return t.kind === 'proxy'
-    ? t.url
-    : t.kind === 'static'
-      ? t.root
-      : t.kind === 'redirect'
-        ? `${t.code} → ${t.to}`
-        : t.kind === 'fixed'
-          ? `return ${t.code} (nginx tự trả lời)`
-          : 'Không có proxy_pass, root hay return'
+  const tg = s.target
+  return tg.kind === 'proxy'
+    ? tg.url
+    : tg.kind === 'static'
+      ? tg.root
+      : tg.kind === 'redirect'
+        ? `${tg.code} → ${tg.to}`
+        : tg.kind === 'fixed'
+          ? t('return {code} (nginx tự trả lời)', { code: tg.code })
+          : t('Không có proxy_pass, root hay return')
 }
 
 function certLine(s: NginxSite): { text: string; tone: 'ok' | 'warn' | 'bad' | 'none' } {
-  if (!s.ssl) return { text: 'Không SSL', tone: 'none' }
-  if (!s.enabled) return { text: 'SSL · site đang tắt', tone: 'none' }
-  if (!s.cert) return { text: 'SSL · không đọc được chứng chỉ', tone: 'warn' }
+  if (!s.ssl) return { text: t('Không SSL'), tone: 'none' }
+  if (!s.enabled) return { text: t('SSL · site đang tắt'), tone: 'none' }
+  if (!s.cert) return { text: t('SSL · không đọc được chứng chỉ'), tone: 'warn' }
   const d = s.cert.daysLeft
-  if (d < 0) return { text: `SSL đã hết hạn ${-d} ngày`, tone: 'bad' }
-  if (d < SOON) return { text: `SSL hết hạn sau ${d} ngày`, tone: 'warn' }
-  return { text: `SSL còn ${d} ngày`, tone: 'ok' }
+  if (d < 0) return { text: t('SSL đã hết hạn {n} ngày', { n: -d }), tone: 'bad' }
+  if (d < SOON) return { text: t('SSL hết hạn sau {n} ngày', { n: d }), tone: 'warn' }
+  return { text: t('SSL còn {n} ngày', { n: d }), tone: 'ok' }
 }
 
 const TONE_FG = { ok: 'var(--muted)', warn: 'var(--warn)', bad: 'var(--danger)', none: 'var(--muted)' }
@@ -112,30 +114,30 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
   }
 
   const ask = (action: NginxAction) => {
-    if (action.op === 'test') return setPending({ action, title: 'Kiểm tra cấu hình nginx', confirm: 'Chạy nginx -t', note: 'Chỉ đọc và kiểm tra cú pháp, không đổi gì.' })
+    if (action.op === 'test') return setPending({ action, title: t('Kiểm tra cấu hình nginx'), confirm: t('Chạy nginx -t'), note: t('Chỉ đọc và kiểm tra cú pháp, không đổi gì.') })
     if (action.op === 'reload')
-      return setPending({ action, title: 'Reload nginx', confirm: 'Reload', note: 'Kiểm tra cấu hình trước; nếu lỗi thì không reload. Kết nối đang mở không bị ngắt.' })
+      return setPending({ action, title: 'Reload nginx', confirm: 'Reload', note: t('Kiểm tra cấu hình trước; nếu lỗi thì không reload. Kết nối đang mở không bị ngắt.') })
     const site = sites.find((s) => (action.op === 'enable' ? s.available === action.file : s.file === action.link))
     const label = site ? nameOf(site) : ''
     if (action.op === 'enable')
-      return setPending({ action, title: `Bật site ${label}`, confirm: 'Bật site', note: 'Tạo link trong sites-enabled, kiểm tra cấu hình rồi reload. Nếu nginx -t lỗi, link được gỡ lại ngay.' })
+      return setPending({ action, title: t('Bật site {name}', { name: label }), confirm: t('Bật site'), note: t('Tạo link trong sites-enabled, kiểm tra cấu hình rồi reload. Nếu nginx -t lỗi, link được gỡ lại ngay.') })
     setPending({
       action,
-      title: `Tắt site ${label}`,
-      confirm: 'Tắt site',
+      title: t('Tắt site {name}', { name: label }),
+      confirm: t('Tắt site'),
       danger: true,
-      note: 'Gỡ link trong sites-enabled (tệp trong sites-available vẫn giữ), kiểm tra cấu hình rồi reload. Nếu nginx -t lỗi, link được đặt lại.',
+      note: t('Gỡ link trong sites-enabled (tệp trong sites-available vẫn giữ), kiểm tra cấu hình rồi reload. Nếu nginx -t lỗi, link được đặt lại.'),
     })
   }
 
   const sub =
     state?.kind === 'ok'
-      ? [state.version, state.running ? 'đang chạy' : 'không chạy', `${sites.length} site`, soon ? `${soon} chứng chỉ sắp hết hạn` : ''].filter(Boolean).join(' · ')
+      ? [state.version, state.running ? t('đang chạy') : t('không chạy#nginx'), t('{n} site', { n: sites.length }), soon ? t('{n} chứng chỉ sắp hết hạn', { n: soon }) : ''].filter(Boolean).join(' · ')
       : state?.kind === 'broken'
-        ? `${state.version} · cấu hình đang lỗi`
+        ? t('{version} · cấu hình đang lỗi', { version: state.version })
         : state?.kind === 'needsRoot'
-          ? 'Cần quyền root để đọc cấu hình'
-          : 'Đang đọc cấu hình…'
+          ? t('Cần quyền root để đọc cấu hình')
+          : t('Đang đọc cấu hình…')
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -146,14 +148,14 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
         </div>
         <button
           type="button"
-          title="Đọc lại"
+          title={t('Đọc lại')}
           onClick={() => void load()}
           className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-line2 text-ink hover:border-muted"
         >
           <RotateCw size={14} strokeWidth={1.8} className={cx(loading && 'animate-spin')} />
         </button>
         <Button size="sm" onClick={() => ask({ op: 'test' })} disabled={!state || state.kind === 'absent' || state.kind === 'needsRoot'}>
-          Kiểm tra cấu hình
+          {t('Kiểm tra cấu hình')}
         </Button>
         <Button size="sm" onClick={() => ask({ op: 'reload' })} disabled={state?.kind !== 'ok'}>
           Reload
@@ -163,31 +165,33 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
       {error && <span className="font-mono text-[11.5px] text-danger select-text">{error.detail ?? error.code}</span>}
 
       {state?.kind === 'needsRoot' && (
-        <Notice icon={Lock} title="Cần quyền root để đọc cấu hình nginx">
-          User {user} không đọc được tệp của nginx (nginx -T báo Permission denied). Bật sudo cho phiên này ở thanh phía trên, hoặc kết nối bằng root.
+        <Notice icon={Lock} title={t('Cần quyền root để đọc cấu hình nginx')}>
+          {t('User {user} không đọc được tệp của nginx (nginx -T báo Permission denied). Bật sudo cho phiên này ở thanh phía trên, hoặc kết nối bằng root.', { user })}
           <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-sunken p-2 font-mono text-[11px] whitespace-pre-wrap text-muted select-text">{state.detail}</pre>
         </Notice>
       )}
 
       {state?.kind === 'broken' && (
-        <Notice icon={FileText} title="Cấu hình nginx đang lỗi" tone="danger">
-          nginx -t không qua, nên chưa đọc được các site. Sửa lỗi dưới đây rồi bấm đọc lại; nginx {state.running ? 'vẫn chạy bằng cấu hình cũ' : 'đang không chạy'}.
+        <Notice icon={FileText} title={t('Cấu hình nginx đang lỗi')} tone="danger">
+          {state.running
+            ? t('nginx -t không qua, nên chưa đọc được các site. Sửa lỗi dưới đây rồi bấm đọc lại; nginx vẫn chạy bằng cấu hình cũ.')
+            : t('nginx -t không qua, nên chưa đọc được các site. Sửa lỗi dưới đây rồi bấm đọc lại; nginx đang không chạy.')}
           <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-sunken p-2 font-mono text-[11px] whitespace-pre-wrap text-danger select-text">{state.output}</pre>
         </Notice>
       )}
 
-      {state?.kind === 'absent' && <Notice icon={Globe} title="Server này không có nginx">Portway không tìm thấy lệnh nginx.</Notice>}
+      {state?.kind === 'absent' && <Notice icon={Globe} title={t('Server này không có nginx')}>{t('Portway không tìm thấy lệnh nginx.')}</Notice>}
 
       {ok && (
         <div className="grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: 'minmax(0,1fr) 380px' }}>
           <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
             <div className="grid flex-none gap-0 bg-sunken px-3.5 py-2 text-[11px] tracking-[.06em] text-muted uppercase" style={{ gridTemplateColumns: '220px minmax(0,1fr) 220px' }}>
-              <span>Tên miền</span>
+              <span>{t('Tên miền')}</span>
               <span className="text-center">Nginx</span>
-              <span>Đích</span>
+              <span>{t('Đích')}</span>
             </div>
             <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-2.5">
-              {sites.length === 0 && <div className="p-7 text-center text-muted">nginx chưa có khối server nào.</div>}
+              {sites.length === 0 && <div className="p-7 text-center text-muted">{t('nginx chưa có khối server nào.')}</div>}
               {sites.map((s) => {
                 const sel = s === current
                 const cl = certLine(s)
@@ -208,7 +212,7 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
                     <span className={cx('flex min-w-0 flex-col gap-0.5 rounded-[10px] border bg-raised px-3 py-2.5', sel ? 'border-accent' : 'border-line')}>
                       <span className="truncate font-semibold">{nameOf(s)}</span>
                       <span className="truncate text-[11px]" style={{ color: TONE_FG[cl.tone] }}>
-                        {s.enabled ? cl.text : 'Đang tắt'}
+                        {s.enabled ? cl.text : t('Đang tắt')}
                       </span>
                     </span>
                     <span className="flex min-w-0 items-center gap-1.5 px-1.5">
@@ -223,8 +227,8 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
                     </span>
                     <span className={cx('flex min-w-0 flex-col gap-0.5 rounded-[10px] border bg-sunken px-3 py-2.5', sel ? 'border-accent' : 'border-line')}>
                       <span className="flex items-center gap-1.5 text-[11px] text-muted">
-                        {TYPE_LABEL[s.target.kind]}
-                        {s.upstreamUp === false && <span className="text-danger">· không phản hồi</span>}
+                        {typeLabel(s.target.kind)}
+                        {s.upstreamUp === false && <span className="text-danger">{t('· không phản hồi')}</span>}
                       </span>
                       <span className="truncate font-mono text-[11.5px]" title={targetText(s)}>
                         {targetText(s)}
@@ -241,8 +245,8 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
               site={current}
               user={user}
               onToggle={() => {
-                const t = toggleOf(current)
-                if (t) ask(t)
+                const toggle = toggleOf(current)
+                if (toggle) ask(toggle)
               }}
               onSource={() => setSource(current)}
               onFiles={openInFiles}
@@ -266,8 +270,8 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
             if (pending.action.op !== 'test') {
               toast(
                 r.ok
-                  ? { title: pending.action.op === 'reload' ? 'Đã reload nginx' : pending.action.op === 'enable' ? 'Đã bật site' : 'Đã tắt site', detail: 'nginx -t: ok' }
-                  : { title: r.rolledBack ? 'Đã hoàn tác: nginx -t lỗi' : 'Không làm được', detail: r.output.split('\n').slice(-2).join(' ') },
+                  ? { title: pending.action.op === 'reload' ? t('Đã reload nginx') : pending.action.op === 'enable' ? t('Đã bật site') : t('Đã tắt site'), detail: 'nginx -t: ok' }
+                  : { title: r.rolledBack ? t('Đã hoàn tác: nginx -t lỗi') : t('Không làm được'), detail: r.output.split('\n').slice(-2).join(' ') },
               )
               void load()
             }
@@ -276,7 +280,7 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
       )}
 
       {source && (
-        <Modal open onClose={() => setSource(null)} width={760} title={`Cấu hình ${nameOf(source)}`} subtitle={`${source.file} · chỉ đọc, như nginx đọc được`}>
+        <Modal open onClose={() => setSource(null)} width={760} title={t('Cấu hình {name}', { name: nameOf(source) })} subtitle={t('{file} · chỉ đọc, như nginx đọc được', { file: source.file })}>
           <pre className="max-h-[60vh] overflow-auto rounded-lg bg-sunken p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre text-ink2 select-text">{source.source}</pre>
         </Modal>
       )}
@@ -301,7 +305,7 @@ function Details({
   onTail: (path: string) => void
   onEdit: (path: string) => void
 }) {
-  const t = toggleOf(s)
+  const toggle = toggleOf(s)
   const cl = certLine(s)
   const c = s.cert
   return (
@@ -310,73 +314,73 @@ function Details({
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-[15px] font-semibold break-all">{nameOf(s)}</span>
           <span className="flex flex-wrap gap-1">
-            <Chip tone={s.enabled ? TONES.success : TONES.neutral}>{s.enabled ? 'Đang bật' : 'Đang tắt'}</Chip>
-            <Chip tone={TONES.neutral}>{TYPE_LABEL[s.target.kind]}</Chip>
+            <Chip tone={s.enabled ? TONES.success : TONES.neutral}>{s.enabled ? t('Đang bật') : t('Đang tắt')}</Chip>
+            <Chip tone={TONES.neutral}>{typeLabel(s.target.kind)}</Chip>
           </span>
         </div>
-        {t && (
+        {toggle && (
           <Button size="xs" variant={s.enabled ? 'secondary' : 'primary'} onClick={onToggle}>
-            {s.enabled ? 'Tắt site' : 'Bật site'}
+            {s.enabled ? t('Tắt site') : t('Bật site')}
           </Button>
         )}
       </div>
 
-      {s.names.length > 1 && <Info label="Tên miền" value={s.names.join(', ')} mono />}
-      <Info label="Lắng nghe" value={s.listens.map((l) => `${l.addr === '*' ? '' : `${l.addr}:`}${l.port}${l.ssl ? ' ssl' : ''}`).join(', ')} mono />
+      {s.names.length > 1 && <Info label={t('Tên miền')} value={s.names.join(', ')} mono />}
+      <Info label={t('Lắng nghe')} value={s.listens.map((l) => `${l.addr === '*' ? '' : `${l.addr}:`}${l.port}${l.ssl ? ' ssl' : ''}`).join(', ')} mono />
       <Info
-        label={s.target.kind === 'proxy' ? 'Chuyển tới' : s.target.kind === 'static' ? 'Thư mục web' : s.target.kind === 'redirect' ? 'Chuyển hướng' : 'Đích'}
+        label={s.target.kind === 'proxy' ? t('Chuyển tới') : s.target.kind === 'static' ? t('Thư mục web') : s.target.kind === 'redirect' ? t('Chuyển hướng') : t('Đích')}
         value={targetText(s)}
         mono
         extra={
           s.upstreamUp === true ? (
-            <span className="text-[11px] text-success">Đang nhận kết nối</span>
+            <span className="text-[11px] text-success">{t('Đang nhận kết nối')}</span>
           ) : s.upstreamUp === false ? (
-            <span className="text-[11px] text-danger">Không phản hồi: không có gì nghe ở cổng này, khách sẽ gặp 502</span>
+            <span className="text-[11px] text-danger">{t('Không phản hồi: không có gì nghe ở cổng này, khách sẽ gặp 502')}</span>
           ) : s.target.kind === 'static' ? (
             <button type="button" className="w-fit cursor-pointer text-[11px] text-ink2 hover:underline" onClick={() => onFiles(`${(s.target as { root: string }).root}/x`)}>
-              Mở trong Tệp
+              {t('Mở trong Tệp')}
             </button>
           ) : null
         }
       />
 
       <div className="flex flex-col gap-1.5 rounded-[9px] px-3 py-2.5" style={{ background: cl.tone === 'warn' || cl.tone === 'bad' ? 'var(--warn-soft)' : 'var(--raised)' }}>
-        <span className="text-[11px] text-muted">Chứng chỉ SSL</span>
+        <span className="text-[11px] text-muted">{t('Chứng chỉ SSL')}</span>
         <span className="text-[13px] font-semibold" style={{ color: cl.tone === 'bad' ? 'var(--danger)' : cl.tone === 'warn' ? 'var(--warn)' : 'var(--ink)' }}>
           {cl.text}
         </span>
         {c && (
           <span className="flex flex-col gap-0.5 text-[11.5px] leading-normal text-ink2">
-            <span>Hết hạn {fullTime(c.notAfter)} (giờ máy bạn)</span>
-            <span className="break-all">Cấp bởi {c.selfSigned ? 'chính nó (tự ký)' : c.issuer}</span>
-            <span className="break-all">Cho {c.names.join(', ') || c.subject}</span>
-            {c.selfSigned && <span className="text-warn">Chứng chỉ tự ký: trình duyệt sẽ cảnh báo không an toàn.</span>}
-            {c.nameMismatch && <span className="text-warn">Chứng chỉ không có tên {nameOf(s)}: trình duyệt sẽ báo sai tên.</span>}
+            <span>{t('Hết hạn {time} (giờ máy bạn)', { time: fullTime(c.notAfter) })}</span>
+            <span className="break-all">{c.selfSigned ? t('Cấp bởi chính nó (tự ký)') : t('Cấp bởi {issuer}', { issuer: c.issuer })}</span>
+            <span className="break-all">{t('Cho {names}', { names: c.names.join(', ') || c.subject })}</span>
+            {c.selfSigned && <span className="text-warn">{t('Chứng chỉ tự ký: trình duyệt sẽ cảnh báo không an toàn.')}</span>}
+            {c.nameMismatch && <span className="text-warn">{t('Chứng chỉ không có tên {name}: trình duyệt sẽ báo sai tên.', { name: nameOf(s) })}</span>}
           </span>
         )}
-        {s.ssl && s.enabled && !c && <span className="text-[11.5px] text-ink2">Không lấy được chứng chỉ nginx đang trả về (server thiếu openssl, hoặc cổng SSL không nghe trên máy này).</span>}
-        {s.ssl && !s.enabled && <span className="text-[11.5px] text-ink2">Site đang tắt nên nginx không trả chứng chỉ này.</span>}
+        {s.ssl && s.enabled && !c && <span className="text-[11.5px] text-ink2">{t('Không lấy được chứng chỉ nginx đang trả về (server thiếu openssl, hoặc cổng SSL không nghe trên máy này).')}</span>}
+        {s.ssl && !s.enabled && <span className="text-[11.5px] text-ink2">{t('Site đang tắt nên nginx không trả chứng chỉ này.')}</span>}
         {s.sslCertificate && <span className="font-mono text-[11px] break-all text-muted">{s.sslCertificate}</span>}
-        {s.ssl && !s.httpsRedirect && s.listens.some((l) => !l.ssl) && <span className="text-[11.5px] text-warn">Cổng HTTP vẫn phục vụ nội dung, chưa chuyển sang HTTPS.</span>}
+        {s.ssl && !s.httpsRedirect && s.listens.some((l) => !l.ssl) && <span className="text-[11.5px] text-warn">{t('Cổng HTTP vẫn phục vụ nội dung, chưa chuyển sang HTTPS.')}</span>}
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] tracking-[.06em] text-muted uppercase">Log</span>
+        <span className="text-[11px] tracking-[.06em] text-muted uppercase">{t('Log')}</span>
         {[
-          ['Truy cập', s.accessLog],
-          ['Lỗi', s.errorLog],
+          [t('Truy cập'), s.accessLog],
+          [t('Lỗi'), s.errorLog],
         ].map(([label, path]) => (
           <div key={label} className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5">
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="text-[11px] text-muted">{label}</span>
               <span className="truncate font-mono text-[11.5px]" title={path ?? ''}>
-                {path ?? 'Tắt'}
+                {path ?? t('Tắt#log')}
               </span>
             </span>
             {path && (
-              <Button size="xs" onClick={() => onTail(path)} title={`tail -F ${path}${user === 'root' ? '' : ' (cần quyền đọc tệp log)'}`}>
+              <Button size="xs" onClick={() => onTail(path)} title={user === 'root' ? `tail -F ${path}` : t('tail -F {path} (cần quyền đọc tệp log)', { path })}>
                 <ScrollText size={12} strokeWidth={1.8} />
-                Theo dõi
+                {t('Theo dõi')}
               </Button>
             )}
           </div>
@@ -384,23 +388,23 @@ function Details({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] tracking-[.06em] text-muted uppercase">Tệp cấu hình</span>
+        <span className="text-[11px] tracking-[.06em] text-muted uppercase">{t('Tệp cấu hình')}</span>
         <span className="font-mono text-[11.5px] break-all text-ink2">{s.available && s.available !== s.file ? `${s.file} → ${s.available}` : s.file}</span>
         <div className="flex flex-wrap gap-1.5">
           <Button size="xs" onClick={onSource}>
             <FileText size={12} strokeWidth={1.8} />
-            Xem cấu hình
+            {t('Xem cấu hình')}
           </Button>
-          <Button size="xs" onClick={() => onEdit(s.available ?? s.file)} title="Mở bằng editor trên máy; lưu là tải lên. Sau khi sửa, bấm Kiểm tra cấu hình rồi Reload.">
+          <Button size="xs" onClick={() => onEdit(s.available ?? s.file)} title={t('Mở bằng editor trên máy; lưu là tải lên. Sau khi sửa, bấm Kiểm tra cấu hình rồi Reload.')}>
             <FilePen size={12} strokeWidth={1.8} />
-            Sửa trên máy
+            {t('Sửa trên máy')}
           </Button>
           <Button size="xs" onClick={() => onFiles(s.available ?? s.file)}>
             <FolderOpen size={12} strokeWidth={1.8} />
-            Mở thư mục trong Tệp
+            {t('Mở thư mục trong Tệp')}
           </Button>
         </div>
-        {!s.available && <span className="text-[11px] text-muted">Tệp này không nằm trong sites-available nên Portway không bật/tắt nó được.</span>}
+        {!s.available && <span className="text-[11px] text-muted">{t('Tệp này không nằm trong sites-available nên Portway không bật/tắt nó được.')}</span>}
       </div>
     </div>
   )
@@ -475,13 +479,13 @@ function RunDialog({
       footer={
         result ? (
           <Button variant="primary" onClick={onClose}>
-            Đóng
+            {t('Đóng')}
           </Button>
         ) : (
           <>
-            <Button onClick={onClose}>Huỷ</Button>
+            <Button onClick={onClose}>{t('Huỷ')}</Button>
             <Button variant={pending.danger ? 'danger' : 'primary'} onClick={() => void run()} disabled={busy}>
-              {busy ? 'Đang chạy…' : pending.confirm}
+              {busy ? t('Đang chạy…') : pending.confirm}
             </Button>
           </>
         )
@@ -489,7 +493,7 @@ function RunDialog({
     >
       <span className="leading-normal text-ink2">{pending.note}</span>
       <div className="flex flex-col gap-1">
-        <span className="text-[11px] text-muted">Lệnh sẽ chạy</span>
+        <span className="text-[11px] text-muted">{t('Lệnh sẽ chạy')}</span>
         <pre className="overflow-auto rounded-md bg-sunken px-2.5 py-2 font-mono text-[11.5px] whitespace-pre-wrap text-ink2 select-text">
           {preview ? (sudo ? `sudo sh -c ${q(preview)}` : preview) : '…'}
         </pre>
@@ -498,9 +502,9 @@ function RunDialog({
       {result && (
         <div className="flex flex-col gap-1">
           <span className={cx('text-[12px] font-semibold', result.ok ? 'text-success' : 'text-danger')}>
-            {result.ok ? 'Xong' : result.rolledBack ? 'nginx -t lỗi, đã hoàn tác thay đổi' : 'Lỗi'}
+            {result.ok ? t('Xong') : result.rolledBack ? t('nginx -t lỗi, đã hoàn tác thay đổi') : t('Lỗi')}
           </span>
-          <pre className="max-h-48 overflow-auto rounded-md bg-sunken px-2.5 py-2 font-mono text-[11px] whitespace-pre-wrap text-ink2 select-text">{result.output || '(không in gì)'}</pre>
+          <pre className="max-h-48 overflow-auto rounded-md bg-sunken px-2.5 py-2 font-mono text-[11px] whitespace-pre-wrap text-ink2 select-text">{result.output || t('(không in gì)')}</pre>
         </div>
       )}
     </Modal>

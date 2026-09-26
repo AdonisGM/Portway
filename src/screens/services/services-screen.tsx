@@ -13,6 +13,7 @@ import { PickUnits } from './dialogs'
 import { defaultWatch } from './format'
 import { UnitsView } from './units'
 import { withSudo } from '../../lib/commands'
+import { t } from '../../i18n'
 
 const STATUS_MS = 10_000
 
@@ -43,8 +44,8 @@ function useUnits(serverId: string, user: string, units: string[] | null) {
   useEffect(() => {
     if (!live) return
     void load()
-    const t = setInterval(load, STATUS_MS)
-    return () => clearInterval(t)
+    const timer = setInterval(load, STATUS_MS)
+    return () => clearInterval(timer)
   }, [live, sudo, load])
 
   return { list, error, load }
@@ -68,7 +69,7 @@ export function ServicesScreen({ server, user }: { server: Server; user: string 
     seeded.current = true
     api.servicesAll(server.id, user).then(
       (all) => void setWatchedUnits(server.id, defaultWatch(all)),
-      (e) => toast({ title: 'Không đọc được danh sách unit', detail: asError(e).detail ?? asError(e).code }),
+      (e) => toast({ title: t('Không đọc được danh sách unit'), detail: asError(e).detail ?? asError(e).code }),
     )
   }, [watched, server.id, user, setWatchedUnits, toast])
 
@@ -85,21 +86,25 @@ export function ServicesScreen({ server, user }: { server: Server; user: string 
   const failed = (list ?? []).filter((u) => u.activeState === 'failed').length
 
   if (nav.servicesView === 'jobs') {
-    return <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">Tác vụ định kỳ sẽ làm ở bước tiếp theo</div>
+    return <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">{t('Tác vụ định kỳ sẽ làm ở bước tiếp theo')}</div>
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-none flex-wrap items-center gap-2">
         <div className="flex min-w-[220px] flex-1 flex-col gap-0.5">
-          <span className="text-[15px] font-semibold">Dịch vụ</span>
+          <span className="text-[15px] font-semibold">{t('Dịch vụ')}</span>
           <span className="text-muted">
-            {watched == null ? 'Đang chọn unit để theo dõi…' : `${watched.length} unit đang theo dõi${failed ? ` · ${failed} lỗi` : ''}`}
+            {watched == null
+              ? t('Đang chọn unit để theo dõi…')
+              : failed
+                ? t('{n} unit đang theo dõi · {failed} lỗi', { n: watched.length, failed })
+                : t('{n} unit đang theo dõi', { n: watched.length })}
           </span>
         </div>
-        <SearchInput value={query} onChange={setQuery} placeholder="Tìm unit" className="w-60 min-w-0" />
+        <SearchInput value={query} onChange={setQuery} placeholder={t('Tìm unit')} className="w-60 min-w-0" />
         <Button size="sm" onClick={() => setPick(true)}>
-          + Theo dõi unit
+          + {t('Theo dõi unit')}
         </Button>
       </div>
 
@@ -135,7 +140,7 @@ export function ServicesScreen({ server, user }: { server: Server; user: string 
           sudo={sudo}
           onClose={() => setAsk(null)}
           onDone={() => {
-            toast({ title: 'Đã chạy lệnh', detail: withSudo(ask.command, sudo && user !== 'root') })
+            toast({ title: t('Đã chạy lệnh'), detail: withSudo(ask.command, sudo && user !== 'root') })
             setAsk(null)
           }}
         />

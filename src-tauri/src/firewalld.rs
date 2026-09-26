@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::firewall::{valid_ports, valid_source, Ctx, Op, Plan, Rule, RuleInput};
 use crate::ssh::shell_quote;
 
@@ -216,7 +217,7 @@ pub(crate) fn read(section: &str) -> Read {
     let active = parts.get(1).copied().unwrap_or("");
     let zones = parse_zones(parts.get(2).copied().unwrap_or(""));
     if zones.is_empty() {
-        let detail = parts.get(2).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "firewall-cmd --list-all không trả về zone nào".into());
+        let detail = parts.get(2).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| tr("firewall-cmd --list-all không trả về zone nào", "firewall-cmd --list-all returned no zones"));
         return Read::Error(detail);
     }
     let services = parse_services(parts.get(3).copied().unwrap_or(""));

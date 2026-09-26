@@ -1,5 +1,6 @@
 import { Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { locale, t } from '../../i18n'
 import { useNav, type ModuleId } from '../../app/nav'
 import { Chip, TONES, cx } from '../../components/ui/primitives'
 import { api, type Health, type Server } from '../../lib/api'
@@ -11,55 +12,69 @@ type Row = { label: string; value: string; dim?: boolean; chips?: ChipSpec[]; no
 
 function when(ms: number) {
   const d = new Date(ms)
-  const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+  const time = d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
   const today = new Date().toDateString() === d.toDateString()
-  return today ? `${time} hôm nay` : `${time} ngày ${d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+  return today
+    ? t('{time} hôm nay', { time })
+    : t('{time} ngày {date}', { time, date: d.toLocaleDateString(locale(), { day: '2-digit', month: '2-digit', year: 'numeric' }) })
 }
 
 function rows(h: Health): Row[] {
   const out: Row[] = []
 
   const d = h.docker
-  if (d.kind === 'notInstalled') out.push({ label: 'Docker', value: 'Chưa cài trên server này', dim: true, chips: [{ text: 'Chưa cài', tone: TONES.neutral }] })
+  if (d.kind === 'notInstalled') out.push({ label: 'Docker', value: t('Chưa cài trên server này'), dim: true, chips: [{ text: t('Chưa cài'), tone: TONES.neutral }] })
   else if (d.kind === 'noAccess')
-    out.push({ label: 'Docker', value: 'User này không có quyền dùng Docker', dim: true, locked: 'Cần quyền docker', note: 'Thêm user vào nhóm docker, dùng sudo, hoặc kết nối bằng root.' })
+    out.push({ label: 'Docker', value: t('User này không có quyền dùng Docker'),
+      dim: true,
+      locked: t('Cần quyền docker'),
+      note: t('Thêm user vào nhóm docker, dùng sudo, hoặc kết nối bằng root.'),
+    })
   else if (d.kind === 'daemonDown')
-    out.push({ label: 'Docker', value: 'Docker daemon không chạy', chips: [{ text: 'Không chạy', tone: TONES.danger, title: d.detail }], module: 'docker' })
+    out.push({ label: 'Docker', value: t('Docker daemon không chạy'), chips: [{ text: t('Không chạy'), tone: TONES.danger, title: d.detail }], module: 'docker' })
   else
     out.push({
       label: 'Docker',
-      value: `${d.running} đang chạy / ${d.total} container`,
+      value: t('{running} đang chạy / {total} container', { running: d.running, total: d.total }),
       module: 'docker',
       chips: [
-        ...(d.failed.length ? [{ text: `${d.failed.length} lỗi`, tone: TONES.danger, title: d.failed.map((c) => `${c.name} · ${c.status}`).join('\n') }] : []),
-        ...(d.finished.length ? [{ text: `${d.finished.length} đã chạy xong`, tone: TONES.neutral, title: d.finished.map((c) => `${c.name} · ${c.status}`).join('\n') }] : []),
-        ...(!d.failed.length && !d.finished.length ? [{ text: 'Ổn', tone: TONES.success }] : []),
+        ...(d.failed.length ? [{ text: t('{n} lỗi', { n: d.failed.length }), tone: TONES.danger, title: d.failed.map((c) => `${c.name} · ${c.status}`).join('\n') }] : []),
+        ...(d.finished.length ? [{ text: t('{n} đã chạy xong', { n: d.finished.length }), tone: TONES.neutral, title: d.finished.map((c) => `${c.name} · ${c.status}`).join('\n') }] : []),
+        ...(!d.failed.length && !d.finished.length ? [{ text: t('Ổn'), tone: TONES.success }] : []),
       ],
     })
 
   const s = h.systemd
-  if (s.kind === 'notSystemd') out.push({ label: 'Dịch vụ', value: 'Server không dùng systemd', dim: true, note: 'Portway đọc trạng thái dịch vụ qua systemd.' })
+  if (s.kind === 'notSystemd') out.push({ label: t('Dịch vụ'), value: t('Server không dùng systemd'), dim: true, note: t('Portway đọc trạng thái dịch vụ qua systemd.') })
   else
     out.push({
-      label: 'Dịch vụ',
-      value: `${s.services} unit dịch vụ`,
+      label: t('Dịch vụ'),
+      value: t('{n} unit dịch vụ', { n: s.services }),
       module: 'services',
-      chips: s.failed.length ? [{ text: `${s.failed.length} lỗi`, tone: TONES.danger, title: s.failed.join('\n') }] : [{ text: 'Ổn', tone: TONES.success }],
-      note: 'Đếm các unit systemd đang ở trạng thái failed.',
+      chips: s.failed.length
+        ? [{ text: t('{n} lỗi', { n: s.failed.length }), tone: TONES.danger, title: s.failed.join('\n') }]
+        : [{ text: t('Ổn'), tone: TONES.success }],
+      note: t('Đếm các unit systemd đang ở trạng thái failed.'),
     })
 
   const u = h.updates
   const cmd = (m: string) => (m === 'apk' ? 'apk update' : 'apt update')
   if (u.kind === 'unsupported')
-    out.push({ label: 'Bản cập nhật', value: 'Chưa hỗ trợ trên distro này', dim: true, note: 'Portway hiện đọc được apt (Debian, Ubuntu) và apk (Alpine).' })
+    out.push({
+      label: t('Bản cập nhật'),
+      value: t('Chưa hỗ trợ trên distro này'),
+      dim: true,
+      note: t('Portway hiện đọc được apt (Debian, Ubuntu) và apk (Alpine).'),
+    })
   else if (u.kind === 'noIndex')
     out.push({
-      label: 'Bản cập nhật',
-      value: 'Chưa có danh sách gói',
+      label: t('Bản cập nhật'),
+      value: t('Chưa có danh sách gói'),
       dim: true,
       note: (
         <>
-          Server chưa từng chạy <span className="font-mono">{cmd(u.manager)}</span>, nên chưa biết gói nào có bản mới.
+          {t('Server chưa từng chạy')} <span className="font-mono">{cmd(u.manager)}</span>
+          {t(', nên chưa biết gói nào có bản mới.')}
         </>
       ),
     })
@@ -67,14 +82,14 @@ function rows(h: Health): Row[] {
     const security = u.upgrades.filter((p) => p.security)
     const list = (ps: typeof u.upgrades) => ps.map((p) => `${p.name} ${p.version}`).join('\n')
     out.push({
-      label: 'Bản cập nhật',
-      value: u.upgrades.length ? `${u.upgrades.length} gói có bản mới` : 'Không có gói nào cần cập nhật',
+      label: t('Bản cập nhật'),
+      value: u.upgrades.length ? t('{n} gói có bản mới', { n: u.upgrades.length }) : t('Không có gói nào cần cập nhật'),
       chips: security.length
-        ? [{ text: `${security.length} bảo mật`, tone: TONES.info, title: list(security) }]
+        ? [{ text: t('{n} bảo mật', { n: security.length }), tone: TONES.info, title: list(security) }]
         : u.upgrades.length
-          ? [{ text: 'Có bản mới', tone: TONES.neutral, title: list(u.upgrades) }]
-          : [{ text: 'Ổn', tone: TONES.success }],
-      note: u.indexAt ? `Tính đến lần cập nhật danh sách gói (${cmd(u.manager)}) lúc ${when(u.indexAt)}.` : undefined,
+          ? [{ text: t('Có bản mới'), tone: TONES.neutral, title: list(u.upgrades) }]
+          : [{ text: t('Ổn'), tone: TONES.success }],
+      note: u.indexAt ? t('Tính đến lần cập nhật danh sách gói ({cmd}) lúc {when}.', { cmd: cmd(u.manager), when: when(u.indexAt) }) : undefined,
     })
   }
   return out
@@ -91,7 +106,7 @@ export function HealthCard({ server, user }: { server: Server; user: string }) {
   return (
     <div className="flex flex-col gap-1 rounded-xl border border-line bg-surface p-4">
       <div className="mb-1.5 flex items-start gap-2">
-        <span className="flex-1 text-[15px] font-semibold">Tình trạng</span>
+        <span className="flex-1 text-[15px] font-semibold">{t('Tình trạng')}</span>
         <RefreshControl at={at} busy={busy} error={error} onRefresh={refresh} live={live} />
       </div>
       <ErrorLine error={error} />

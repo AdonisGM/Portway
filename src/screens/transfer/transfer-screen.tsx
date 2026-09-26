@@ -8,6 +8,7 @@ import { useNav, type PaneSide, type PaneSource } from '../../app/nav'
 import { useServers } from '../../app/servers'
 import { useTransfers } from '../../app/transfers'
 import { useToast } from '../../components/toast'
+import { t } from '../../i18n'
 import { TextInput } from '../../components/ui/form-controls'
 import { Modal } from '../../components/ui/modal'
 import { Button, cx } from '../../components/ui/primitives'
@@ -56,11 +57,11 @@ export function TransferScreen() {
   }, [])
 
   const name = (s: PaneSource) => sourceName(s, byId)
-  const where = (s: PaneSource, dir: string) => (s.kind === 'local' ? `Máy này · ${shortPath(dir, home)}` : `${name(s)}:${dir}`)
+  const where = (s: PaneSource, dir: string) => (s.kind === 'local' ? t('Máy này · {path}', { path: shortPath(dir, home) }) : `${name(s)}:${dir}`)
   const fail = (title: string) => (e: unknown) => toast({ title, detail: isAppError(e) ? fileError(e) : String(e) })
 
   const sources = [
-    { value: LOCAL_KEY, label: 'Máy này' },
+    { value: LOCAL_KEY, label: t('Máy này') },
     ...servers.flatMap((s) => s.accounts.map((a) => ({ value: `${s.id}|${a.user}`, label: `${a.user}@${s.name}` }))),
   ]
   const pickSource = (side: PaneSide, key: string) => {
@@ -72,14 +73,17 @@ export function TransferScreen() {
 
   /** Why items of `from` cannot go to the folder on screen in `to`, or null. */
   const blocked = (from: PaneState, to: PaneState, entries: FileEntry[], dir = to.path): string | null => {
-    if (!entries.length) return `Chọn tệp ở ${name(from.src)} trước`
-    if (from.src.kind === 'local' && to.src.kind === 'local') return 'Hai bên đều là máy này. Chọn một server ở một bên.'
-    if (!to.ready || !to.listing) return `${name(to.src)} chưa sẵn sàng`
-    if (sameSource(from.src, to.src) && from.path === dir) return 'Hai bên đang mở cùng một thư mục'
-    if (dir === to.path && !canWriteHere(to)) return `${to.listing.user} không có quyền ghi vào ${shortPath(to.path, to.src.kind === 'local' ? home : null)}`
+    if (!entries.length) return t('Chọn tệp ở {name} trước', { name: name(from.src) })
+    if (from.src.kind === 'local' && to.src.kind === 'local') return t('Hai bên đều là máy này. Chọn một server ở một bên.')
+    if (!to.ready || !to.listing) return t('{name} chưa sẵn sàng', { name: name(to.src) })
+    if (sameSource(from.src, to.src) && from.path === dir) return t('Hai bên đang mở cùng một thư mục')
+    if (dir === to.path && !canWriteHere(to)) return t('{user} không có quyền ghi vào {path}', { user: to.listing.user, path: shortPath(to.path, to.src.kind === 'local' ? home : null) })
     const unreadable = entries.filter((e) => !e.readable)
-    if (unreadable.length) return `Không đọc được ${unreadable[0].name}${unreadable.length > 1 ? ` và ${unreadable.length - 1} mục khác` : ''}`
-    if (entries.some((e) => sameSource(from.src, to.src) && isDirLike(e) && (dir === e.path || dir.startsWith(e.path + '/')))) return 'Không chép thư mục vào chính nó'
+    if (unreadable.length)
+      return unreadable.length > 1
+        ? t('Không đọc được {name} và {n} mục khác', { name: unreadable[0].name, n: unreadable.length - 1 })
+        : t('Không đọc được {name}', { name: unreadable[0].name })
+    if (entries.some((e) => sameSource(from.src, to.src) && isDirLike(e) && (dir === e.path || dir.startsWith(e.path + '/')))) return t('Không chép thư mục vào chính nó')
     return null
   }
 
@@ -90,7 +94,7 @@ export function TransferScreen() {
       await api.transferCopy(endOf(job.from, byId), endOf(to.src, byId), job.dir, items)
       if (job.fromSide) panes[job.fromSide].select([], null)
     } catch (e) {
-      fail('Không chép được')(e)
+      fail(t('Không chép được'))(e)
     }
   }
 
@@ -101,7 +105,7 @@ export function TransferScreen() {
       // Read the destination again: the pane may be minutes old.
       const l = await listFor(dest.src, dir)
       if (l.denied || !(l.dir.writable || (dest.src.kind === 'remote' && dest.src.user === 'root'))) {
-        return toast({ title: 'Không chép được', detail: `${l.user} không có quyền ghi vào ${where(dest.src, l.path)}` })
+        return toast({ title: t('Không chép được'), detail: t('{user} không có quyền ghi vào {path}', { user: l.user, path: where(dest.src, l.path) }) })
       }
       const there = new Map(l.entries.map((e) => [e.name, e]))
       const job: Job = { from, fromSide, to, dir: l.path, items, taken: new Set(there.keys()) }
@@ -109,7 +113,7 @@ export function TransferScreen() {
       if (clashes.length) setConflict({ ...job, clashes })
       else await send(job, items.map((i) => ({ path: i.path, overwrite: false })))
     } catch (e) {
-      fail('Không chép được')(e)
+      fail(t('Không chép được'))(e)
     }
   }
 
@@ -136,7 +140,7 @@ export function TransferScreen() {
     const from = panes[fromSide]
     const to = panes[other(fromSide)]
     const why = blocked(from, to, from.selected)
-    if (why) return toast({ title: 'Chưa chép được', detail: why })
+    if (why) return toast({ title: t('Chưa chép được'), detail: why })
     void copy(from.src, fromSide, other(fromSide), itemsOf(from, from.selNames), to.path)
   }
 
@@ -179,7 +183,7 @@ export function TransferScreen() {
       const to = ps[over]
       const entries = from.shown.filter((x) => d.names.includes(x.name))
       const reason = why(from, to, entries, dir ?? to.path)
-      if (reason) return toast({ title: 'Chưa chép được', detail: reason })
+      if (reason) return toast({ title: t('Chưa chép được'), detail: reason })
       void run(from.src, d.side, over, items(from, d.names), dir ?? to.path)
     }
     window.addEventListener('mousemove', move)
@@ -205,8 +209,8 @@ export function TransferScreen() {
       setFinder(null)
       if (!h.over) return
       const to = latest.current.panes[h.over]
-      if (to.src.kind === 'local') return toast({ title: 'Đã ở trên máy này', detail: 'Thả vào pane của một server để tải lên.' })
-      if (!to.ready || !to.listing) return toast({ title: 'Chưa tải lên được', detail: `${sourceName(to.src, byId)} chưa sẵn sàng` })
+      if (to.src.kind === 'local') return toast({ title: t('Đã ở trên máy này'), detail: t('Thả vào pane của một server để tải lên.') })
+      if (!to.ready || !to.listing) return toast({ title: t('Chưa tải lên được'), detail: t('{name} chưa sẵn sàng', { name: sourceName(to.src, byId) }) })
       void latest.current.copy({ kind: 'local' }, null, h.over, p.paths.map((path) => ({ name: baseName(path), path })), h.dir ?? to.path)
     })
     return () => {
@@ -216,13 +220,13 @@ export function TransferScreen() {
 
   const hint = (side: PaneSide): DropHint | null => {
     const to = panes[side]
-    const label = (dir: string) => (to.src.kind === 'local' ? `Tải về máy này · ${shortPath(dir, home)}` : `Chép sang ${name(to.src)}:${dir}`)
+    const label = (dir: string) => (to.src.kind === 'local' ? t('Tải về máy này · {path}', { path: shortPath(dir, home) }) : t('Chép sang {dest}', { dest: `${name(to.src)}:${dir}` }))
     if (dragging?.started && dragging.over === side) {
-      return { dir: dragging.dir, label: label(dragging.dir ?? to.path), sub: `${dragging.names.length} mục từ ${name(panes[dragging.side].src)}` }
+      return { dir: dragging.dir, label: label(dragging.dir ?? to.path), sub: t('{n} mục từ {name}', { n: dragging.names.length, name: name(panes[dragging.side].src) }) }
     }
     if (finder?.over === side) {
-      if (to.src.kind === 'local') return { dir: null, label: 'Đây là máy này', sub: 'Thả vào pane của một server để tải lên' }
-      return { dir: finder.dir, label: label(finder.dir ?? to.path), sub: `${finder.count} mục từ Finder` }
+      if (to.src.kind === 'local') return { dir: null, label: t('Đây là máy này'), sub: t('Thả vào pane của một server để tải lên') }
+      return { dir: finder.dir, label: label(finder.dir ?? to.path), sub: t('{n} mục từ Finder', { n: finder.count }) }
     }
     return null
   }
@@ -230,8 +234,8 @@ export function TransferScreen() {
   // Keyboard: the active pane moves, selects and opens; ⌘← ⌘→ copy.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null
-      if (t?.closest('input, textarea, [contenteditable], [data-scope=select], [data-scope=dialog]')) return
+      const target = e.target as HTMLElement | null
+      if (target?.closest('input, textarea, [contenteditable], [data-scope=select], [data-scope=dialog]')) return
       const { panes: ps, active: side, copySelection: copySel, conflict: c, newFolder: nf } = latest.current
       if (c || nf || document.querySelector('[data-scope=dialog][data-part=content]')) return
       const p = ps[side]
@@ -294,7 +298,7 @@ export function TransferScreen() {
     const path = p.listing.path
     const run =
       p.src.kind === 'local' ? api.localTerminal(path) : api.openTerminal(p.src.serverId, p.src.user, undefined, path)
-    void run.then(() => toast({ title: 'Đã mở Terminal', detail: `cd ${q(path)}` })).catch(fail('Không mở được Terminal'))
+    void run.then(() => toast({ title: t('Đã mở Terminal'), detail: `cd ${q(path)}` })).catch(fail(t('Không mở được Terminal')))
   }
 
   const lr = blocked(L, R, L.selected)
@@ -302,8 +306,8 @@ export function TransferScreen() {
   const relay = L.src.kind === 'remote' && R.src.kind === 'remote' && !sameSource(L.src, R.src)
   const relayText =
     L.src.kind === 'remote' && R.src.kind === 'remote' && L.src.serverId === R.src.serverId
-      ? `Hai phiên SSH khác nhau (${L.src.user} và ${R.src.user}): Portway đọc bằng phiên này và ghi bằng phiên kia, dữ liệu vẫn đi qua máy bạn.`
-      : `${hostName(L.src, byId)} và ${hostName(R.src, byId)} không kết nối trực tiếp với nhau: Portway đọc tệp từ server này và ghi sang server kia qua máy bạn, không lưu tạm trên máy. Tốc độ phụ thuộc mạng của máy bạn tới cả hai server.`
+      ? t('Hai phiên SSH khác nhau ({a} và {b}): Portway đọc bằng phiên này và ghi bằng phiên kia, dữ liệu vẫn đi qua máy bạn.', { a: L.src.user, b: R.src.user })
+      : t('{a} và {b} không kết nối trực tiếp với nhau: Portway đọc tệp từ server này và ghi sang server kia qua máy bạn, không lưu tạm trên máy. Tốc độ phụ thuộc mạng của máy bạn tới cả hai server.', { a: hostName(L.src, byId), b: hostName(R.src, byId) })
 
   // One connection question at a time, for whichever pane's server needs it.
   const asking = [L, R].find((p) => p.src.kind === 'remote' && p.conn?.status === 'prompt')
@@ -317,19 +321,19 @@ export function TransferScreen() {
     <div className="relative flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-none flex-wrap items-end gap-2">
         <div className="flex min-w-[260px] flex-1 flex-col gap-0.5">
-          <span className="text-[23px] font-semibold">Chuyển tệp</span>
-          <span className="text-muted">Chép tệp giữa máy bạn và server, hoặc giữa hai server qua SFTP. Chọn rồi bấm mũi tên, hoặc kéo sang pane bên kia.</span>
+          <span className="text-[23px] font-semibold">{t('Chuyển tệp')}</span>
+          <span className="text-muted">{t('Chép tệp giữa máy bạn và server, hoặc giữa hai server qua SFTP. Chọn rồi bấm mũi tên, hoặc kéo sang pane bên kia.')}</span>
         </div>
-        <Button size="sm" onClick={() => nav.swapPanes()} title="Đổi chỗ hai pane">
+        <Button size="sm" onClick={() => nav.swapPanes()} title={t('Đổi chỗ hai pane')}>
           <ArrowLeftRight size={14} strokeWidth={1.8} />
-          Đổi hai bên
+          {t('Đổi hai bên')}
         </Button>
       </div>
 
       {L.src.kind === 'local' && R.src.kind === 'local' && (
         <div className="flex flex-none items-start gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-[12px] leading-normal text-ink2">
           <Info size={14} strokeWidth={1.8} className="mt-px flex-none text-info" />
-          <span>Hai bên đều là máy này. Chọn một server ở ô nguồn của một pane để bắt đầu chép.</span>
+          <span>{t('Hai bên đều là máy này. Chọn một server ở ô nguồn của một pane để bắt đầu chép.')}</span>
         </div>
       )}
       {relay && (
@@ -356,11 +360,11 @@ export function TransferScreen() {
           onNewFolder={() => setNewFolder('L')}
         />
         <div className="flex flex-col items-center justify-center gap-2">
-          <ArrowButton title={lr ?? `Chép ${L.selected.length} mục sang ${where(R.src, R.path)} (⌘→)`} off={!!lr} onClick={() => copySelection('L')}>
+          <ArrowButton title={lr ?? t('Chép {n} mục sang {dest} (⌘→)', { n: L.selected.length, dest: where(R.src, R.path) })} off={!!lr} onClick={() => copySelection('L')}>
             <ArrowRight size={16} strokeWidth={1.9} />
           </ArrowButton>
           <span className="num h-4 text-[11px] text-muted">{L.selected.length ? `${L.selected.length} →` : R.selected.length ? `← ${R.selected.length}` : ''}</span>
-          <ArrowButton title={rl ?? `Chép ${R.selected.length} mục sang ${where(L.src, L.path)} (⌘←)`} off={!!rl} onClick={() => copySelection('R')}>
+          <ArrowButton title={rl ?? t('Chép {n} mục sang {dest} (⌘←)', { n: R.selected.length, dest: where(L.src, L.path) })} off={!!rl} onClick={() => copySelection('R')}>
             <ArrowLeft size={16} strokeWidth={1.9} />
           </ArrowButton>
         </div>
@@ -382,7 +386,7 @@ export function TransferScreen() {
       </div>
 
       <span className="flex-none text-[11px] text-muted">
-        Phím tắt: ⇥ đổi pane · ↑↓ di chuyển (⇧ chọn dải) · Space chọn · ↵ mở thư mục · ⌫ lên thư mục cha · ⌘A chọn hết · ⌘→ ⌘← chép sang bên kia
+        {t('Phím tắt: ⇥ đổi pane · ↑↓ di chuyển (⇧ chọn dải) · Space chọn · ↵ mở thư mục · ⌫ lên thư mục cha · ⌘A chọn hết · ⌘→ ⌘← chép sang bên kia')}
       </span>
 
       <TransferQueue />
@@ -392,7 +396,7 @@ export function TransferScreen() {
           className="pointer-events-none fixed z-50 rounded-md border border-line2 bg-surface px-2 py-1 text-[11.5px] shadow-pop"
           style={{ left: dragging.x + 14, top: dragging.y + 12 }}
         >
-          {dragging.names.length === 1 ? dragging.names[0] : `${dragging.names.length} mục`}
+          {dragging.names.length === 1 ? dragging.names[0] : t('{n} mục', { n: dragging.names.length })}
         </div>
       )}
 
@@ -454,7 +458,7 @@ function NewFolder({ pane: p, onClose }: { pane: PaneState; onClose: () => void 
       p.select([created], created)
       p.setCursor(created)
     } catch (e) {
-      toast({ title: 'Không tạo được thư mục', detail: isAppError(e) ? fileError(e) : String(e) })
+      toast({ title: t('Không tạo được thư mục'), detail: isAppError(e) ? fileError(e) : String(e) })
     } finally {
       setBusy(false)
     }
@@ -464,13 +468,13 @@ function NewFolder({ pane: p, onClose }: { pane: PaneState; onClose: () => void 
       open
       onClose={onClose}
       width={420}
-      title="Thư mục mới"
+      title={t('Thư mục mới')}
       subtitle={dir}
       footer={
         <>
-          <Button onClick={onClose}>Huỷ</Button>
+          <Button onClick={onClose}>{t('Huỷ')}</Button>
           <Button variant="primary" disabled={!value.trim() || busy} onClick={() => void submit()}>
-            Tạo
+            {t('Tạo')}
           </Button>
         </>
       }
@@ -481,7 +485,7 @@ function NewFolder({ pane: p, onClose }: { pane: PaneState; onClose: () => void 
           void submit()
         }}
       >
-        <TextInput value={value} onChange={setValue} placeholder="ten-thu-muc" autoFocus />
+        <TextInput value={value} onChange={setValue} placeholder={t('ten-thu-muc')} autoFocus />
       </form>
     </Modal>
   )

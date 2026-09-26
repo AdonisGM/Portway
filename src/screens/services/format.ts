@@ -1,5 +1,7 @@
 import { TONES } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import type { Server, ServiceAction, Unit, UnitBrief } from '../../lib/api'
+import { dateOnly, dayMonth, hm } from '../../i18n/dates'
 
 type Tone = (typeof TONES)[keyof typeof TONES]
 
@@ -9,26 +11,26 @@ export const shortName = (unit: string) => unit.replace(/\.service$/, '')
 export const displayName = (server: Server, unit: string) => server.unitNames?.[unit] || shortName(unit)
 
 export function unitStatus(u: Unit): { tone: Tone; label: string } {
-  if (u.loadState === 'not-found') return { tone: TONES.danger, label: 'Không tìm thấy unit' }
-  if (u.loadState === 'masked') return { tone: TONES.neutral, label: 'Bị chặn (masked)' }
+  if (u.loadState === 'not-found') return { tone: TONES.danger, label: t('Không tìm thấy unit') }
+  if (u.loadState === 'masked') return { tone: TONES.neutral, label: t('Bị chặn (masked)') }
   switch (u.activeState) {
     case 'active':
-      if (u.subState === 'exited') return { tone: TONES.success, label: 'Đã chạy xong' }
-      return { tone: TONES.success, label: 'Đang chạy' }
+      if (u.subState === 'exited') return { tone: TONES.success, label: t('Đã chạy xong') }
+      return { tone: TONES.success, label: t('Đang chạy') }
     case 'activating':
-      if (u.subState === 'auto-restart') return { tone: TONES.warn, label: `Đang tự khởi động lại · ${u.restarts} lần` }
-      return { tone: TONES.info, label: 'Đang khởi động' }
+      if (u.subState === 'auto-restart') return { tone: TONES.warn, label: t('Đang tự khởi động lại · {n} lần', { n: u.restarts }) }
+      return { tone: TONES.info, label: t('Đang khởi động') }
     case 'deactivating':
-      return { tone: TONES.info, label: 'Đang dừng' }
+      return { tone: TONES.info, label: t('Đang dừng') }
     case 'reloading':
-      return { tone: TONES.info, label: 'Đang nạp lại' }
+      return { tone: TONES.info, label: t('Đang nạp lại') }
     case 'failed':
-      if (u.result === 'start-limit-hit') return { tone: TONES.danger, label: 'Lỗi · khởi động lại quá nhiều lần' }
-      if (u.result === 'signal' || u.exitCode === 'killed') return { tone: TONES.danger, label: `Lỗi · bị kill${u.exitStatus ? ` (tín hiệu ${u.exitStatus})` : ''}` }
-      if (u.result === 'timeout') return { tone: TONES.danger, label: 'Lỗi · quá thời gian' }
-      return { tone: TONES.danger, label: u.exitStatus != null ? `Lỗi · exit ${u.exitStatus}` : 'Lỗi' }
+      if (u.result === 'start-limit-hit') return { tone: TONES.danger, label: t('Lỗi · khởi động lại quá nhiều lần') }
+      if (u.result === 'signal' || u.exitCode === 'killed') return { tone: TONES.danger, label: u.exitStatus ? t('Lỗi · bị kill (tín hiệu {signal})', { signal: u.exitStatus }) : t('Lỗi · bị kill') }
+      if (u.result === 'timeout') return { tone: TONES.danger, label: t('Lỗi · quá thời gian') }
+      return { tone: TONES.danger, label: u.exitStatus != null ? t('Lỗi · exit {code}', { code: u.exitStatus }) : t('Lỗi#status') }
     default:
-      return { tone: TONES.neutral, label: 'Không chạy' }
+      return { tone: TONES.neutral, label: t('Không chạy') }
   }
 }
 
@@ -37,23 +39,23 @@ export function bootOf(fileState: string): { on: boolean; toggleable: boolean; h
   switch (fileState) {
     case 'enabled':
     case 'enabled-runtime':
-      return { on: true, toggleable: true, hint: 'Tự bật khi server khởi động' }
+      return { on: true, toggleable: true, hint: t('Tự bật khi server khởi động') }
     case 'disabled':
-      return { on: false, toggleable: true, hint: 'Không tự bật khi server khởi động' }
+      return { on: false, toggleable: true, hint: t('Không tự bật khi server khởi động') }
     case 'static':
-      return { on: false, toggleable: false, hint: 'static: không có [Install], chỉ chạy khi unit khác gọi tới' }
+      return { on: false, toggleable: false, hint: t('static: không có [Install], chỉ chạy khi unit khác gọi tới') }
     case 'indirect':
-      return { on: false, toggleable: false, hint: 'indirect: được bật qua unit khác (Also= hoặc socket/timer)' }
+      return { on: false, toggleable: false, hint: t('indirect: được bật qua unit khác (Also= hoặc socket/timer)') }
     case 'generated':
     case 'transient':
-      return { on: true, toggleable: false, hint: `${fileState}: do systemd tự tạo, không bật/tắt được` }
+      return { on: true, toggleable: false, hint: t('{state}: do systemd tự tạo, không bật/tắt được', { state: fileState }) }
     case 'masked':
     case 'masked-runtime':
-      return { on: false, toggleable: false, hint: 'masked: bị chặn, không chạy được cho tới khi unmask' }
+      return { on: false, toggleable: false, hint: t('masked: bị chặn, không chạy được cho tới khi unmask') }
     case 'alias':
-      return { on: false, toggleable: false, hint: 'alias: tên khác của một unit' }
+      return { on: false, toggleable: false, hint: t('alias: tên khác của một unit') }
     default:
-      return { on: false, toggleable: false, hint: fileState || 'Không rõ' }
+      return { on: false, toggleable: false, hint: fileState || t('Không rõ') }
   }
 }
 
@@ -63,14 +65,12 @@ export function serviceCommand(unit: string, action: ServiceAction) {
   return `systemctl ${verb} ${unit}`
 }
 
-const pad = (n: number) => String(n).padStart(2, '0')
-
 /** dd/mm hh:mm in this Mac's time. */
 export function localTime(ms: number | null) {
   if (!ms) return '—'
   const d = new Date(ms)
   const sameYear = d.getFullYear() === new Date().getFullYear()
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}${sameYear ? '' : `/${d.getFullYear()}`} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${sameYear ? dayMonth(d) : dateOnly(d)} ${hm(d)}`
 }
 
 /** Units worth showing before the user picks any: whatever failed, plus the
@@ -105,8 +105,8 @@ export function defaultWatch(all: UnitBrief[]): string[] {
 export const isSsh = (unit: string) => unit === 'ssh.service' || unit === 'sshd.service'
 
 export function stopNote(unit: string): { body: string; note?: string } {
-  if (unit === 'docker.service') return { body: 'Tất cả container trên server sẽ dừng theo.', note: 'Container có restart policy sẽ chạy lại khi Docker chạy lại.' }
-  if (/^(nginx|apache2|httpd|caddy|traefik)\.service$/.test(unit)) return { body: 'Mọi website phục vụ qua dịch vụ này sẽ ngừng phản hồi.' }
-  if (/^(postgresql|mysql|mariadb|mongod|redis(-server)?)(@.+)?\.service$/.test(unit)) return { body: 'Ứng dụng đang dùng database/cache này sẽ lỗi cho tới khi nó chạy lại.' }
-  return { body: 'Dịch vụ sẽ dừng cho tới khi bạn chạy lại.' }
+  if (unit === 'docker.service') return { body: t('Tất cả container trên server sẽ dừng theo.'), note: t('Container có restart policy sẽ chạy lại khi Docker chạy lại.') }
+  if (/^(nginx|apache2|httpd|caddy|traefik)\.service$/.test(unit)) return { body: t('Mọi website phục vụ qua dịch vụ này sẽ ngừng phản hồi.') }
+  if (/^(postgresql|mysql|mariadb|mongod|redis(-server)?)(@.+)?\.service$/.test(unit)) return { body: t('Ứng dụng đang dùng database/cache này sẽ lỗi cho tới khi nó chạy lại.') }
+  return { body: t('Dịch vụ sẽ dừng cho tới khi bạn chạy lại.') }
 }

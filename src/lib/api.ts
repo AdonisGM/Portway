@@ -67,6 +67,7 @@ export type ImportReport = { found: number; added: Server[]; skipped: string[] }
 
 export type Theme = 'dark' | 'light' | 'system'
 export type Settings = {
+  language: 'vi' | 'en'
   /** Default folder for downloads; null is ~/Downloads. */
   downloadDir: string | null
   /** Ask where to save each download; null (older settings) asks unless a folder is set. */
@@ -798,7 +799,7 @@ function browserApi(): Api {
     exportServers: async () => fail('needs_app'),
     importServersFile: async () => fail('needs_app'),
     async settings() {
-      return { downloadDir: null, askDownload: null, theme: 'dark', editor: null }
+      return { language: 'vi', downloadDir: null, askDownload: null, theme: 'dark', editor: null }
     },
     async setSettings(s) {
       return s

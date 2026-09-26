@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Modal } from '../../components/ui/modal'
 import { Button } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import { isAppError } from '../../lib/api'
 import { withSudo } from '../../lib/commands'
 
@@ -61,10 +62,10 @@ export function ActionConfirm({
       footer={
         <>
           <Button onClick={onClose} disabled={pending}>
-            Huỷ
+            {t('Huỷ')}
           </Button>
           <Button variant={ask.danger ? 'danger' : 'primary'} onClick={() => void go()} disabled={pending}>
-            {pending ? 'Đang gửi lệnh…' : ask.confirm}
+            {pending ? t('Đang gửi lệnh…') : ask.confirm}
           </Button>
         </>
       }
@@ -73,13 +74,13 @@ export function ActionConfirm({
       <div className="grid gap-x-3 gap-y-1.5 rounded-lg bg-raised px-3 py-2.5" style={{ gridTemplateColumns: 'auto 1fr' }}>
         <span className="text-[11px] text-muted">Server</span>
         <span className="font-mono text-[12px]">{serverName}</span>
-        <span className="text-[11px] text-muted">Chạy bằng user</span>
+        <span className="text-[11px] text-muted">{t('Chạy bằng user')}</span>
         <span className="font-mono text-[12px]">{user}</span>
         <span className="text-[11px] text-muted">Sudo</span>
-        <span className={viaSudo ? 'text-warn' : 'text-ink2'}>{viaSudo ? 'Có, lệnh chạy với sudo' : 'Không cần'}</span>
+        <span className={viaSudo ? 'text-warn' : 'text-ink2'}>{viaSudo ? t('Có, lệnh chạy với sudo') : t('Không cần')}</span>
       </div>
       <div className="flex flex-col gap-1">
-        <span className="text-[11px] text-muted">Lệnh chính xác sẽ chạy</span>
+        <span className="text-[11px] text-muted">{t('Lệnh chính xác sẽ chạy')}</span>
         <span className="rounded-md bg-sunken px-2.5 py-2 font-mono text-[11.5px] leading-[1.55] break-all whitespace-pre-wrap select-text">{full}</span>
       </div>
       {ask.note && <div className="rounded-lg bg-warn-soft px-3 py-2 text-[11.5px] leading-normal text-ink2">{ask.note}</div>}

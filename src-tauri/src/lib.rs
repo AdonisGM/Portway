@@ -5,6 +5,7 @@ mod editing;
 mod error;
 mod files;
 mod http;
+mod i18n;
 mod firewall;
 mod firewalld;
 mod keys;
@@ -46,7 +47,7 @@ async fn open_debug_window(app: tauri::AppHandle) -> error::AppResult<()> {
         return Ok(());
     }
     let builder = tauri::WebviewWindowBuilder::new(&app, "debug", tauri::WebviewUrl::App("index.html?window=debug".into()))
-        .title("AdonisGM | Portway — Nhật ký gỡ lỗi")
+        .title(crate::i18n::tr("AdonisGM | Portway — Nhật ký gỡ lỗi", "AdonisGM | Portway — Debug Log"))
         .inner_size(1240.0, 780.0)
         .min_inner_size(760.0, 480.0)
         .background_color(tauri::window::Color(0x14, 0x16, 0x17, 0xff));

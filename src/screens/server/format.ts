@@ -1,6 +1,7 @@
+import { locale, t } from '../../i18n'
 import type { AppError } from '../../lib/api'
 
-const num = (max: number) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: max })
+const num = (max: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: max })
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 
@@ -27,54 +28,54 @@ export const formatDecimal = (v: number, digits = 2) => num(digits).format(v)
 /** "41 ngày", "3 giờ", "12 phút". */
 export function formatUptime(secs: number) {
   const days = Math.floor(secs / 86400)
-  if (days >= 1) return `${days} ngày`
+  if (days >= 1) return t('{n} ngày', { n: days })
   const hours = Math.floor(secs / 3600)
-  if (hours >= 1) return `${hours} giờ`
-  return `${Math.max(1, Math.floor(secs / 60))} phút`
+  if (hours >= 1) return t('{n} giờ', { n: hours })
+  return t('{n} phút', { n: Math.max(1, Math.floor(secs / 60)) })
 }
 
 /** Title and explanation for a failed connection. */
 export function connectError(e: AppError, host: string, port: number): { title: string; message: string } {
-  const title = `Không kết nối được tới ${host}:${port}`
+  const title = t('Không kết nối được tới {host}:{port}', { host, port })
   switch (e.code) {
     case 'timeout':
-      return { title, message: 'Máy chủ không phản hồi sau 10 giây. Kiểm tra máy có đang bật, có cùng mạng không, hoặc cổng SSH có bị chặn không.' }
+      return { title, message: t('Máy chủ không phản hồi sau 10 giây. Kiểm tra máy có đang bật, có cùng mạng không, hoặc cổng SSH có bị chặn không.') }
     case 'refused':
-      return { title, message: `Máy chủ từ chối kết nối ở cổng ${port}. SSH có thể chưa chạy hoặc đang nghe ở cổng khác.` }
+      return { title, message: t('Máy chủ từ chối kết nối ở cổng {port}. SSH có thể chưa chạy hoặc đang nghe ở cổng khác.', { port }) }
     case 'dns':
-      return { title, message: `Không tìm thấy địa chỉ ${host}. Kiểm tra lại tên miền.` }
+      return { title, message: t('Không tìm thấy địa chỉ {host}. Kiểm tra lại tên miền.', { host }) }
     case 'network':
-      return { title, message: 'Lỗi mạng khi mở kết nối.' }
+      return { title, message: t('Lỗi mạng khi mở kết nối.') }
     case 'auth_failed':
-      return { title: 'Server không nhận khoá', message: 'Kiểm tra public key của khoá này đã nằm trong ~/.ssh/authorized_keys của user trên server chưa.' }
+      return { title: t('Server không nhận khoá'), message: t('Kiểm tra public key của khoá này đã nằm trong ~/.ssh/authorized_keys của user trên server chưa.') }
     case 'key_missing':
-      return { title: 'Không thấy tệp khoá', message: `Tệp ${e.detail ?? ''} không có trên máy này. Sửa tài khoản để chọn khoá khác.` }
+      return { title: t('Không thấy tệp khoá'), message: t('Tệp {file} không có trên máy này. Sửa tài khoản để chọn khoá khác.', { file: e.detail ?? '' }) }
     case 'key_unreadable':
-      return { title: 'Không đọc được tệp khoá', message: 'Tệp khoá hỏng hoặc có định dạng Portway chưa hỗ trợ.' }
+      return { title: t('Không đọc được tệp khoá'), message: t('Tệp khoá hỏng hoặc có định dạng Portway chưa hỗ trợ.') }
     case 'connection_lost':
     case 'not_connected':
-      return { title: 'Mất kết nối', message: 'Phiên SSH tới server đã đóng.' }
+      return { title: t('Mất kết nối'), message: t('Phiên SSH tới server đã đóng.') }
     case 'cancelled':
-      return { title: 'Chưa kết nối', message: 'Bạn đã huỷ lúc đang kết nối.' }
+      return { title: t('Chưa kết nối'), message: t('Bạn đã huỷ lúc đang kết nối.') }
     case 'jump_needs_secret':
       return {
-        title: `Chưa có mật khẩu cho jump host ${e.detail ?? ''}`,
-        message: 'Kết nối thẳng tới jump host một lần và chọn lưu mật khẩu (hoặc passphrase) vào Keychain, rồi thử lại.',
+        title: t('Chưa có mật khẩu cho jump host {host}', { host: e.detail ?? '' }),
+        message: t('Kết nối thẳng tới jump host một lần và chọn lưu mật khẩu (hoặc passphrase) vào Keychain, rồi thử lại.'),
       }
     case 'jump_host_key':
       return {
-        title: `Chưa tin khoá máy chủ của jump host ${e.detail ?? ''}`,
-        message: 'Kết nối thẳng tới jump host một lần để xác nhận khoá máy chủ, rồi thử lại.',
+        title: t('Chưa tin khoá máy chủ của jump host {host}', { host: e.detail ?? '' }),
+        message: t('Kết nối thẳng tới jump host một lần để xác nhận khoá máy chủ, rồi thử lại.'),
       }
     case 'jump_forward':
-      return { title, message: `${e.detail ?? ''}. Kiểm tra host, cổng có đúng như jump host nhìn thấy không, và sshd trên jump host có cho AllowTcpForwarding không.` }
+      return { title, message: t('{detail}. Kiểm tra host, cổng có đúng như jump host nhìn thấy không, và sshd trên jump host có cho AllowTcpForwarding không.', { detail: e.detail ?? '' }) }
     case 'jump_failed':
-      return { title: 'Không vào được jump host', message: e.detail ?? 'Lỗi khi kết nối tới jump host.' }
+      return { title: t('Không vào được jump host'), message: e.detail ?? t('Lỗi khi kết nối tới jump host.') }
     case 'jump_loop':
-      return { title: 'Chuỗi jump host quá dài hoặc vòng lại', message: `Kiểm tra mục "Kết nối qua" của ${e.detail ?? 'các server'}.` }
+      return { title: t('Chuỗi jump host quá dài hoặc vòng lại'), message: t('Kiểm tra mục "Kết nối qua" của {servers}.', { servers: e.detail ?? t('các server') }) }
     case 'needs_app':
-      return { title: 'Chỉ chạy trong app Portway', message: 'Kết nối SSH cần phần Rust của app, không chạy khi mở giao diện bằng trình duyệt.' }
+      return { title: t('Chỉ chạy trong app Portway'), message: t('Kết nối SSH cần phần Rust của app, không chạy khi mở giao diện bằng trình duyệt.') }
     default:
-      return { title, message: 'Có lỗi khi kết nối SSH.' }
+      return { title, message: t('Có lỗi khi kết nối SSH.') }
   }
 }

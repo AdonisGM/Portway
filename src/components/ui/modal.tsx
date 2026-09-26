@@ -3,6 +3,7 @@ import { Dialog } from '@ark-ui/react/dialog'
 import { Portal } from '@ark-ui/react/portal'
 import type { ReactNode } from 'react'
 import { Button } from './primitives'
+import { t } from '../../i18n'
 
 /** Ark UI dialog: focus trap, scroll lock, Esc to close, full aria.
  *  The look comes from Tailwind and the tokens. */
@@ -49,7 +50,7 @@ export function Modal({
               </span>
               <Dialog.CloseTrigger asChild>
                 <Button variant="quiet" size="bare">
-                  Đóng
+                  {t('Đóng')}
                 </Button>
               </Dialog.CloseTrigger>
             </div>
@@ -98,10 +99,10 @@ export function ConfirmModal({
       footer={
         <>
           <Button size="lg" onClick={onClose}>
-            Huỷ
+            {t('Huỷ')}
           </Button>
           <Button size="lg" variant={danger ? 'danger' : 'primary'} disabled={pending} onClick={onConfirm}>
-            {pending ? 'Đang xử lý' : confirm}
+            {pending ? t('Đang xử lý') : confirm}
           </Button>
         </>
       }

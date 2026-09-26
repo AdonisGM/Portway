@@ -239,7 +239,7 @@ impl Drop for Span {
             update(self.id, |e| {
                 e.status = Status::Error;
                 e.duration_ms = Some(ms);
-                e.error.get_or_insert_with(|| "Bị ngắt giữa chừng".into());
+                e.error.get_or_insert_with(|| crate::i18n::tr("Bị ngắt giữa chừng", "Interrupted"));
             });
         }
     }

@@ -1,6 +1,8 @@
 import { TONES } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import type { ComposeAction, Container, DockerPort } from '../../lib/api'
 import { q } from '../files/format'
+import { dateOnly, hm } from '../../i18n/dates'
 
 type Tone = (typeof TONES)[keyof typeof TONES]
 
@@ -38,65 +40,63 @@ const stoppedOnPurpose = (c: Container) => STOPPED_CODES.includes(c.exitCode) ||
 export function statusOf(c: Container): { tone: Tone; label: string } {
   switch (c.state) {
     case 'running':
-      if (c.health === 'unhealthy') return { tone: TONES.warn, label: 'Đang chạy · unhealthy' }
-      if (c.health === 'healthy') return { tone: TONES.success, label: 'Đang chạy · healthy' }
-      if (c.health === 'starting') return { tone: TONES.info, label: 'Đang chạy · đang kiểm tra' }
-      return { tone: TONES.success, label: 'Đang chạy' }
+      if (c.health === 'unhealthy') return { tone: TONES.warn, label: t('Đang chạy · unhealthy') }
+      if (c.health === 'healthy') return { tone: TONES.success, label: t('Đang chạy · healthy') }
+      if (c.health === 'starting') return { tone: TONES.info, label: t('Đang chạy · đang kiểm tra') }
+      return { tone: TONES.success, label: t('Đang chạy') }
     case 'restarting':
-      return { tone: TONES.danger, label: `Khởi động lại liên tục · ${c.restarts} lần` }
+      return { tone: TONES.danger, label: t('Khởi động lại liên tục · {n} lần', { n: c.restarts }) }
     case 'paused':
-      return { tone: TONES.neutral, label: 'Tạm dừng' }
+      return { tone: TONES.neutral, label: t('Tạm dừng#state') }
     case 'created':
-      return { tone: TONES.neutral, label: 'Đã tạo, chưa chạy' }
+      return { tone: TONES.neutral, label: t('Đã tạo, chưa chạy') }
     case 'dead':
-      return { tone: TONES.danger, label: 'Hỏng (dead)' }
+      return { tone: TONES.danger, label: t('Hỏng (dead)') }
     default:
-      if (isFinishedJob(c)) return { tone: TONES.neutral, label: 'Đã chạy xong' }
-      if (stoppedOnPurpose(c)) return { tone: TONES.neutral, label: c.exitCode ? `Đã dừng · exit ${c.exitCode}` : 'Đã dừng' }
-      return { tone: TONES.danger, label: `Lỗi · exit ${c.exitCode}` }
+      if (isFinishedJob(c)) return { tone: TONES.neutral, label: t('Đã chạy xong') }
+      if (stoppedOnPurpose(c)) return { tone: TONES.neutral, label: c.exitCode ? t('Đã dừng · exit {code}', { code: c.exitCode }) : t('Đã dừng') }
+      return { tone: TONES.danger, label: t('Lỗi · exit {code}', { code: c.exitCode }) }
   }
 }
 
 export function roleLabel(c: Container) {
   const role = dataRole(c)
   if (role) return role
-  if (isFinishedJob(c)) return 'job · chạy một lần'
+  if (isFinishedJob(c)) return t('job · chạy một lần')
   return `restart: ${c.policy}`
 }
 
 const ago = (iso: string | null) => (iso ? Math.max(0, (Date.now() - Date.parse(iso)) / 1000) : null)
 
 export function spanText(secs: number) {
-  if (secs < 60) return `${Math.floor(secs)} giây`
-  if (secs < 3600) return `${Math.floor(secs / 60)} phút`
-  if (secs < 86400) return `${Math.floor(secs / 3600)} giờ`
-  return `${Math.floor(secs / 86400)} ngày`
+  if (secs < 60) return t('{n} giây', { n: Math.floor(secs) })
+  if (secs < 3600) return t('{n} phút', { n: Math.floor(secs / 60) })
+  if (secs < 86400) return t('{n} giờ', { n: Math.floor(secs / 3600) })
+  return t('{n} ngày', { n: Math.floor(secs / 86400) })
 }
 
 /** "chạy 3 giờ" or "dừng 2 ngày trước". */
 export function upLabel(c: Container) {
   if (c.state === 'running') {
     const s = ago(c.startedAt)
-    return s == null ? '' : `chạy ${spanText(s)}`
+    return s == null ? '' : t('chạy {span}', { span: spanText(s) })
   }
   const s = ago(c.finishedAt)
-  return s == null ? '' : `dừng ${spanText(s)} trước`
+  return s == null ? '' : t('dừng {span} trước', { span: spanText(s) })
 }
 
 export const portText = (p: DockerPort) => `${p.hostIp || '0.0.0.0'}:${p.hostPort} → ${p.containerPort}${p.proto === 'tcp' ? '' : `/${p.proto}`}`
 
 export function portTip(c: Container) {
-  const base = 'Mở trên mọi địa chỉ của server nên truy cập được từ ngoài. Docker tự thêm rule iptables nên UFW không chặn được cổng này.'
-  return dataRole(c) ? `${base} Database/cache không nên mở ra ngoài, nên bind 127.0.0.1.` : base
+  const base = t('Mở trên mọi địa chỉ của server nên truy cập được từ ngoài. Docker tự thêm rule iptables nên UFW không chặn được cổng này.')
+  return dataRole(c) ? base + ' ' + t('Database/cache không nên mở ra ngoài, nên bind 127.0.0.1.') : base
 }
-
-const pad = (n: number) => String(n).padStart(2, '0')
 
 export function dateTime(iso: string | null) {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${dateOnly(d)} ${hm(d)}`
 }
 
 /** `docker image ls` prints "2026-09-01 10:00:00 +0000 UTC". */
@@ -104,7 +104,7 @@ export function imageDate(created: string) {
   const m = created.match(/^(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d) ([+-]\d{4})/)
   if (!m) return created
   const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${m[7].slice(0, 3)}:${m[7].slice(3)}`)
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+  return dateOnly(d)
 }
 
 // Commands, built exactly like the Rust side builds them.
@@ -148,7 +148,9 @@ export function projectStatus(list: Container[]): { tone: Tone; label: string } 
   const running = svc.filter((c) => c.state === 'running').length
   const bad = svc.some((c) => c.state === 'restarting' || c.state === 'dead' || (c.state === 'exited' && !stoppedOnPurpose(c)))
   const warn = svc.some((c) => c.health === 'unhealthy') || running < svc.length
-  const label = `${running}/${svc.length} đang chạy${jobs.length ? ` · ${jobs.length} job xong` : ''}`
+  const label = jobs.length
+    ? t('{running}/{total} đang chạy · {jobs} job xong', { running, total: svc.length, jobs: jobs.length })
+    : t('{running}/{total} đang chạy', { running, total: svc.length })
   return { tone: bad ? TONES.danger : warn ? TONES.warn : TONES.success, label }
 }
 

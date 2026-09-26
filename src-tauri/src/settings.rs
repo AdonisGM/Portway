@@ -20,9 +20,19 @@ pub enum Theme {
     System,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum Language {
+    #[default]
+    Vi,
+    En,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    /// UI language, also for text the Rust side sends (errors, statuses).
+    pub language: Language,
     /// Default folder for downloads; None is ~/Downloads.
     pub download_dir: Option<String>,
     /// Ask where to save each download (opening at the default folder).
@@ -43,7 +53,8 @@ impl SettingsStore {
     /// A missing or unreadable file gives the defaults; preferences are never
     /// worth refusing to start over.
     pub fn load(path: PathBuf) -> Self {
-        let current = fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        let current: Settings = fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        crate::i18n::set(current.language);
         Self { path, current: Mutex::new(current) }
     }
 
@@ -58,6 +69,7 @@ impl SettingsStore {
         let tmp = self.path.with_extension("json.tmp");
         fs::write(&tmp, serde_json::to_vec_pretty(&next)?)?;
         fs::rename(&tmp, &self.path)?;
+        crate::i18n::set(next.language);
         *self.current.lock().unwrap() = next.clone();
         Ok(next)
     }
@@ -107,12 +119,12 @@ mod tests {
         let path = std::env::temp_dir().join(format!("portway-settings-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         let store = SettingsStore::load(path.clone());
-        assert_eq!(store.get(), Settings { download_dir: None, ask_download: None, theme: Theme::Dark, editor: None });
-        store.save(Settings { download_dir: Some("/tmp".into()), ask_download: Some(false), theme: Theme::System, editor: None }).unwrap();
+        assert_eq!(store.get(), Settings { language: Language::Vi, download_dir: None, ask_download: None, theme: Theme::Dark, editor: None });
+        store.save(Settings { language: Language::Vi, download_dir: Some("/tmp".into()), ask_download: Some(false), theme: Theme::System, editor: None }).unwrap();
         assert_eq!(SettingsStore::load(path.clone()).get().theme, Theme::System);
         // Unknown or missing fields fall back to defaults.
         fs::write(&path, r#"{"theme":"light","extra":1}"#).unwrap();
-        assert_eq!(SettingsStore::load(path.clone()).get(), Settings { download_dir: None, ask_download: None, theme: Theme::Light, editor: None });
+        assert_eq!(SettingsStore::load(path.clone()).get(), Settings { language: Language::Vi, download_dir: None, ask_download: None, theme: Theme::Light, editor: None });
         fs::remove_file(path).ok();
     }
 }

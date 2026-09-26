@@ -44,6 +44,7 @@ import { FileDialog, type FileAction } from './dialogs'
 import { crumbs, fileError, fullTime, isDirLike, joinPath, matcher, modeString, octal, parentOf, q, shortTime, tagOf, typeChar } from './format'
 import { LogTail } from './log-tail'
 import { TransferQueue } from './queue'
+import { locale, t } from '../../i18n'
 
 const GRID = '28px minmax(160px,1fr) 72px 104px 92px'
 const SKELETON = ['60%', '45%', '70%', '40%', '55%', '65%']
@@ -105,7 +106,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
         const err = asError(e)
         if (err.code === 'connection_lost' || err.code === 'not_connected') conns.markLost(id, user, err)
         else if (!hasListing.current) setError(err)
-        else toast({ title: 'Không mở được thư mục', detail: fileError(err) })
+        else toast({ title: t('Không mở được thư mục'), detail: fileError(err) })
         return false
       } finally {
         if (n === seq.current) setLoading(false)
@@ -185,23 +186,23 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   }
 
   const terminalAt = (cwd: string) =>
-    run(() => api.openTerminal(id, user, undefined, cwd).then(() => toast({ title: 'Đã mở Terminal', detail: `cd ${q(cwd)}` })), 'Không mở được Terminal')
+    run(() => api.openTerminal(id, user, undefined, cwd).then(() => toast({ title: t('Đã mở Terminal'), detail: `cd ${q(cwd)}` })), t('Không mở được Terminal'))
 
   const download = (entries: FileEntry[]) =>
     run(async () => {
-      if (!isTauri()) return toast({ title: 'Chỉ tải xuống được trong ứng dụng' })
+      if (!isTauri()) return toast({ title: t('Chỉ tải xuống được trong ứng dụng') })
       const dest = await chooseDownloadDir(entries.length)
       if (!dest) return
       // The queue opens on its own and shows progress; no toast on top of it.
       await api.download(server.name, id, user, entries.map((e) => e.path), dest)
-    }, 'Không tải xuống được')
+    }, t('Không tải xuống được'))
 
   // Uploads: names that already exist ask first.
   const [conflict, setConflict] = useState<{ paths: string[]; clashes: string[] } | null>(null)
   const sendUpload = (paths: string[], overwrite: boolean) =>
     run(
       () => api.upload(server.name, id, user, paths, path, overwrite),
-      'Không tải lên được',
+      t('Không tải lên được'),
     )
   const startUpload = (paths: string[]) => {
     if (!paths.length || !listing) return
@@ -211,8 +212,8 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
     else void sendUpload(paths, false)
   }
   const pickUpload = async () => {
-    if (!isTauri()) return toast({ title: 'Chỉ tải lên được trong ứng dụng' })
-    const picked = await openDialog({ multiple: true, title: `Tải lên ${path}` })
+    if (!isTauri()) return toast({ title: t('Chỉ tải lên được trong ứng dụng') })
+    const picked = await openDialog({ multiple: true, title: t('Tải lên {path}', { path }) })
     if (picked) startUpload(Array.isArray(picked) ? picked : [picked])
   }
 
@@ -229,7 +230,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
       else if (p.type === 'drop') {
         setDropping(false)
         if (dropRef.current.canWrite) dropRef.current.startUpload(p.paths)
-        else toast({ title: 'Không tải lên được', detail: 'Không có quyền ghi vào thư mục này' })
+        else toast({ title: t('Không tải lên được'), detail: t('Không có quyền ghi vào thư mục này') })
       }
     })
     return () => {
@@ -285,10 +286,10 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   if (!listing) {
     return error ? (
       <div className="flex flex-col items-center gap-2.5 rounded-xl border border-line bg-surface px-6 py-10 text-center">
-        <span className="text-[14px] font-semibold">Không mở được SFTP</span>
+        <span className="text-[14px] font-semibold">{t('Không mở được SFTP')}</span>
         <span className="max-w-[460px] leading-normal text-muted">{fileError(error)}</span>
         <Button size="sm" onClick={() => void reload()}>
-          Thử lại
+          {t('Thử lại')}
         </Button>
       </div>
     ) : (
@@ -306,24 +307,24 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
       <div className="flex flex-wrap items-center gap-2">
         <PathBar path={path} go={go} />
         <Button size="sm" onClick={() => void pickUpload()} disabled={!canWrite}>
-          Tải lên
+          {t('Tải lên')}
         </Button>
         <Button size="sm" onClick={() => setAction({ mode: 'newfile' })} disabled={!canWrite}>
-          Tệp mới
+          {t('Tệp mới')}
         </Button>
         <Button size="sm" onClick={() => setAction({ mode: 'newdir' })} disabled={!canWrite}>
-          Thư mục mới
+          {t('Thư mục mới')}
         </Button>
         <Button
           size="sm"
-          title="Mở màn Chuyển tệp với thư mục này ở bên trái"
+          title={t('Mở màn Chuyển tệp với thư mục này ở bên trái')}
           onClick={() => nav.openTransfer({ src: { kind: 'remote', serverId: id, user }, path })}
         >
-          Chép sang máy khác
+          {t('Chép sang máy khác')}
         </Button>
         <button
           type="button"
-          title="Mở thư mục này trong Terminal"
+          title={t('Mở thư mục này trong Terminal')}
           onClick={() => void terminalAt(path)}
           className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-line2 text-ink hover:border-muted"
         >
@@ -332,19 +333,19 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <SearchInput value={filter} onChange={setFilter} placeholder="Lọc trong thư mục (hỗ trợ *.log)" className="w-60 min-w-0" />
+        <SearchInput value={filter} onChange={setFilter} placeholder={t('Lọc trong thư mục (hỗ trợ *.log)')} className="w-60 min-w-0" />
         <Button size="sm" variant={showHidden ? 'primary' : 'secondary'} onClick={() => setShowHidden(!showHidden)}>
-          {showHidden ? 'Đang hiện tệp ẩn' : 'Tệp ẩn'} ({hiddenCount})
+          {showHidden ? t('Đang hiện tệp ẩn ({n})', { n: hiddenCount }) : t('Tệp ẩn ({n})', { n: hiddenCount })}
         </Button>
         <span className="flex-1" />
         {!listing.denied && (
           <span className="num text-[11px] text-muted">
-            {shown.length} mục{match ? ' khớp' : ''}
+            {match ? t('{n} mục khớp', { n: shown.length }) : t('{n} mục', { n: shown.length })}
           </span>
         )}
         {!panel && (
           <Button size="sm" onClick={() => setPanel(true)}>
-            Hiện chi tiết
+            {t('Hiện chi tiết')}
           </Button>
         )}
       </div>
@@ -358,7 +359,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
             dropping && (
               <div className="pointer-events-none absolute inset-1.5 flex flex-col items-center justify-center gap-1.5 rounded-[10px] border-2 border-dashed border-accent bg-[color-mix(in_srgb,var(--surface)_80%,transparent)]">
                 <Upload size={24} strokeWidth={1.8} />
-                <span className="text-[14px] font-semibold">Thả để tải lên {path}</span>
+                <span className="text-[14px] font-semibold">{t('Thả để tải lên {path}', { path })}</span>
                 <span className="text-[11.5px] text-ink2">
                   {user}@{server.name}
                 </span>
@@ -367,23 +368,23 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
           }
           head={
             <>
-              <button type="button" title="Chọn tất cả" onClick={() => select(allOn ? [] : order, null)} className="flex cursor-pointer">
+              <button type="button" title={t('Chọn tất cả')} onClick={() => select(allOn ? [] : order, null)} className="flex cursor-pointer">
                 <Box on={allOn} />
               </button>
               <span className="flex items-center gap-2.5 whitespace-nowrap">
-                <SortButton label="Tên" k="name" sort={sort} setSort={setSort} />
-                {selNames.length > 0 && <span className="text-ink2">{`Đã chọn ${selNames.length}/${order.length}`}</span>}
+                <SortButton label={t('Tên')} k="name" sort={sort} setSort={setSort} />
+                {selNames.length > 0 && <span className="text-ink2">{t('Đã chọn {n}/{total}', { n: selNames.length, total: order.length })}</span>}
               </span>
               <span className="flex justify-end">
-                <SortButton label="Kích thước" k="size" sort={sort} setSort={setSort} />
+                <SortButton label={t('Kích thước')} k="size" sort={sort} setSort={setSort} />
               </span>
-              <SortButton label="Sửa lần cuối" k="mtime" sort={sort} setSort={setSort} />
-              <span>Quyền</span>
+              <SortButton label={t('Sửa lần cuối')} k="mtime" sort={sort} setSort={setSort} />
+              <span>{t('Quyền')}</span>
             </>
           }
         >
           {path !== '/' && (
-            <Row onClick={() => void go(parentOf(path))} title="Lên thư mục cha">
+            <Row onClick={() => void go(parentOf(path))} title={t('Lên thư mục cha')}>
               <span />
               <span className="flex items-center gap-2">
                 <Tag text="↑" colors={['var(--sunken)', 'var(--muted)']} />
@@ -393,33 +394,33 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
           )}
 
           {listing.denied ? (
-            <Blank icon={Lock} title="Không có quyền đọc thư mục này">
+            <Blank icon={Lock} title={t('Không có quyền đọc thư mục này')}>
               <span className="max-w-[420px] leading-normal text-muted">
-                {path} thuộc {ownerOf(listing.dir)}:{groupOf(listing.dir)}, quyền {octal(listing.dir.mode)}. User {user} không có quyền đọc và mở thư mục này.
+                {t('{path} thuộc {owner}:{group}, quyền {mode}. User {user} không có quyền đọc và mở thư mục này.', { path, owner: ownerOf(listing.dir), group: groupOf(listing.dir), mode: octal(listing.dir.mode), user })}
               </span>
               {rootAccount && (
                 <Button size="xs" onClick={openAsRoot}>
-                  Mở bằng kết nối root
+                  {t('Mở bằng kết nối root')}
                 </Button>
               )}
             </Blank>
           ) : all.length === 0 ? (
-            <Blank icon={Folder} title="Thư mục trống">
-              <span className="text-muted">{canWrite ? 'Kéo tệp từ máy vào đây để tải lên, hoặc tạo mới.' : 'Bạn không có quyền ghi vào thư mục này.'}</span>
+            <Blank icon={Folder} title={t('Thư mục trống')}>
+              <span className="text-muted">{canWrite ? t('Kéo tệp từ máy vào đây để tải lên, hoặc tạo mới.') : t('Bạn không có quyền ghi vào thư mục này.')}</span>
               {canWrite && (
                 <div className="flex gap-1.5">
                   <Button size="xs" onClick={() => void pickUpload()}>
-                    Tải lên
+                    {t('Tải lên')}
                   </Button>
                   <Button size="xs" onClick={() => setAction({ mode: 'newfile' })}>
-                    Tệp mới
+                    {t('Tệp mới')}
                   </Button>
                 </div>
               )}
             </Blank>
           ) : shown.length === 0 ? (
             <div className="p-7 text-center text-muted">
-              {match ? `Không có mục nào khớp "${match}"` : 'Chỉ có tệp ẩn trong thư mục này. Bật "Tệp ẩn" để xem.'}
+              {match ? t('Không có mục nào khớp "{match}"', { match }) : t('Chỉ có tệp ẩn trong thư mục này. Bật "Tệp ẩn" để xem.')}
             </div>
           ) : (
             shown.map((e) => {
@@ -434,7 +435,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                 >
                   <button
                     type="button"
-                    title="Chọn"
+                    title={t('Chọn')}
                     onClick={(ev) => {
                       ev.stopPropagation()
                       select(on ? selNames.filter((n) => n !== e.name) : [...selNames, e.name], e.name)
@@ -447,14 +448,14 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                     <Tag text={tagOf(e)} colors={tagColors(e)} />
                     <span className={cx('truncate', isDirLike(e) && 'font-semibold', e.readable ? 'text-ink' : 'text-ink2')}>{e.name}</span>
                     {!e.readable && !broken && (
-                      <span title={`Không có quyền đọc (${ownerOf(e)}:${groupOf(e)} · ${octal(e.mode)})`} className="flex text-warn">
+                      <span title={t('Không có quyền đọc ({owner}:{group} · {mode})', { owner: ownerOf(e), group: groupOf(e), mode: octal(e.mode) })} className="flex text-warn">
                         <Lock size={12} strokeWidth={1.8} />
                       </span>
                     )}
                     {e.kind === 'link' && (
                       <span className={cx('min-w-0 truncate font-mono text-[11px]', broken ? 'text-danger' : 'text-muted')}>
                         → {e.linkTarget ?? '?'}
-                        {broken ? ' (hỏng)' : ''}
+                        {broken ? t(' (hỏng)') : ''}
                       </span>
                     )}
                   </span>
@@ -495,7 +496,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
               download: () => void download(sel),
               copy: () => {
                 const text = sel.map((e) => e.path).join('\n')
-                void run(() => copyText(text).then(() => toast({ title: 'Đã sao chép', detail: text })), 'Không sao chép được')
+                void run(() => copyText(text).then(() => toast({ title: t('Đã sao chép'), detail: text })), t('Không sao chép được'))
               },
               terminal: () => one && void terminalAt(isDirLike(one) ? one.path : path),
               follow: () => one && setTailing({ path: one.path, sudo: !isRoot && !one.readable && sudo }),
@@ -513,9 +514,9 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
       )}
 
       {chooseApp && (
-        <Modal open onClose={() => setChooseApp(null)} width={420} title={`Mở ${chooseApp.name} bằng…`} subtitle="Lưu trong app là Portway tự tải lên server">
+        <Modal open onClose={() => setChooseApp(null)} width={420} title={t('Mở {name} bằng…', { name: chooseApp.name })} subtitle={t('Lưu trong app là Portway tự tải lên server')}>
           <div className="flex flex-col gap-px">
-            {[{ name: `Mặc định của macOS${edits.apps.find((x) => x.default) ? ` (${edits.apps.find((x) => x.default)!.name})` : ''}`, path: '' }, ...edits.apps].map((a) => (
+            {[{ name: edits.apps.find((x) => x.default) ? t('Mặc định của macOS ({app})', { app: edits.apps.find((x) => x.default)!.name }) : t('Mặc định của macOS'), path: '' }, ...edits.apps].map((a) => (
               <button
                 key={a.path || 'default'}
                 type="button"
@@ -534,7 +535,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
               type="button"
               onClick={() => {
                 const entry = chooseApp
-                void pickApp(`Mở ${entry.name} bằng…`).then((app) => {
+                void pickApp(t('Mở {name} bằng…', { name: entry.name })).then((app) => {
                   if (!app) return
                   setChooseApp(null)
                   void edits.open(id, user, entry.path, app)
@@ -543,8 +544,8 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
               className="flex cursor-pointer items-center gap-2.5 rounded-lg border-t border-line px-2.5 py-2 text-left hover:bg-raised"
             >
               <FolderOpen size={15} strokeWidth={1.8} className="text-ink2" />
-              <span className="flex-1">Chọn app khác…</span>
-              <span className="text-[11px] text-muted">bất kỳ .app nào</span>
+              <span className="flex-1">{t('Chọn app khác…')}</span>
+              <span className="text-[11px] text-muted">{t('bất kỳ .app nào')}</span>
             </button>
           </div>
         </Modal>
@@ -555,11 +556,11 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
           open
           onClose={() => setConflict(null)}
           width={480}
-          title={conflict.clashes.length === 1 ? `Đã có ${conflict.clashes[0]} trong thư mục này` : `${conflict.clashes.length} mục đã có trong thư mục này`}
+          title={conflict.clashes.length === 1 ? t('Đã có {name} trong thư mục này', { name: conflict.clashes[0] }) : t('{n} mục đã có trong thư mục này', { n: conflict.clashes.length })}
           subtitle={path}
           footer={
             <>
-              <Button onClick={() => setConflict(null)}>Huỷ</Button>
+              <Button onClick={() => setConflict(null)}>{t('Huỷ')}</Button>
               {conflict.paths.length > conflict.clashes.length && (
                 <Button
                   onClick={() => {
@@ -568,7 +569,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                     void sendUpload(conflict.paths.filter((p) => !skip.has(baseName(p))), false)
                   }}
                 >
-                  Bỏ qua mục trùng
+                  {t('Bỏ qua mục trùng')}
                 </Button>
               )}
               <Button
@@ -578,13 +579,13 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                   void sendUpload(conflict.paths, true)
                 }}
               >
-                Ghi đè
+                {t('Ghi đè')}
               </Button>
             </>
           }
         >
           <span className="leading-relaxed text-ink2">
-            Ghi đè sẽ thay nội dung tệp trên server bằng tệp từ máy này. Thư mục trùng tên được gộp: tệp trùng bên trong cũng bị ghi đè.
+            {t('Ghi đè sẽ thay nội dung tệp trên server bằng tệp từ máy này. Thư mục trùng tên được gộp: tệp trùng bên trong cũng bị ghi đè.')}
           </span>
           <div className="flex max-h-40 flex-col overflow-auto rounded-lg border border-line">
             {conflict.clashes.map((n) => (
@@ -657,7 +658,7 @@ function PathBar({ path, go }: { path: string; go: (p: string) => Promise<boolea
   return (
     <div
       onClick={() => setDraft(path)}
-      title="Bấm vào khoảng trống để nhập đường dẫn"
+      title={t('Bấm vào khoảng trống để nhập đường dẫn')}
       className="flex h-8 min-w-[220px] flex-1 cursor-text items-center gap-0.5 overflow-hidden rounded-lg border border-line2 bg-sunken px-2 font-mono text-[12px]"
     >
       {list.map((c, i) => (
@@ -706,10 +707,10 @@ function Table({
           {head ?? (
             <>
               <span />
-              <span>Tên</span>
-              <span className="text-right">Kích thước</span>
-              <span>Sửa lần cuối</span>
-              <span>Quyền</span>
+              <span>{t('Tên')}</span>
+              <span className="text-right">{t('Kích thước')}</span>
+              <span>{t('Sửa lần cuối')}</span>
+              <span>{t('Quyền')}</span>
             </>
           )}
         </div>
@@ -851,7 +852,7 @@ function Details({
   const isRoot = user === 'root'
   const dir = listing.dir
   const path = listing.path
-  const sudoNote = sudo && !isRoot ? ' Sudo đang bật nhưng thao tác tệp vẫn chạy bằng quyền của ' + user + '; chỉ Đổi owner dùng sudo.' : ''
+  const sudoNote = sudo && !isRoot ? t(' Sudo đang bật nhưng thao tác tệp vẫn chạy bằng quyền của {user}; chỉ Đổi owner dùng sudo.', { user }) : ''
 
   // "Quyền của bạn": which bits apply and what they allow.
   let access: { text: string; why: string; bad: boolean; soft: boolean }
@@ -859,8 +860,8 @@ function Details({
     const read = isRoot || dir.readable
     const write = canWrite
     access = {
-      text: 'Thư mục này: ' + [read ? 'Xem nội dung' : 'Không xem được', write ? 'Tạo, xoá bên trong' : 'Không tạo, xoá được'].join(' · '),
-      why: isRoot ? 'Đang dùng root, không bị giới hạn quyền.' : `${path} thuộc ${ownerOf(dir)}:${groupOf(dir)} · ${octal(dir.mode)}.` + sudoNote,
+      text: t('Thư mục này: ') + [read ? t('Xem nội dung') : t('Không xem được'), write ? t('Tạo, xoá bên trong') : t('Không tạo, xoá được')].join(' · '),
+      why: isRoot ? t('Đang dùng root, không bị giới hạn quyền.') : t('{path} thuộc {owner}:{group} · {mode}.', { path, owner: ownerOf(dir), group: groupOf(dir), mode: octal(dir.mode) }) + sudoNote,
       bad: !read || !write,
       soft: false,
     }
@@ -870,14 +871,14 @@ function Details({
     const bits = modeString(one.mode)
     const who =
       one.class === 'root'
-        ? 'Bạn đang là root.'
+        ? t('Bạn đang là root.')
         : one.class === 'owner'
-          ? `Bạn là owner, áp dụng quyền owner: ${bits.slice(0, 3)}.`
+          ? t('Bạn là owner, áp dụng quyền owner: {bits}.', { bits: bits.slice(0, 3) })
           : one.class === 'group'
-            ? `Bạn thuộc nhóm ${groupOf(one)}, áp dụng quyền group: ${bits.slice(3, 6)}.`
-            : `Owner là ${ownerOf(one)}, bạn không thuộc nhóm ${groupOf(one)} nên áp dụng quyền others: ${bits.slice(6, 9)}.`
+            ? t('Bạn thuộc nhóm {group}, áp dụng quyền group: {bits}.', { group: groupOf(one), bits: bits.slice(3, 6) })
+            : t('Owner là {owner}, bạn không thuộc nhóm {group} nên áp dụng quyền others: {bits}.', { owner: ownerOf(one), group: groupOf(one), bits: bits.slice(6, 9) })
     access = {
-      text: (isDirLike(one) ? [r ? 'Xem nội dung' : 'Không xem được', w ? 'Tạo, xoá bên trong' : 'Không tạo, xoá được'] : [r ? 'Đọc' : 'Không đọc', w ? 'Ghi' : 'Không ghi']).join(' · '),
+      text: (isDirLike(one) ? [r ? t('Xem nội dung') : t('Không xem được'), w ? t('Tạo, xoá bên trong') : t('Không tạo, xoá được')] : [r ? t('Đọc') : t('Không đọc'), w ? t('Ghi') : t('Không ghi')]).join(' · '),
       why: who + sudoNote,
       bad: !r,
       soft: r && !w,
@@ -886,8 +887,8 @@ function Details({
     const nr = isRoot ? 0 : sel.filter((e) => !e.readable).length
     const nw = isRoot ? 0 : sel.filter((e) => !e.writable).length
     access = {
-      text: nr || nw ? [nr ? `${nr} mục không đọc được` : '', nw ? `${nw} mục không ghi được` : ''].filter(Boolean).join(' · ') : 'Đọc · Ghi tất cả',
-      why: 'Tính theo owner, group và quyền của từng mục.' + sudoNote,
+      text: nr || nw ? [nr ? t('{n} mục không đọc được', { n: nr }) : '', nw ? t('{n} mục không ghi được', { n: nw }) : ''].filter(Boolean).join(' · ') : t('Đọc · Ghi tất cả'),
+      why: t('Tính theo owner, group và quyền của từng mục.') + sudoNote,
       bad: nr > 0,
       soft: nw > 0,
     }
@@ -897,76 +898,76 @@ function Details({
   const head = one
     ? { tag: tagOf(one), colors: tagColors(one), title: one.name, sub: path }
     : sel.length
-      ? { tag: String(sel.length), colors: ['var(--accent-soft)', 'var(--ink)'] as [string, string], title: `Đã chọn ${sel.length} mục`, sub: path }
-      : { tag: 'DIR', colors: ['var(--info-soft)', 'var(--info)'] as [string, string], title: path.split('/').filter(Boolean).pop() ?? '/', sub: 'Thư mục hiện tại' }
+      ? { tag: String(sel.length), colors: ['var(--accent-soft)', 'var(--ink)'] as [string, string], title: t('Đã chọn {n} mục', { n: sel.length }), sub: path }
+      : { tag: 'DIR', colors: ['var(--info-soft)', 'var(--info)'] as [string, string], title: path.split('/').filter(Boolean).pop() ?? '/', sub: t('Thư mục hiện tại') }
 
   const rows: [string, ReactNode, boolean?, string?][] = one
     ? [
-        ['Đường dẫn', one.path, true],
-        ['Loại', one.kind === 'link' ? 'Liên kết tượng trưng' : one.kind === 'dir' ? 'Thư mục' : one.kind === 'other' ? 'Tệp đặc biệt' : tagOf(one) === 'FILE' ? 'Tệp' : `Tệp .${tagOf(one).toLowerCase()}`],
+        [t('Đường dẫn'), one.path, true],
+        [t('Loại#file'), one.kind === 'link' ? t('Liên kết tượng trưng') : one.kind === 'dir' ? t('Thư mục') : one.kind === 'other' ? t('Tệp đặc biệt') : tagOf(one) === 'FILE' ? t('Tệp') : t('Tệp .{ext}', { ext: tagOf(one).toLowerCase() })],
         ...(one.kind === 'link'
           ? ([
-              ['Trỏ tới', one.linkTarget ?? '?', true, one.targetKind ? undefined : 'var(--danger)'],
+              [t('Trỏ tới'), one.linkTarget ?? '?', true, one.targetKind ? undefined : 'var(--danger)'],
               [
-                'Trạng thái link',
-                one.targetKind ? `Hoạt động · ${one.targetKind === 'dir' ? 'thư mục' : 'tệp'}` : 'Hỏng, đích không tồn tại',
+                t('Trạng thái link'),
+                one.targetKind ? (one.targetKind === 'dir' ? t('Hoạt động · thư mục') : t('Hoạt động · tệp')) : t('Hỏng, đích không tồn tại'),
                 false,
                 one.targetKind ? 'var(--success)' : 'var(--danger)',
               ],
             ] as [string, ReactNode, boolean?, string?][])
           : []),
-        ['Kích thước', isDirLike(one) || one.kind === 'link' ? '—' : formatBytes(one.size) + (one.size >= 1024 ? ` (${one.size.toLocaleString('vi-VN')} byte)` : '')],
-        ['Quyền', `${typeChar(one)}${modeString(one.mode)}  ·  ${octal(one.mode)}`, true],
+        [t('Kích thước'), isDirLike(one) || one.kind === 'link' ? '—' : formatBytes(one.size) + (one.size >= 1024 ? t(' ({n} byte)', { n: one.size.toLocaleString(locale()) }) : '')],
+        [t('Quyền'), `${typeChar(one)}${modeString(one.mode)}  ·  ${octal(one.mode)}`, true],
         ['Owner', ownerOf(one), true],
         ['Group', groupOf(one), true],
-        ['Sửa lần cuối', fullTime(one.mtime)],
+        [t('Sửa lần cuối'), fullTime(one.mtime)],
       ]
     : sel.length
       ? [
-          ['Số mục', `${sel.filter((e) => !isDirLike(e)).length} tệp · ${sel.filter(isDirLike).length} thư mục`],
+          [t('Số mục'), t('{files} tệp · {dirs} thư mục', { files: sel.filter((e) => !isDirLike(e)).length, dirs: sel.filter(isDirLike).length })],
           [
-            'Tổng dung lượng',
-            formatBytes(sel.filter((e) => e.kind === 'file').reduce((a, e) => a + e.size, 0)) + (sel.some(isDirLike) ? ' (chưa tính nội dung thư mục)' : ''),
+            t('Tổng dung lượng'),
+            formatBytes(sel.filter((e) => e.kind === 'file').reduce((a, e) => a + e.size, 0)) + (sel.some(isDirLike) ? t(' (chưa tính nội dung thư mục)') : ''),
           ],
-          ['Quyền', [...new Set(sel.map((e) => octal(e.mode)))].join(', '), true],
+          [t('Quyền'), [...new Set(sel.map((e) => octal(e.mode)))].join(', '), true],
           ['Owner', [...new Set(sel.map((e) => `${ownerOf(e)}:${groupOf(e)}`))].join(', '), true],
-          ['Thư mục', path, true],
+          [t('Thư mục'), path, true],
         ]
       : []
 
   const ownsAll = sel.length > 0 && sel.every((e) => e.class === 'owner' || e.class === 'root')
   const actions: { label: string; icon: LucideIcon; run: () => void; ok: boolean; why?: string; meta?: string; danger?: boolean }[] = sel.length
     ? [
-        { label: 'Đổi tên', icon: Pencil, run: act.rename, ok: !!one && canWrite, why: !one ? 'Chỉ đổi tên được một mục' : `Cần quyền ghi trên ${path}` },
-        { label: 'Sửa quyền', icon: ShieldCheck, run: act.chmod, ok: ownsAll, why: 'Chỉ owner hoặc root mới đổi được quyền', meta: 'chmod' },
-        { label: 'Đổi owner', icon: Users, run: act.chown, ok: canChown, why: 'Chỉ root mới đổi được owner. Bật sudo cho phiên này.', meta: 'chown' },
-        { label: 'Tải xuống', icon: Download, run: act.download, ok: isRoot || sel.every((e) => e.readable), why: 'Có mục không đọc được', meta: 'chọn nơi lưu' },
+        { label: t('Đổi tên'), icon: Pencil, run: act.rename, ok: !!one && canWrite, why: !one ? t('Chỉ đổi tên được một mục') : t('Cần quyền ghi trên {path}', { path }) },
+        { label: t('Sửa quyền'), icon: ShieldCheck, run: act.chmod, ok: ownsAll, why: t('Chỉ owner hoặc root mới đổi được quyền'), meta: 'chmod' },
+        { label: t('Đổi owner'), icon: Users, run: act.chown, ok: canChown, why: t('Chỉ root mới đổi được owner. Bật sudo cho phiên này.'), meta: 'chown' },
+        { label: t('Tải xuống'), icon: Download, run: act.download, ok: isRoot || sel.every((e) => e.readable), why: t('Có mục không đọc được'), meta: t('chọn nơi lưu') },
         {
-          label: 'Sửa trên máy',
+          label: t('Sửa trên máy'),
           icon: FilePen,
           run: act.edit,
           ok: !!one && one.kind === 'file' && (isRoot || one.readable || sudo),
-          why: !one || one.kind !== 'file' ? 'Chọn một tệp' : 'Không có quyền đọc. Bật sudo cho phiên này để sửa.',
-          meta: editorName ?? 'editor mặc định',
+          why: !one || one.kind !== 'file' ? t('Chọn một tệp') : t('Không có quyền đọc. Bật sudo cho phiên này để sửa.'),
+          meta: editorName ?? t('editor mặc định'),
         },
         {
-          label: 'Mở bằng app khác…',
+          label: t('Mở bằng app khác…'),
           icon: AppWindow,
           run: act.editWith,
           ok: !!one && one.kind === 'file' && (isRoot || one.readable || sudo),
-          why: 'Chọn một tệp đọc được',
+          why: t('Chọn một tệp đọc được'),
         },
         {
-          label: 'Theo dõi (tail -f)',
+          label: t('Theo dõi (tail -f)'),
           icon: ScrollText,
           run: act.follow,
           ok: !!one && !isDirLike(one) && one.kind !== 'other' && (isRoot || one.readable || sudo),
-          why: !one || isDirLike(one) ? 'Chọn một tệp' : 'Không có quyền đọc. Bật sudo cho phiên này để theo dõi.',
+          why: !one || isDirLike(one) ? t('Chọn một tệp') : t('Không có quyền đọc. Bật sudo cho phiên này để theo dõi.'),
           meta: one && !isRoot && !one.readable && sudo ? 'sudo' : undefined,
         },
-        { label: 'Sao chép đường dẫn', icon: Copy, run: act.copy, ok: true },
-        { label: 'Mở trong Terminal', icon: SquareTerminal, run: act.terminal, ok: !!one, why: 'Chỉ áp dụng cho một mục' },
-        { label: 'Xoá', icon: Trash2, run: act.remove, ok: canWrite, why: `Cần quyền ghi trên ${path}`, danger: true },
+        { label: t('Sao chép đường dẫn'), icon: Copy, run: act.copy, ok: true },
+        { label: t('Mở trong Terminal'), icon: SquareTerminal, run: act.terminal, ok: !!one, why: t('Chỉ áp dụng cho một mục') },
+        { label: t('Xoá'), icon: Trash2, run: act.remove, ok: canWrite, why: t('Cần quyền ghi trên {path}', { path }), danger: true },
       ]
     : []
 
@@ -986,7 +987,7 @@ function Details({
         </div>
         <button
           type="button"
-          title="Thu gọn"
+          title={t('Thu gọn')}
           onClick={onCollapse}
           className="flex size-6 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-sunken"
         >
@@ -996,7 +997,7 @@ function Details({
 
       <div className="flex flex-col gap-1.5 rounded-[9px] px-3 py-2.5" style={{ background: access.bad ? 'var(--warn-soft)' : 'var(--raised)' }}>
         <div className="flex items-center gap-1.5">
-          <span className="flex-1 text-[11px] text-muted">Quyền của bạn ({user})</span>
+          <span className="flex-1 text-[11px] text-muted">{t('Quyền của bạn ({user})', { user })}</span>
           {sudo && !isRoot && <span className="rounded px-[5px] text-[10px] text-warn" style={{ background: 'var(--warn-soft)' }}>sudo</span>}
         </div>
         <span className="text-[13px] font-semibold" style={{ color: access.bad ? 'var(--warn)' : access.soft ? 'var(--ink2)' : 'var(--ink)' }}>
@@ -1006,7 +1007,7 @@ function Details({
         {escalate && (
           <div className="flex flex-wrap gap-1.5">
             <Button size="xs" onClick={openAsRoot}>
-              Mở bằng kết nối root
+              {t('Mở bằng kết nối root')}
             </Button>
           </div>
         )}
@@ -1015,7 +1016,7 @@ function Details({
       {sel.length > 0 ? (
         <>
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] tracking-[.06em] text-muted uppercase">Thao tác</span>
+            <span className="text-[11px] tracking-[.06em] text-muted uppercase">{t('Thao tác')}</span>
             <div className="flex flex-col gap-px">
               {actions.map((a) => (
                 <button
@@ -1043,20 +1044,20 @@ function Details({
           </div>
           <div className="flex flex-col gap-1.5">
             <div className="flex items-baseline">
-              <span className="flex-1 text-[11px] tracking-[.06em] text-muted uppercase">Thông tin</span>
-              <span className="text-[10.5px] text-muted">giờ máy bạn</span>
+              <span className="flex-1 text-[11px] tracking-[.06em] text-muted uppercase">{t('Thông tin')}</span>
+              <span className="text-[10.5px] text-muted">{t('giờ máy bạn')}</span>
             </div>
             <MetaTable rows={rows} />
             {one && (
               <>
                 <button type="button" onClick={() => setMore(!more)} className="flex cursor-pointer items-center gap-[5px] py-0.5 text-left text-[11.5px] text-ink2">
                   <Chev size={12} strokeWidth={1.8} />
-                  Chi tiết thêm
+                  {t('Chi tiết thêm')}
                 </button>
                 {more && (
                   <MetaTable
                     rows={[
-                      ['Truy cập lần cuối', fullTime(one.atime)],
+                      [t('Truy cập lần cuối'), fullTime(one.atime)],
                       ['UID', String(one.uid ?? '—'), true],
                       ['GID', String(one.gid ?? '—'), true],
                     ]}
@@ -1069,7 +1070,7 @@ function Details({
         </>
       ) : (
         <span className="pt-1.5 pb-1 text-[12px] leading-[1.6] text-muted">
-          Bấm để chọn, Ctrl hoặc ⌘ + bấm để chọn thêm, Shift + bấm để chọn một dải. Bấm đúp thư mục để mở, bấm đúp tệp để sửa bằng editor trên máy (lưu là tự tải lên). Kéo tệp từ máy vào danh sách để tải lên.
+          {t('Bấm để chọn, Ctrl hoặc ⌘ + bấm để chọn thêm, Shift + bấm để chọn một dải. Bấm đúp thư mục để mở, bấm đúp tệp để sửa bằng editor trên máy (lưu là tự tải lên). Kéo tệp từ máy vào danh sách để tải lên.')}
         </span>
       )}
     </div>

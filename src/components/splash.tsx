@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AdonisLockup, BUILD_DURATION_MS } from '@adonisgm/logo'
 import { setWindowControlsVisible } from '../lib/window'
+import { t } from '../i18n'
 
 /** Splash shown on every app launch, modelled on home's: the logo builds once,
  *  holds for a beat, then fades out to reveal the UI.
@@ -59,8 +60,8 @@ export function SplashScreen({ ready }: { ready: boolean }) {
 
         <div className="flex w-full flex-col items-center gap-0.5 border-t border-line pt-2.5">
           <span className="pt-1 text-[13px] font-semibold tracking-[0.02em] text-ink2">Portway</span>
-          <span className="font-mono text-[11px] text-muted">Phiên bản {__APP_VERSION__}</span>
-          <span className="font-mono text-[10px] text-muted">Bản dựng {__BUILD_ID__}</span>
+          <span className="font-mono text-[11px] text-muted">{t('Phiên bản {version}', { version: __APP_VERSION__ })}</span>
+          <span className="font-mono text-[10px] text-muted">{t('Bản dựng {id}', { id: __BUILD_ID__ })}</span>
           <span className="mt-2 text-[11px] text-muted">© 2026 AdonisGM</span>
         </div>
       </div>

@@ -13,6 +13,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::ssh::{exec, exec_priv, shell_quote, Session, Sessions, MARK};
 use crate::trace;
 
@@ -690,7 +691,7 @@ pub async fn nginx_state(sessions: tauri::State<'_, Sessions>, server_id: String
         }
         Ok(state)
     };
-    let r: AppResult<NginxState> = trace::labelled("Nginx · đọc cấu hình", run).await;
+    let r: AppResult<NginxState> = trace::labelled(tr("Nginx · đọc cấu hình", "Nginx · read config"), run).await;
     r
 }
 
@@ -775,7 +776,7 @@ pub async fn nginx_action(
         }
         Ok(ActionResult { ok, output, rolled_back })
     };
-    let r: AppResult<ActionResult> = trace::labelled("Nginx · thao tác", run).await;
+    let r: AppResult<ActionResult> = trace::labelled(tr("Nginx · thao tác", "Nginx · action"), run).await;
     r
 }
 

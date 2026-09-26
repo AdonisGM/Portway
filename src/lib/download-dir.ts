@@ -1,6 +1,7 @@
 import { downloadDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api } from './api'
+import { t } from '../i18n'
 
 const LAST_KEY = 'portway.lastDownloadDir'
 
@@ -23,7 +24,7 @@ export async function chooseDownloadDir(count: number): Promise<string | null> {
   const picked = await open({
     directory: true,
     canCreateDirectories: true,
-    title: count === 1 ? 'Chọn nơi lưu tệp tải xuống' : `Chọn nơi lưu ${count} mục tải xuống`,
+    title: count === 1 ? t('Chọn nơi lưu tệp tải xuống') : t('Chọn nơi lưu {n} mục tải xuống', { n: count }),
     defaultPath: s?.downloadDir ?? readLast() ?? base,
   })
   if (typeof picked !== 'string') return null

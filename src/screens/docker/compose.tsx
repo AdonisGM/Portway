@@ -1,4 +1,5 @@
 import { Chip } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import type { Container } from '../../lib/api'
 import { ComposeButtons } from './containers'
 import type { DockerCtx } from './docker-screen'
@@ -10,7 +11,7 @@ export function ComposeView({ ctx, containers }: { ctx: DockerCtx; containers: C
   if (!projects.length) {
     return (
       <div className="rounded-xl border border-line bg-surface p-8 text-center text-muted">
-        Không có project compose nào. Container chạy bằng docker compose mới hiện ở đây.
+        {t('Không có project compose nào. Container chạy bằng docker compose mới hiện ở đây.')}
       </div>
     )
   }
@@ -30,7 +31,7 @@ export function ComposeView({ ctx, containers }: { ctx: DockerCtx; containers: C
                 {p.files.length ? (
                   <span className="font-mono text-[11px] [overflow-wrap:anywhere] text-muted select-text">{p.files.join(', ')}</span>
                 ) : (
-                  <span className="text-[11px] text-muted">Không rõ file compose (container không có nhãn config_files)</span>
+                  <span className="text-[11px] text-muted">{t('Không rõ file compose (container không có nhãn config_files)')}</span>
                 )}
                 <span className="text-[11.5px] text-ink2">{p.containers.map((c) => c.name).join(', ')}</span>
               </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Field, TextInput } from '../../components/ui/form-controls'
 import { Modal } from '../../components/ui/modal'
 import { Button, cx } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import { isAppError, type AppError, type DockerVolume } from '../../lib/api'
 import { copyText } from '../../lib/clipboard'
 import { formatBytes } from '../server/format'
@@ -36,7 +37,7 @@ export function VolumesView({ ctx }: { ctx: DockerCtx }) {
   }, [ctx.api, server.id, user, version])
 
   const total = sizes && vols ? vols.reduce((a, v) => a + (sizes[v.name] ?? 0), 0) : null
-  const sub = vols ? `${vols.length} volume${total != null ? ` · ${formatBytes(total)}` : ''}` : error ? '' : 'Đang đọc…'
+  const sub = vols ? t('{n} volume', { n: vols.length }) + (total != null ? ` · ${formatBytes(total)}` : '') : error ? '' : t('Đang đọc…')
 
   return (
     <>
@@ -46,8 +47,8 @@ export function VolumesView({ ctx }: { ctx: DockerCtx }) {
         <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
           <div className="sticky top-0 z-[1] grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted" style={{ gridTemplateColumns: COLS }}>
             <span>Volume</span>
-            <span className="text-right">Dung lượng</span>
-            <span>Đang gắn vào</span>
+            <span className="text-right">{t('Dung lượng')}</span>
+            <span>{t('Đang gắn vào')}</span>
             <span />
           </div>
           {(vols ?? []).map((v) => (
@@ -58,12 +59,12 @@ export function VolumesView({ ctx }: { ctx: DockerCtx }) {
                   {v.mountpoint}
                 </span>
               </span>
-              <span className="num text-right text-ink2">{sizes ? (sizes[v.name] != null ? formatBytes(sizes[v.name]) : '—') : sizeError ? '—' : 'đang tính…'}</span>
-              <span className={cx('truncate', v.usedBy.length ? 'text-ink' : 'text-muted')}>{v.usedBy.length ? v.usedBy.join(', ') : 'Không gắn container nào'}</span>
+              <span className="num text-right text-ink2">{sizes ? (sizes[v.name] != null ? formatBytes(sizes[v.name]) : '—') : sizeError ? '—' : t('đang tính…')}</span>
+              <span className={cx('truncate', v.usedBy.length ? 'text-ink' : 'text-muted')}>{v.usedBy.length ? v.usedBy.join(', ') : t('Không gắn container nào')}</span>
               <span className="relative flex justify-end">
                 <button
                   type="button"
-                  title="Thêm thao tác"
+                  title={t('Thêm thao tác')}
                   onClick={() => setMenu(menu === v.name ? null : v.name)}
                   className="flex size-[26px] cursor-pointer items-center justify-center rounded-md border border-line2 text-[14px] leading-none hover:border-muted"
                 >
@@ -77,24 +78,24 @@ export function VolumesView({ ctx }: { ctx: DockerCtx }) {
                         type="button"
                         onClick={() => {
                           setMenu(null)
-                          void copyText(v.mountpoint).then(() => ctx.toast({ title: 'Đã sao chép', detail: v.mountpoint }))
+                          void copyText(v.mountpoint).then(() => ctx.toast({ title: t('Đã sao chép'), detail: v.mountpoint }))
                         }}
                         className="cursor-pointer rounded-md px-2.5 py-1.5 text-left hover:bg-raised"
                       >
-                        Sao chép đường dẫn
+                        {t('Sao chép đường dẫn')}
                       </button>
                       <button
                         type="button"
                         disabled={!!v.usedBy.length}
-                        title={v.usedBy.length ? `Đang gắn vào ${v.usedBy.join(', ')}. Dừng và xoá container trước.` : undefined}
+                        title={v.usedBy.length ? t('Đang gắn vào {containers}. Dừng và xoá container trước.', { containers: v.usedBy.join(', ') }) : undefined}
                         onClick={() => {
                           setMenu(null)
                           setRemoving(v)
                         }}
                         className="flex cursor-pointer flex-col rounded-md px-2.5 py-1.5 text-left text-danger hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
                       >
-                        Xoá volume…
-                        {v.usedBy.length > 0 && <span className="text-[10.5px] text-muted">Đang gắn vào container</span>}
+                        {t('Xoá volume…')}
+                        {v.usedBy.length > 0 && <span className="text-[10.5px] text-muted">{t('Đang gắn vào container')}</span>}
                       </button>
                     </div>
                   </>
@@ -102,12 +103,13 @@ export function VolumesView({ ctx }: { ctx: DockerCtx }) {
               </span>
             </div>
           ))}
-          {vols && !vols.length && <div className="p-7 text-center text-muted">Chưa có volume nào.</div>}
+          {vols && !vols.length && <div className="p-7 text-center text-muted">{t('Chưa có volume nào.')}</div>}
         </div>
         {vols && vols.length > 0 && (
           <div className="flex-none border-t border-line bg-raised px-3.5 py-2 text-[11.5px] text-muted">
-            {vols.length} volume{total != null ? ` · tổng ${formatBytes(total)}` : ''} · chỉ xem, xoá qua menu ⋯
-            {sizeError && <span className="text-danger"> · không tính được dung lượng: {sizeError}</span>}
+            {t('{n} volume', { n: vols.length })}
+            {total != null ? ' · ' + t('tổng {size}', { size: formatBytes(total) }) : ''} · {t('chỉ xem, xoá qua menu ⋯')}
+            {sizeError && <span className="text-danger"> · {t('không tính được dung lượng: {error}', { error: sizeError })}</span>}
           </div>
         )}
       </div>
@@ -128,7 +130,7 @@ function RemoveVolume({ ctx, volume, size, onClose }: { ctx: DockerCtx; volume: 
     setFail(null)
     try {
       await ctx.api.dockerVolumeRemove(ctx.server.id, ctx.user, volume.name)
-      ctx.toast({ title: `Đã xoá volume ${volume.name}`, detail: command })
+      ctx.toast({ title: t('Đã xoá volume {name}', { name: volume.name }), detail: command })
       onClose()
       await ctx.reload()
     } catch (e) {
@@ -143,23 +145,25 @@ function RemoveVolume({ ctx, volume, size, onClose }: { ctx: DockerCtx; volume: 
       open
       onClose={() => !pending && onClose()}
       width={460}
-      title={`Xoá volume ${volume.name}?`}
+      title={t('Xoá volume {name}?', { name: volume.name })}
       subtitle={volume.mountpoint}
       footer={
         <>
           <Button onClick={onClose} disabled={pending}>
-            Huỷ
+            {t('Huỷ')}
           </Button>
           <Button variant="danger" onClick={() => void go()} disabled={pending || typed !== volume.name}>
-            {pending ? 'Đang xoá…' : 'Xoá volume'}
+            {pending ? t('Đang xoá…') : t('Xoá volume')}
           </Button>
         </>
       }
     >
       <div className="rounded-lg bg-danger-soft px-3 py-2.5 leading-normal text-ink">
-        Toàn bộ dữ liệu trong volume{size != null ? ` (${formatBytes(size)})` : ''} bị xoá vĩnh viễn, không hoàn tác được.
+        {size != null
+          ? t('Toàn bộ dữ liệu trong volume ({size}) bị xoá vĩnh viễn, không hoàn tác được.', { size: formatBytes(size) })
+          : t('Toàn bộ dữ liệu trong volume bị xoá vĩnh viễn, không hoàn tác được.')}
       </div>
-      <Field label="Gõ lại tên volume để xác nhận">
+      <Field label={t('Gõ lại tên volume để xác nhận')}>
         <TextInput value={typed} onChange={setTyped} placeholder={volume.name} autoFocus />
       </Field>
       <span className="rounded-md bg-sunken px-2.5 py-2 font-mono text-[11.5px] select-text">{command}</span>

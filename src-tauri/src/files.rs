@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::trace;
 use crate::ssh::{exec, exec_priv, shell_quote, Session, Sessions, MARK};
 
@@ -62,7 +63,7 @@ pub(crate) async fn sftp(session: &Session) -> AppResult<Arc<SftpSession>> {
     if let Some(s) = slot.as_ref() {
         return Ok(s.clone());
     }
-    let span = trace::start(&session.server_id, &session.user, trace::Kind::Sftp, Some("Mở kênh SFTP".into()), "sftp (subsystem)", false);
+    let span = trace::start(&session.server_id, &session.user, trace::Kind::Sftp, Some(tr("Mở kênh SFTP", "Open SFTP channel")), "sftp (subsystem)", false);
     let opened = async {
         let channel = session.handle.channel_open_session().await.map_err(|e| lost_or(e, session))?;
         channel.request_subsystem(true, "sftp").await.map_err(|e| lost_or(e, session))?;
@@ -301,7 +302,7 @@ pub async fn sftp_list(sessions: tauri::State<'_, Sessions>, server_id: String, 
         }
         r
     };
-    let r: AppResult<Listing> = trace::labelled("Tệp · mở thư mục", run).await;
+    let r: AppResult<Listing> = trace::labelled(tr("Tệp · mở thư mục", "Files · open folder"), run).await;
     r
 }
 
@@ -332,7 +333,7 @@ pub async fn sftp_mkdir(
         let r = s.create_dir(&path).await;
         finish(span, &session, &audit, &server_id, &user, "mkdir", cmd, r, &path).await.map(|_| path)
     };
-    let r: AppResult<String> = trace::labelled("Tệp · tạo thư mục", run).await;
+    let r: AppResult<String> = trace::labelled(tr("Tệp · tạo thư mục", "Files · new folder"), run).await;
     r
 }
 
@@ -362,7 +363,7 @@ pub async fn sftp_touch(
         };
         finish(span, &session, &audit, &server_id, &user, "touch", cmd, r, &path).await.map(|_| path)
     };
-    let r: AppResult<String> = trace::labelled("Tệp · tạo tệp", run).await;
+    let r: AppResult<String> = trace::labelled(tr("Tệp · tạo tệp", "Files · new file"), run).await;
     r
 }
 
@@ -389,7 +390,7 @@ pub async fn sftp_rename(
         let r = s.rename(&path, &to).await;
         finish(span, &session, &audit, &server_id, &user, "rename", cmd, r, &path).await.map(|_| to)
     };
-    let r: AppResult<String> = trace::labelled("Tệp · đổi tên", run).await;
+    let r: AppResult<String> = trace::labelled(tr("Tệp · đổi tên", "Files · rename"), run).await;
     r
 }
 
@@ -436,7 +437,7 @@ pub async fn sftp_remove(
         }
         finish(span, &session, &audit, &server_id, &user, "remove", cmd, r, at).await
     };
-    let r: AppResult<()> = trace::labelled("Tệp · xoá", run).await;
+    let r: AppResult<()> = trace::labelled(tr("Tệp · xoá", "Files · delete"), run).await;
     r
 }
 
@@ -493,7 +494,7 @@ pub async fn sftp_chmod(
         }
         finish(span, &session, &audit, &server_id, &user, "chmod", cmd, r, at).await
     };
-    let r: AppResult<()> = trace::labelled("Tệp · sửa quyền", run).await;
+    let r: AppResult<()> = trace::labelled(tr("Tệp · sửa quyền", "Files · change permissions"), run).await;
     r
 }
 
@@ -535,7 +536,7 @@ pub async fn sftp_chown(
             Err(AppError::detail("remote_command", out.stderr.trim()))
         }
     };
-    let r: AppResult<()> = trace::labelled("Tệp · đổi owner", run).await;
+    let r: AppResult<()> = trace::labelled(tr("Tệp · đổi owner", "Files · change owner"), run).await;
     r
 }
 

@@ -6,6 +6,7 @@ import { useTunnels } from '../../app/tunnels'
 import { useToast } from '../../components/toast'
 import { Button, Chip, cx, TONES } from '../../components/ui/primitives'
 import { RowMenu } from '../../components/ui/row-menu'
+import { t } from '../../i18n'
 import { api, isAppError, type AppError, type FirewallState, type FwCtx, type FwOp, type FwRule, type Listen, type Ports, type Server } from '../../lib/api'
 import { copyText } from '../../lib/clipboard'
 import { useLive } from '../server/refresh'
@@ -38,15 +39,16 @@ function useFirewall(serverId: string, user: string) {
   useEffect(() => {
     if (!live) return
     void load()
-    const t = setInterval(load, REFRESH_MS)
-    return () => clearInterval(t)
+    const timer = setInterval(load, REFRESH_MS)
+    return () => clearInterval(timer)
   }, [live, sudo, load])
   return { data, error, load }
 }
 
 type Ask = { title: string; body: ReactNode; note?: ReactNode; op: FwOp; confirm: string; danger?: boolean; doneTitle: string }
 
-const POLICY = { allow: 'cho phép', reject: 'từ chối', deny: 'chặn' } as Record<string, string>
+/** A default policy (incoming / outgoing) as words; unknown values as they are. */
+const policy = (p: string) => (p === 'allow' ? t('cho phép') : p === 'reject' ? t('từ chối') : p === 'deny' ? t('chặn') : p)
 
 /** Ports sshd listens on (so enabling the firewall never locks the session out). */
 function sshPortsOf(ports: Ports, server: Server): number[] {
@@ -111,8 +113,8 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
   const local = ports.listening.filter((l) => l.scope === 'loopback')
   const stale = rules.filter((r) => {
     if (r.action === 'deny' || r.action === 'reject' || r.route || r.direction !== 'in') return false
-    const t = ruleTarget(r)
-    if (!t) return false
+    const target = ruleTarget(r)
+    if (!target) return false
     return !ports.listening.some((l) => allows(r, l.port, l.proto)) && ![...bypass.keys()].some((p) => allows(r, p, 'tcp'))
   })
   const sshRules = rules.filter((r) => sshPorts.some((p) => allows(r, p, 'tcp')))
@@ -121,26 +123,32 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
     const guarded = m?.enabled && sshRules.includes(r)
     if (guarded) return setSshDelete(r)
     setAsk({
-      title: `Xoá rule ${ruleLabel(r)}?`,
+      title: t('Xoá rule {rule}?', { rule: ruleLabel(r) }),
       body:
         r.action === 'deny' || r.action === 'reject'
-          ? `Kết nối từ ${sourceLabel(r.from).toLowerCase()} sẽ không còn bị chặn riêng nữa mà theo các rule còn lại.`
-          : `Kết nối từ ${sourceLabel(r.from).toLowerCase()} tới ${ruleLabel(r)} sẽ theo mặc định (${POLICY[m?.incoming ?? 'deny']})${m?.enabled ? '' : ' khi firewall được bật'}.`,
+          ? t('Kết nối từ {source} sẽ không còn bị chặn riêng nữa mà theo các rule còn lại.', { source: sourceLabel(r.from).toLowerCase() })
+          : m?.enabled
+            ? t('Kết nối từ {source} tới {rule} sẽ theo mặc định ({policy}).', { source: sourceLabel(r.from).toLowerCase(), rule: ruleLabel(r), policy: policy(m.incoming) })
+            : t('Kết nối từ {source} tới {rule} sẽ theo mặc định ({policy}) khi firewall được bật.', {
+                source: sourceLabel(r.from).toLowerCase(),
+                rule: ruleLabel(r),
+                policy: policy(m?.incoming ?? 'deny'),
+              }),
       op: { op: 'delete', rule: r },
-      confirm: 'Xoá rule',
+      confirm: t('Xoá rule'),
       danger: true,
-      doneTitle: 'Đã xoá rule',
+      doneTitle: t('Đã xoá rule'),
     })
   }
 
   const disable = () =>
     setAsk({
-      title: 'Tắt firewall?',
-      body: 'Mọi cổng đang lắng nghe trên địa chỉ công khai sẽ truy cập được từ internet. Các rule vẫn được giữ để bật lại sau.',
+      title: t('Tắt firewall?'),
+      body: t('Mọi cổng đang lắng nghe trên địa chỉ công khai sẽ truy cập được từ internet. Các rule vẫn được giữ để bật lại sau.'),
       op: { op: 'disable' },
-      confirm: 'Tắt firewall',
+      confirm: t('Tắt firewall'),
       danger: true,
-      doneTitle: 'Firewall đã tắt',
+      doneTitle: t('Firewall đã tắt'),
     })
 
   const tunnelCmd = (port: number) => {
@@ -151,15 +159,15 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
 
   const sub = !m
     ? fw.kind === 'none'
-      ? 'Chưa có firewall do UFW hay firewalld quản lý'
+      ? t('Chưa có firewall do UFW hay firewalld quản lý')
       : fw.kind === 'needsRoot'
-        ? `${BACKEND_LABELS[fw.backend]} · cần quyền root để đọc`
-        : `${BACKEND_LABELS[fw.backend]} · không đọc được`
+        ? t('{backend} · cần quyền root để đọc', { backend: BACKEND_LABELS[fw.backend] })
+        : t('{backend} · không đọc được', { backend: BACKEND_LABELS[fw.backend] })
     : m.enabled
-      ? `Đang bật · mặc định ${POLICY[m.incoming] ?? m.incoming} kết nối vào, ${POLICY[m.outgoing] ?? m.outgoing} kết nối ra`
+      ? t('Đang bật · mặc định {incoming} kết nối vào, {outgoing} kết nối ra', { incoming: policy(m.incoming), outgoing: policy(m.outgoing) })
       : m.backend === 'firewalld'
-        ? 'firewalld đang dừng'
-        : 'Đang tắt'
+        ? t('firewalld đang dừng')
+        : t('Đang tắt')
   const suggest = (fw.kind === 'none' ? fw.family : 'other') === 'rhel' ? 'sudo dnf install firewalld' : 'sudo apt install ufw'
 
   return (
@@ -171,15 +179,15 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
             {m?.zone ? <span className="font-normal text-muted"> · zone {m.zone}</span> : null}
           </span>
           <span className="text-muted">{sub}</span>
-          <span className="text-[11px] text-muted">Firewall của nhà cung cấp cloud (security group / security list) không kiểm tra được từ bên trong server.</span>
+          <span className="text-[11px] text-muted">{t('Firewall của nhà cung cấp cloud (security group / security list) không kiểm tra được từ bên trong server.')}</span>
         </div>
         {m?.enabled && (
           <Button size="sm" onClick={disable} disabled={!priv}>
-            Tắt firewall
+            {t('Tắt firewall')}
           </Button>
         )}
         <Button size="sm" variant="primary" onClick={() => setRuleDlg({ editing: null })} disabled={!m || !priv}>
-          Mở cổng
+          {t('Mở cổng')}
         </Button>
       </div>
 
@@ -187,9 +195,13 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
 
       {m && m.alsoActive.length > 0 && (
         <div className="rounded-[10px] border border-line bg-danger-soft px-3.5 py-2.5 leading-normal">
-          <span className="font-semibold text-danger">Có hai công cụ firewall cùng bật: {BACKEND_LABELS[m.backend]} và {m.alsoActive.map((b) => BACKEND_LABELS[b]).join(', ')}.</span>{' '}
+          <span className="font-semibold text-danger">
+            {t('Có hai công cụ firewall cùng bật: {backend} và {others}.', { backend: BACKEND_LABELS[m.backend], others: m.alsoActive.map((b) => BACKEND_LABELS[b]).join(', ') })}
+          </span>{' '}
           <span className="text-ink2">
-            Chúng ghi đè rule của nhau nên kết quả khó đoán. Portway đang quản lý {BACKEND_LABELS[m.backend]} (hợp với hệ điều hành này); nên tắt công cụ còn lại.
+            {t('Chúng ghi đè rule của nhau nên kết quả khó đoán. Portway đang quản lý {backend} (hợp với hệ điều hành này); nên tắt công cụ còn lại.', {
+              backend: BACKEND_LABELS[m.backend],
+            })}
           </span>
         </div>
       )}
@@ -197,17 +209,19 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
       {fw.kind === 'none' && (
         <Card>
           <div className="flex flex-col items-center gap-2 px-6 py-8 text-center">
-            <span className="text-[14px] font-semibold">{fw.iptables ? 'Server dùng iptables trực tiếp' : 'Chưa có firewall'}</span>
+            <span className="text-[14px] font-semibold">{fw.iptables ? t('Server dùng iptables trực tiếp') : t('Chưa có firewall')}</span>
             <span className="max-w-[560px] leading-normal text-muted">
               {fw.iptables
-                ? `Có ${fw.iptables} rule iptables nhưng không do UFW hay firewalld quản lý. Portway chưa đọc được rule iptables thuần; bên dưới là các cổng đang lắng nghe.`
-                : `Không thấy UFW hay firewalld. ${fw.family === 'rhel' ? 'Họ RHEL (Oracle Linux, Rocky, Alma) thường dùng firewalld' : 'Debian/Ubuntu thường dùng UFW'}; cài xong Portway quản lý được ngay tại đây.`}
+                ? t('Có {n} rule iptables nhưng không do UFW hay firewalld quản lý. Portway chưa đọc được rule iptables thuần; bên dưới là các cổng đang lắng nghe.', { n: fw.iptables })
+                : t('Không thấy UFW hay firewalld. {hint}; cài xong Portway quản lý được ngay tại đây.', {
+                    hint: fw.family === 'rhel' ? t('Họ RHEL (Oracle Linux, Rocky, Alma) thường dùng firewalld') : t('Debian/Ubuntu thường dùng UFW'),
+                  })}
             </span>
             {!fw.iptables && (
               <div className="flex items-center gap-2">
                 <span className="rounded-md bg-sunken px-2.5 py-1.5 font-mono text-[11.5px] select-text">{suggest}</span>
                 <Button size="xs" onClick={() => void copyText(suggest)}>
-                  Sao chép
+                  {t('Sao chép')}
                 </Button>
               </div>
             )}
@@ -220,19 +234,21 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
         <div className="flex items-center gap-3 rounded-[10px] border border-line bg-warn-soft px-3.5 py-2.5">
           <span className="size-2 flex-none rounded-full bg-warn" />
           <div className="flex flex-1 flex-col gap-0.5">
-            <span className="font-semibold">Firewall đang tắt</span>
+            <span className="font-semibold">{t('Firewall đang tắt')}</span>
             <span className="text-[11.5px] text-ink2">
-              Mọi cổng lắng nghe trên địa chỉ công khai đều truy cập được từ internet. Rule bên dưới chưa có hiệu lực{m.backend === 'firewalld' ? ' (đây là cấu hình vĩnh viễn, dùng khi firewalld chạy)' : ''}.
+              {m.backend === 'firewalld'
+                ? t('Mọi cổng lắng nghe trên địa chỉ công khai đều truy cập được từ internet. Rule bên dưới chưa có hiệu lực (đây là cấu hình vĩnh viễn, dùng khi firewalld chạy).')
+                : t('Mọi cổng lắng nghe trên địa chỉ công khai đều truy cập được từ internet. Rule bên dưới chưa có hiệu lực.')}
             </span>
           </div>
           <Button size="xs" variant="primary" onClick={() => setEnable(true)} disabled={!priv}>
-            Bật firewall
+            {t('Bật firewall')}
           </Button>
         </div>
       )}
 
       {bypass.size > 0 && (
-        <Group title="⚠ Mở ra internet, không đi qua firewall" hint="Docker tự mở các cổng này trước firewall của server, rule firewall không có tác dụng." tone="danger">
+        <Group title={t('⚠ Mở ra internet, không đi qua firewall')} hint={t('Docker tự mở các cổng này trước firewall của server, rule firewall không có tác dụng.')} tone="danger">
           {[...bypass].map(([port, container]) => (
             <Line key={port} cols="70px minmax(0,1fr) auto">
               <span className="num font-semibold">{port}</span>
@@ -240,7 +256,7 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
                 {container} <span className="text-muted">· container</span>
               </span>
               <Button size="xs" onClick={() => setFix({ port, container })}>
-                Cách khắc phục
+                {t('Cách khắc phục')}
               </Button>
             </Line>
           ))}
@@ -249,19 +265,21 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
 
       {m && (
         <Group
-          title={m.enabled ? 'Rule firewall' : 'Rule firewall (chưa có hiệu lực)'}
+          title={m.enabled ? t('Rule firewall') : t('Rule firewall (chưa có hiệu lực)')}
           hint={
             m.ordered
-              ? 'Rule khớp đầu tiên được áp dụng, thứ tự từ trên xuống. Lấy từ ufw show added.'
-              : `Service, port và rich rule của ${m.zones.length > 1 ? `các zone ${m.zones.join(', ')}` : `zone ${m.zone}`}; firewalld không xét thứ tự. Lấy từ firewall-cmd --list-all.`
+              ? t('Rule khớp đầu tiên được áp dụng, thứ tự từ trên xuống. Lấy từ ufw show added.')
+              : m.zones.length > 1
+                ? t('Service, port và rich rule của các zone {zones}; firewalld không xét thứ tự. Lấy từ firewall-cmd --list-all.', { zones: m.zones.join(', ') })
+                : t('Service, port và rich rule của zone {zone}; firewalld không xét thứ tự. Lấy từ firewall-cmd --list-all.', { zone: String(m.zone) })
           }
         >
           <div className="grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted" style={{ gridTemplateColumns: RULE_COLS }}>
             <span>{m.ordered ? '#' : ''}</span>
-            <span>{m.backend === 'firewalld' ? 'Cổng / Service' : 'Cổng / App'}</span>
-            <span>Từ</span>
-            <span>Hành động</span>
-            <span>Ghi chú</span>
+            <span>{m.backend === 'firewalld' ? t('Cổng / Service') : t('Cổng / App')}</span>
+            <span>{t('Từ')}</span>
+            <span>{t('Hành động')}</span>
+            <span>{t('Ghi chú#rule')}</span>
             <span />
           </div>
           {rules.map((r, i) => {
@@ -279,8 +297,8 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
                   <span className="truncate font-mono text-[12px] font-semibold">{ruleLabel(r)}</span>
                   <span className="truncate text-[11px] text-muted">
                     {protoLabel(r)}
-                    {r.route ? ' · route (chuyển tiếp)' : ''}
-                    {r.direction === 'out' ? ' · chiều ra' : ''}
+                    {r.route ? t(' · route (chuyển tiếp)') : ''}
+                    {r.direction === 'out' ? t(' · chiều ra') : ''}
                     {r.interface ? ` · on ${r.interface}` : ''}
                   </span>
                 </span>
@@ -296,13 +314,18 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
                   </span>
                   {isSsh && (
                     <span className="text-[11px] text-info">
-                      Portway đang dùng (SSH){m.backend === 'ufw' && r.action === 'allow' ? ' · nên dùng Giới hạn để chống dò mật khẩu' : ''}
+                      {t('Portway đang dùng (SSH)')}
+                      {m.backend === 'ufw' && r.action === 'allow' ? t(' · nên dùng Giới hạn để chống dò mật khẩu') : ''}
                     </span>
                   )}
-                  {noEffect && <span className="text-[11px] text-danger">Không có hiệu lực: Docker đã mở cổng này cho mọi nơi</span>}
+                  {noEffect && <span className="text-[11px] text-danger">{t('Không có hiệu lực: Docker đã mở cổng này cho mọi nơi')}</span>}
                   {shadow != null && (
                     <span className="text-[11px] text-warn">
-                      Không có tác dụng: rule #{shadow + 1} ({ruleLabel(rules[shadow])}, {ACTIONS[rules[shadow].action].label.toLowerCase()}) khớp trước
+                      {t('Không có tác dụng: rule #{n} ({rule}, {action}) khớp trước', {
+                        n: shadow + 1,
+                        rule: ruleLabel(rules[shadow]),
+                        action: ACTIONS[rules[shadow].action].label.toLowerCase(),
+                      })}
                     </span>
                   )}
                 </span>
@@ -312,46 +335,55 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
                     setOpen={(v) => setMenu(v ? key : null)}
                     items={[
                       {
-                        label: 'Sửa',
+                        label: t('Sửa'),
                         run: () => setRuleDlg({ editing: r }),
                         ok: priv && editable,
                         why: !priv
-                          ? 'Cần quyền root'
+                          ? t('Cần quyền root')
                           : r.app
-                            ? `Rule theo ${m.backend === 'firewalld' ? 'service' : 'app profile'}: xoá rồi mở cổng mới`
-                            : 'Rule phức tạp (interface, log, route…): sửa trong Terminal',
+                            ? t('Rule theo {kind}: xoá rồi mở cổng mới', { kind: m.backend === 'firewalld' ? 'service' : 'app profile' })
+                            : t('Rule phức tạp (interface, log, route…): sửa trong Terminal'),
                       },
                       ...(m.backend === 'ufw' && isSsh && r.action === 'allow' && editable
                         ? [
                             {
-                              label: 'Đổi sang Giới hạn (limit)',
+                              label: t('Đổi sang Giới hạn (limit)'),
                               ok: priv,
-                              why: 'Cần quyền root',
+                              why: t('Cần quyền root'),
                               run: () => {
                                 const next = { ...toInput(r), action: 'limit' as const }
                                 // The new rule goes last: say if an earlier rule would still win.
                                 const after = [...rules.filter((x) => x !== r), { ...r, action: 'limit' as const, spec: [] }]
                                 const blocker = shadowedBy(after, after.length - 1)
                                 setAsk({
-                                  title: `Đổi rule ${ruleLabel(r)} sang Giới hạn?`,
-                                  body: 'UFW sẽ chặn một IP nếu nó mở quá 6 kết nối trong 30 giây, đủ để chặn dò mật khẩu mà không ảnh hưởng người dùng bình thường. Kết nối SSH đang mở không bị ngắt.',
+                                  title: t('Đổi rule {rule} sang Giới hạn?', { rule: ruleLabel(r) }),
+                                  body: t(
+                                    'UFW sẽ chặn một IP nếu nó mở quá 6 kết nối trong 30 giây, đủ để chặn dò mật khẩu mà không ảnh hưởng người dùng bình thường. Kết nối SSH đang mở không bị ngắt.',
+                                  ),
                                   note:
                                     blocker != null
-                                      ? `Rule mới được thêm vào cuối danh sách, sau ${ruleLabel(after[blocker])} (${ACTIONS[after[blocker].action].label.toLowerCase()} từ ${sourceLabel(after[blocker].from).toLowerCase()}). Rule đó khớp trước nên limit sẽ không có tác dụng cho tới khi bạn xoá nó.`
-                                      : 'UFW không sửa rule tại chỗ: rule cũ bị xoá và rule mới được thêm vào cuối danh sách.',
+                                      ? t(
+                                          'Rule mới được thêm vào cuối danh sách, sau {rule} ({action} từ {source}). Rule đó khớp trước nên limit sẽ không có tác dụng cho tới khi bạn xoá nó.',
+                                          {
+                                            rule: ruleLabel(after[blocker]),
+                                            action: ACTIONS[after[blocker].action].label.toLowerCase(),
+                                            source: sourceLabel(after[blocker].from).toLowerCase(),
+                                          },
+                                        )
+                                      : t('UFW không sửa rule tại chỗ: rule cũ bị xoá và rule mới được thêm vào cuối danh sách.'),
                                   op: { op: 'replace', rule: r, with: next },
-                                  confirm: 'Đổi sang Giới hạn',
-                                  doneTitle: 'SSH đã dùng limit',
+                                  confirm: t('Đổi sang Giới hạn'),
+                                  doneTitle: t('SSH đã dùng limit'),
                                 })
                               },
                             },
                           ]
                         : []),
                       {
-                        label: 'Xoá',
+                        label: t('Xoá'),
                         run: () => deleteRule(r),
                         ok: priv && !lastSsh,
-                        why: !priv ? 'Cần quyền root' : 'Rule SSH duy nhất: xoá sẽ làm mất kết nối tới server',
+                        why: !priv ? t('Cần quyền root') : t('Rule SSH duy nhất: xoá sẽ làm mất kết nối tới server'),
                         danger: true,
                       },
                     ]}
@@ -360,12 +392,12 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
               </div>
             )
           })}
-          {!rules.length && <div className="px-3.5 py-6 text-center text-muted">Chưa có rule nào. Kết nối vào đều theo mặc định.</div>}
+          {!rules.length && <div className="px-3.5 py-6 text-center text-muted">{t('Chưa có rule nào. Kết nối vào đều theo mặc định.')}</div>}
         </Group>
       )}
 
       {exposedOff.length > 0 && (
-        <Group title="Mở ra internet vì firewall đang tắt" hint="Tiến trình lắng nghe trên địa chỉ công khai, không có gì chặn." tone="warn">
+        <Group title={t('Mở ra internet vì firewall đang tắt')} hint={t('Tiến trình lắng nghe trên địa chỉ công khai, không có gì chặn.')} tone="warn">
           {exposedOff.map((l) => (
             <ListenLine key={`${l.proto}${l.port}`} l={l} complete={ports.processesComplete} />
           ))}
@@ -373,10 +405,10 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
       )}
 
       {blocked.length > 0 && (
-        <Group title="Lắng nghe công khai nhưng bị firewall chặn" hint="An toàn: tiến trình bind địa chỉ công khai nhưng không có rule cho phép.">
+        <Group title={t('Lắng nghe công khai nhưng bị firewall chặn')} hint={t('An toàn: tiến trình bind địa chỉ công khai nhưng không có rule cho phép.')}>
           {blocked.map((l) => (
             <ListenLine key={`${l.proto}${l.port}`} l={l} complete={ports.processesComplete}>
-              <Chip tone={TONES.success}>Đang bị chặn</Chip>
+              <Chip tone={TONES.success}>{t('Đang bị chặn')}</Chip>
             </ListenLine>
           ))}
         </Group>
@@ -384,8 +416,11 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
 
       {!m && publicListen.length > 0 && (
         <Group
-          title="Lắng nghe trên địa chỉ công khai"
-          hint={`Không đọc được rule firewall nên Portway không biết cổng nào bị chặn (có thể có iptables/nftables hoặc firewall của cloud).${ports.processesComplete ? '' : ' Tên tiến trình của user khác cần quyền root.'}`}
+          title={t('Lắng nghe trên địa chỉ công khai')}
+          hint={
+            t('Không đọc được rule firewall nên Portway không biết cổng nào bị chặn (có thể có iptables/nftables hoặc firewall của cloud).') +
+            (ports.processesComplete ? '' : t(' Tên tiến trình của user khác cần quyền root.'))
+          }
           tone="warn"
         >
           {publicListen.map((l) => (
@@ -394,7 +429,7 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
         </Group>
       )}
       {local.length > 0 && (
-        <Group title="Chỉ truy cập trong server (127.0.0.1)" hint="Không mở ra ngoài. Dùng SSH tunnel để truy cập từ máy bạn.">
+        <Group title={t('Chỉ truy cập trong server (127.0.0.1)')} hint={t('Không mở ra ngoài. Dùng SSH tunnel để truy cập từ máy bạn.')}>
           {local.map((l) => (
             <ListenLine key={`${l.proto}${l.port}${l.bind}`} l={l} complete={ports.processesComplete}>
               {l.proto === 'tcp' && (
@@ -403,21 +438,21 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
                     size="xs"
                     variant="primary"
                     onClick={() => {
-                      tunnels.setDraft({ kind: 'local', serverId: server.id, user, dest: `127.0.0.1:${l.port}`, name: l.process ?? `Cổng ${l.port}` })
+                      tunnels.setDraft({ kind: 'local', serverId: server.id, user, dest: `127.0.0.1:${l.port}`, name: l.process ?? t('Cổng {port}', { port: l.port }) })
                       nav.go({ kind: 'tunnels' })
                     }}
                   >
-                    Mở tunnel
+                    {t('Mở tunnel')}
                   </Button>
                   <Button
                     size="xs"
                     variant="ghost"
                     onClick={() => {
                       const c = tunnelCmd(l.port)
-                      void copyText(c).then(() => toast({ title: 'Đã sao chép lệnh tunnel', detail: c }))
+                      void copyText(c).then(() => toast({ title: t('Đã sao chép lệnh tunnel'), detail: c }))
                     }}
                   >
-                    Lệnh ssh
+                    {t('Lệnh ssh')}
                   </Button>
                 </span>
               )}
@@ -427,16 +462,17 @@ export function FirewallScreen({ server, user }: { server: Server; user: string 
       )}
 
       {stale.length > 0 && m && (
-        <Group title="Rule thừa" hint="Rule cho phép cổng nhưng không có tiến trình nào lắng nghe." tone="warn">
+        <Group title={t('Rule thừa')} hint={t('Rule cho phép cổng nhưng không có tiến trình nào lắng nghe.')} tone="warn">
           {stale.map((r) => (
             <Line key={r.spec.join(' ')} cols="120px minmax(0,1fr) auto auto">
               <span className="font-mono text-[12px] font-semibold">{ruleLabel(r)}</span>
               <span className="truncate text-ink2">
-                {r.comment ? `${r.comment} · ` : ''}từ {sourceLabel(r.from)}
+                {r.comment ? `${r.comment} · ` : ''}
+                {t('từ {source}', { source: sourceLabel(r.from) })}
               </span>
-              <Chip tone={TONES.warn}>Không có tiến trình</Chip>
+              <Chip tone={TONES.warn}>{t('Không có tiến trình')}</Chip>
               <Button size="xs" onClick={() => deleteRule(r)} disabled={!priv}>
-                Xoá rule
+                {t('Xoá rule')}
               </Button>
             </Line>
           ))}
@@ -520,7 +556,7 @@ function ListenLine({ l, children, complete }: { l: Listen; children?: ReactNode
     <Line cols="70px 44px minmax(0,1fr) minmax(0,1fr) auto">
       <span className="num font-semibold">{l.port}</span>
       <span className="text-[11.5px] text-muted">{l.proto}</span>
-      <span className="truncate">{l.container ? `docker · ${l.container}` : (l.process ?? (complete ? '— (không thuộc tiến trình nào trong server)' : '— (cần root để biết tiến trình)'))}</span>
+      <span className="truncate">{l.container ? `docker · ${l.container}` : (l.process ?? (complete ? t('— (không thuộc tiến trình nào trong server)') : t('— (cần root để biết tiến trình)')))}</span>
       <span className={cx('truncate font-mono text-[11.5px]', isPublicBind(l) ? 'text-warn' : 'text-muted')}>{bindText(l)}</span>
       <span className="flex justify-end">{children}</span>
     </Line>

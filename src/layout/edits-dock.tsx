@@ -5,6 +5,7 @@ import { useEdits } from '../app/edits'
 import { ConfirmModal } from '../components/ui/modal'
 import { Button, cx } from '../components/ui/primitives'
 import type { Edit } from '../lib/api'
+import { t } from '../i18n'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const clock = (ms: number) => {
@@ -16,15 +17,18 @@ const baseName = (p: string) => p.split('/').pop() || p
 function statusOf(e: Edit): { text: string; color: string } {
   switch (e.status) {
     case 'synced':
-      return { text: e.uploads ? `Đã tải lên lúc ${clock(e.syncedAt)} · ${e.uploads} lần` : 'Chưa sửa · lưu trong editor là tự tải lên', color: 'var(--success)' }
+      return {
+        text: e.uploads ? t('Đã tải lên lúc {time} · {n} lần', { time: clock(e.syncedAt), n: e.uploads }) : t('Chưa sửa · lưu trong editor là tự tải lên'),
+        color: 'var(--success)',
+      }
     case 'uploading':
-      return { text: 'Đang tải lên…', color: 'var(--ink2)' }
+      return { text: t('Đang tải lên…'), color: 'var(--ink2)' }
     case 'pending':
-      return { text: e.error ?? 'Chờ tải lên', color: 'var(--warn)' }
+      return { text: e.error ?? t('Chờ tải lên'), color: 'var(--warn)' }
     case 'conflict':
-      return { text: 'Tệp trên server đã đổi từ lúc mở', color: 'var(--danger)' }
+      return { text: t('Tệp trên server đã đổi từ lúc mở'), color: 'var(--danger)' }
     case 'error':
-      return { text: e.error ?? 'Lỗi khi tải lên', color: 'var(--danger)' }
+      return { text: e.error ?? t('Lỗi khi tải lên'), color: 'var(--danger)' }
   }
 }
 
@@ -58,14 +62,14 @@ export function EditsDock() {
                         {e.user}@{e.serverName}:{e.remotePath}
                       </span>
                     </span>
-                    <IconButton title={e.app ? `Mở lại bằng ${e.app}` : 'Mở lại trong editor'} onClick={() => reopen(e.id)}>
+                    <IconButton title={e.app ? t('Mở lại bằng {app}', { app: e.app }) : t('Mở lại trong editor')} onClick={() => reopen(e.id)}>
                       <ExternalLink size={13} strokeWidth={1.8} />
                     </IconButton>
-                    <IconButton title="Hiện bản trên máy trong Finder" onClick={() => void revealItemInDir(e.localPath)}>
+                    <IconButton title={t('Hiện bản trên máy trong Finder')} onClick={() => void revealItemInDir(e.localPath)}>
                       <FolderOpen size={13} strokeWidth={1.8} />
                     </IconButton>
                     <IconButton
-                      title="Thôi sửa: ngừng tải lên và xoá bản trên máy"
+                      title={t('Thôi sửa: ngừng tải lên và xoá bản trên máy')}
                       onClick={() => (e.status === 'synced' ? stop(e.id) : setAsking({ edit: e, kind: 'stop' }))}
                     >
                       <X size={13} strokeWidth={1.8} />
@@ -77,10 +81,10 @@ export function EditsDock() {
                   {e.status === 'conflict' && (
                     <div className="flex flex-wrap gap-1.5 pl-[22px]">
                       <Button size="xs" variant="danger" onClick={() => void resolve(e.id, true)}>
-                        Ghi đè lên server
+                        {t('Ghi đè lên server')}
                       </Button>
                       <Button size="xs" onClick={() => setAsking({ edit: e, kind: 'take' })}>
-                        Lấy bản trên server
+                        {t('Lấy bản trên server')}
                       </Button>
                     </div>
                   )}
@@ -91,8 +95,8 @@ export function EditsDock() {
         )}
         <button type="button" onClick={() => setOpen(!open)} className="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-left">
           <FilePen size={14} strokeWidth={1.8} className="flex-none text-ink2" />
-          <span className="font-semibold">Đang sửa trên máy</span>
-          <span className={cx('text-[11.5px]', problems ? 'text-danger' : 'text-muted')}>{problems ? `${problems} cần xem` : `${list.length} tệp`}</span>
+          <span className="font-semibold">{t('Đang sửa trên máy')}</span>
+          <span className={cx('text-[11.5px]', problems ? 'text-danger' : 'text-muted')}>{problems ? t('{n} cần xem', { n: problems }) : t('{n} tệp', { n: list.length })}</span>
           <span className="flex-1" />
           <Chev size={14} strokeWidth={1.8} className="text-muted" />
         </button>
@@ -102,8 +106,12 @@ export function EditsDock() {
         <ConfirmModal
           open
           onClose={() => setAsking(null)}
-          title={asking.kind === 'stop' ? `Thôi sửa ${baseName(asking.edit.remotePath)}?` : `Lấy bản trên server của ${baseName(asking.edit.remotePath)}?`}
-          confirm={asking.kind === 'stop' ? 'Thôi sửa' : 'Lấy bản trên server'}
+          title={
+            asking.kind === 'stop'
+              ? t('Thôi sửa {name}?', { name: baseName(asking.edit.remotePath) })
+              : t('Lấy bản trên server của {name}?', { name: baseName(asking.edit.remotePath) })
+          }
+          confirm={asking.kind === 'stop' ? t('Thôi sửa') : t('Lấy bản trên server')}
           danger
           onConfirm={() => {
             const a = asking
@@ -113,8 +121,8 @@ export function EditsDock() {
           }}
         >
           {asking.kind === 'stop'
-            ? 'Thay đổi chưa tải lên server sẽ mất: bản trên máy bị xoá và Portway không theo dõi tệp này nữa.'
-            : 'Bản trên máy được thay bằng nội dung hiện tại trên server; những gì bạn sửa mà chưa tải lên sẽ mất. Editor sẽ hiện nội dung mới.'}
+            ? t('Thay đổi chưa tải lên server sẽ mất: bản trên máy bị xoá và Portway không theo dõi tệp này nữa.')
+            : t('Bản trên máy được thay bằng nội dung hiện tại trên server; những gì bạn sửa mà chưa tải lên sẽ mất. Editor sẽ hiện nội dung mới.')}
         </ConfirmModal>
       )}
     </div>

@@ -12,6 +12,7 @@ use tokio::sync::watch;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::ssh::{shell_quote, wrap_command, Sessions};
 use crate::trace;
 
@@ -62,7 +63,7 @@ fn take_lines(buf: &mut Vec<u8>) -> Vec<String> {
                 while !l.is_char_boundary(cut) {
                     cut -= 1;
                 }
-                format!("{} … (+{} ký tự)", &l[..cut], l[cut..].chars().count())
+                tr(format!("{} … (+{} ký tự)", &l[..cut], l[cut..].chars().count()), format!("{} … (+{} characters)", &l[..cut], l[cut..].chars().count()))
             } else {
                 l.to_string()
             }
@@ -104,7 +105,7 @@ pub async fn log_tail_start(
     let (stop_tx, mut stop_rx) = watch::channel(false);
     tails.map.lock().unwrap().insert(id.clone(), Follow { server_id: server_id.clone(), user: user.clone(), stop: stop_tx });
     audit.record(&server_id, &user, "logTail", &shown, true, None);
-    let span = trace::start(&server_id, &user, trace::Kind::Exec, Some(format!("Theo dõi {path}")), &shown, false);
+    let span = trace::start(&server_id, &user, trace::Kind::Exec, Some(tr(format!("Theo dõi {path}"), format!("Follow {path}"))), &shown, false);
     span.running();
 
     let tails = tails.inner().clone();
@@ -147,9 +148,10 @@ pub async fn log_tail_start(
         let error = if stopped {
             None
         } else if session.handle.is_closed() {
-            Some("Mất kết nối SSH".to_string())
+            Some(tr("Mất kết nối SSH", "SSH connection lost"))
         } else {
-            Some(format!("tail kết thúc (exit {})", code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())))
+            let code = code.map(|c| c.to_string()).unwrap_or_else(|| "?".into());
+            Some(tr(format!("tail kết thúc (exit {code})"), format!("tail ended (exit {code})")))
         };
         notes.extend(take_lines(&mut err.iter().copied().chain([b'\n']).collect()));
         emit(pending, dropped, notes, true, error.clone());

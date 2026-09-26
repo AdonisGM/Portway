@@ -3,6 +3,7 @@ import { useConnections, type Connection } from '../../app/connections'
 import { useNav, type ModuleId } from '../../app/nav'
 import { useServers } from '../../app/servers'
 import { OsBadge } from '../../components/os-badge'
+import { locale, t } from '../../i18n'
 import { useToast } from '../../components/toast'
 import { Button, Chip, cx, TONES } from '../../components/ui/primitives'
 import { MODULE_LABELS } from '../../layout/meta'
@@ -38,7 +39,7 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
   }, [module, noDocker, noSystemd, noNginx, nav])
 
   if (!server) {
-    return <div className="rounded-xl border border-line bg-surface p-8 text-center text-muted">Server này không còn trong danh sách.</div>
+    return <div className="rounded-xl border border-line bg-surface p-8 text-center text-muted">{t('Server này không còn trong danh sách.')}</div>
   }
 
   // The header never scrolls; only the area under it does. Modules that manage
@@ -84,7 +85,7 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
                   <FirewallScreen server={server} user={user} />
                 ) : (
                   <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">
-                    Mục {MODULE_LABELS[module]} sẽ làm ở bước sau
+                    {t('Mục {name} sẽ làm ở bước sau', { name: MODULE_LABELS[module] })}
                   </div>
                 )}
               </div>
@@ -104,22 +105,22 @@ function ServerHeader({ server, user, conn }: { server: Server; user: string; co
   const command = sshCommand(server.host, server.port, account, jumpSpec(server, byId))
   const status =
     conn?.status === 'connected'
-      ? { label: 'Đã kết nối', tone: TONES.success }
+      ? { label: t('Đã kết nối'), tone: TONES.success }
       : conn?.status === 'reconnecting'
-        ? { label: 'Đang kết nối lại', tone: TONES.warn }
+        ? { label: t('Đang kết nối lại'), tone: TONES.warn }
       : conn?.status === 'connecting' || conn?.status === 'prompt'
-        ? { label: 'Đang kết nối', tone: TONES.warn }
+        ? { label: t('Đang kết nối#status'), tone: TONES.warn }
         : !conn || conn.error.code === 'cancelled'
-          ? { label: 'Chưa kết nối', tone: TONES.neutral }
+          ? { label: t('Chưa kết nối'), tone: TONES.neutral }
           : conn.error.code === 'connection_lost' || conn.error.code === 'not_connected'
-            ? { label: 'Mất kết nối', tone: TONES.danger }
-            : { label: 'Lỗi kết nối', tone: TONES.danger }
+            ? { label: t('Mất kết nối'), tone: TONES.danger }
+            : { label: t('Lỗi kết nối'), tone: TONES.danger }
 
   const line = [
     `${user}@${hostPort(server.host, server.port)}`,
-    server.jump && `qua ${byId(server.jump.serverId)?.name ?? '?'}`,
-    server.os ?? 'chưa rõ hệ điều hành',
-    conn?.status === 'connected' && `chạy ${formatUptime(conn.info.uptimeSecs + (Date.now() - conn.since) / 1000)}`,
+    server.jump && t('qua {name}', { name: byId(server.jump.serverId)?.name ?? '?' }),
+    server.os ?? t('chưa rõ hệ điều hành'),
+    conn?.status === 'connected' && t('chạy {uptime}', { uptime: formatUptime(conn.info.uptimeSecs + (Date.now() - conn.since) / 1000) }),
   ]
     .filter(Boolean)
     .join(' · ')
@@ -142,18 +143,18 @@ function ServerHeader({ server, user, conn }: { server: Server; user: string; co
         </div>
         <span className="font-mono text-[11.5px] text-muted select-text">{line}</span>
       </div>
-      <Button variant="ghost" size="sm" onClick={() => run(() => setPinned(server.id, !server.pinned), 'Không lưu được')}>
-        {server.pinned ? 'Bỏ ghim' : 'Ghim'}
+      <Button variant="ghost" size="sm" onClick={() => run(() => setPinned(server.id, !server.pinned), t('Không lưu được'))}>
+        {server.pinned ? t('Bỏ ghim') : t('Ghim')}
       </Button>
-      <Button size="sm" onClick={() => run(() => copyText(command).then(() => toast({ title: 'Đã sao chép lệnh SSH', detail: command })), 'Không sao chép được')}>
-        Sao chép lệnh SSH
+      <Button size="sm" onClick={() => run(() => copyText(command).then(() => toast({ title: t('Đã sao chép lệnh SSH'), detail: command })), t('Không sao chép được'))}>
+        {t('Sao chép lệnh SSH')}
       </Button>
       <Button
         variant="primary"
         size="sm"
-        onClick={() => run(() => api.openTerminal(server.id, user).then(() => toast({ title: 'Đã mở Terminal', detail: command })), 'Không mở được Terminal')}
+        onClick={() => run(() => api.openTerminal(server.id, user).then(() => toast({ title: t('Đã mở Terminal'), detail: command })), t('Không mở được Terminal'))}
       >
-        Mở Terminal
+        {t('Mở Terminal')}
       </Button>
     </div>
   )
@@ -161,21 +162,23 @@ function ServerHeader({ server, user, conn }: { server: Server; user: string; co
 
 function Reconnecting({ server, user, conn }: { server: Server; user: string; conn: Extract<Connection, { status: 'reconnecting' }> }) {
   const conns = useConnections()
-  const lost = new Date(conn.lostAt).toLocaleTimeString('vi-VN')
+  const lost = new Date(conn.lostAt).toLocaleTimeString(locale())
   return (
     <div className="flex items-center gap-3 rounded-[10px] border border-line bg-warn-soft px-3.5 py-2.5">
       <span className="size-2 flex-none rounded-full bg-warn" />
       <div className="flex flex-1 flex-col gap-0.5">
         <span className="font-semibold text-ink">
-          Mất kết nối tới {server.name}, đang kết nối lại{conn.attempt > 0 ? ` (lần ${conn.attempt})` : ''}…
+          {conn.attempt > 0
+            ? t('Mất kết nối tới {name}, đang kết nối lại (lần {n})…', { name: server.name, n: conn.attempt })
+            : t('Mất kết nối tới {name}, đang kết nối lại…', { name: server.name })}
         </span>
         <span className="text-[11.5px] text-ink2">
-          Số liệu bên dưới là bản cuối lúc {lost}, chưa được cập nhật.
+          {t('Số liệu bên dưới là bản cuối lúc {time}, chưa được cập nhật.', { time: lost })}
           {conn.error.detail && <span className="font-mono"> {conn.error.detail}</span>}
         </span>
       </div>
       <Button size="xs" onClick={() => conns.retryNow(server.id, user)}>
-        Thử ngay
+        {t('Thử ngay')}
       </Button>
     </div>
   )
@@ -194,7 +197,7 @@ function Connecting({ server }: { server: Server }) {
         ))}
       </div>
       <span className="text-[11px] text-muted">
-        Đang kết nối tới {hostPort(server.host, server.port)} qua SSH…
+        {t('Đang kết nối tới {host} qua SSH…', { host: hostPort(server.host, server.port) })}
       </span>
     </div>
   )
@@ -215,11 +218,11 @@ function Failed({ server, user, conn }: { server: Server; user: string; conn: Co
       <div className="mt-1 flex gap-2">
         {error.code === 'key_missing' || error.code === 'auth_failed' ? (
           <Button size="sm" onClick={() => nav.go({ kind: 'servers' })}>
-            Về danh sách server
+            {t('Về danh sách server')}
           </Button>
         ) : null}
         <Button size="sm" variant="primary" onClick={() => conns.connect(server.id, user)}>
-          {error.code === 'cancelled' ? 'Kết nối' : 'Thử kết nối lại'}
+          {error.code === 'cancelled' ? t('Kết nối') : t('Thử kết nối lại')}
         </Button>
       </div>
     </div>

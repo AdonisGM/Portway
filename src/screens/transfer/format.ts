@@ -1,4 +1,5 @@
 import type { PaneSource } from '../../app/nav'
+import { t } from '../../i18n'
 import type { FileEntry, Server, TransferEnd } from '../../lib/api'
 
 export const LOCAL_KEY = 'local'
@@ -15,13 +16,13 @@ export const sameSource = (a: PaneSource, b: PaneSource) => sourceKey(a) === sou
 
 /** "Máy này" or "deploy@web-01". */
 export function sourceName(s: PaneSource, byId: (id: string) => Server | undefined) {
-  if (s.kind === 'local') return 'Máy này'
+  if (s.kind === 'local') return t('Máy này')
   return `${s.user}@${byId(s.serverId)?.name ?? s.serverId}`
 }
 
 /** Host part only, for the relay note: "Máy này" or "web-01". */
 export function hostName(s: PaneSource, byId: (id: string) => Server | undefined) {
-  return s.kind === 'local' ? 'Máy này' : (byId(s.serverId)?.name ?? s.serverId)
+  return s.kind === 'local' ? t('Máy này') : (byId(s.serverId)?.name ?? s.serverId)
 }
 
 export function endOf(s: PaneSource, byId: (id: string) => Server | undefined): TransferEnd {

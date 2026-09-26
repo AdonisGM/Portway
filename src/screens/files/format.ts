@@ -1,20 +1,19 @@
+import { t } from '../../i18n'
+import { dateOnly, dayMonth, hm, hms } from '../../i18n/dates'
 import type { AppError, FileEntry } from '../../lib/api'
 
-const pad = (n: number) => String(n).padStart(2, '0')
-
-/** "24/09 14:05" this year, "24/09/2024" before. Local time of this Mac. */
+/** "24/09 14:05" this year, "24/09/2024" before ("Sep 24 14:05" / "Sep 24, 2024"
+ *  in English). Local time of this Mac. */
 export function shortTime(secs: number | null) {
   if (secs == null) return '—'
   const d = new Date(secs * 1000)
-  return d.getFullYear() === new Date().getFullYear()
-    ? `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-    : `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+  return d.getFullYear() === new Date().getFullYear() ? `${dayMonth(d)} ${hm(d)}` : dateOnly(d)
 }
 
 export function fullTime(secs: number | null) {
   if (secs == null) return '—'
   const d = new Date(secs * 1000)
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  return `${dateOnly(d)} ${hms(d)}`
 }
 
 /** "rwxr-xr-x" from permission bits, with setuid/setgid/sticky shown like ls. */
@@ -72,23 +71,23 @@ export const joinPath = (dir: string, name: string) => (dir.endsWith('/') ? dir 
 export function fileError(e: AppError): string {
   switch (e.code) {
     case 'not_found':
-      return `Không tìm thấy ${e.detail ?? ''}`
+      return t('Không tìm thấy {what}', { what: e.detail ?? '' })
     case 'permission_denied':
-      return `Không có quyền: ${e.detail ?? ''}`
+      return t('Không có quyền: {what}', { what: e.detail ?? '' })
     case 'not_a_dir':
-      return `${e.detail ?? ''} không phải thư mục`
+      return t('{path} không phải thư mục', { path: e.detail ?? '' })
     case 'invalid_name':
-      return 'Tên không hợp lệ (không được trống, chứa / hoặc là . ..)'
+      return t('Tên không hợp lệ (không được trống, chứa / hoặc là . ..)')
     case 'name_exists':
-      return 'Đã có mục trùng tên trong thư mục này'
+      return t('Đã có mục trùng tên trong thư mục này')
     case 'needs_root':
-      return 'Chỉ root mới đổi được owner. Bật sudo hoặc kết nối bằng root.'
+      return t('Chỉ root mới đổi được owner. Bật sudo hoặc kết nối bằng root.')
     case 'invalid_owner':
-      return 'Tên owner hoặc group không hợp lệ'
+      return t('Tên owner hoặc group không hợp lệ')
     case 'sftp_unavailable':
-      return 'Server không mở được SFTP (subsystem sftp bị tắt?)'
+      return t('Server không mở được SFTP (subsystem sftp bị tắt?)')
     case 'exists':
-      return `Đã có ${e.detail ?? 'tệp'} trên server`
+      return e.detail ? t('Đã có {name} trên server', { name: e.detail }) : t('Đã có tệp trên server')
     default:
       return e.detail ? `${e.code}: ${e.detail}` : e.code
   }

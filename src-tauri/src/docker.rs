@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::trace;
 use crate::ssh::{exec_priv, shell_quote, shown_as_run, Session, Sessions, MARK};
 
@@ -237,7 +238,7 @@ pub async fn docker_overview(sessions: tauri::State<'_, Sessions>, server_id: St
         }
         Ok(state)
     };
-    let r: AppResult<DockerState> = trace::labelled("Docker · danh sách container", run).await;
+    let r: AppResult<DockerState> = trace::labelled(tr("Docker · danh sách container", "Docker · list containers"), run).await;
     r
 }
 
@@ -396,7 +397,7 @@ pub async fn docker_container(
         let cmd = format!("docker {verb} {}", shell_quote(&name));
         run_logged(&session, &audit, &server_id, &user, log, &cmd, Duration::from_secs(120)).await.map(|_| ())
     };
-    let r: AppResult<()> = trace::labelled("Docker · thao tác container", run).await;
+    let r: AppResult<()> = trace::labelled(tr("Docker · thao tác container", "Docker · container action"), run).await;
     r
 }
 
@@ -464,7 +465,7 @@ pub async fn docker_start_daemon(sessions: tauri::State<'_, Sessions>, audit: ta
         }
         run_logged(&session, &audit, &server_id, &user, "dockerDaemonStart", "systemctl start docker", Duration::from_secs(90)).await.map(|_| ())
     };
-    let r: AppResult<()> = trace::labelled("Docker · khởi động daemon", run).await;
+    let r: AppResult<()> = trace::labelled(tr("Docker · khởi động daemon", "Docker · start daemon"), run).await;
     r
 }
 
@@ -523,7 +524,7 @@ pub async fn docker_logs(
         }
         Ok(lines)
     };
-    let r: AppResult<Vec<LogLine>> = trace::labelled("Docker · đọc log", run).await;
+    let r: AppResult<Vec<LogLine>> = trace::labelled(tr("Docker · đọc log", "Docker · read logs"), run).await;
     r
 }
 
@@ -622,7 +623,7 @@ pub async fn docker_image_prune(
         let out = run_logged(&session, &audit, &server_id, &user, "imagePrune", cmd, Duration::from_secs(300)).await?;
         Ok(reclaimed(&out))
     };
-    let r: AppResult<String> = trace::labelled("Docker · dọn image", run).await;
+    let r: AppResult<String> = trace::labelled(tr("Docker · dọn image", "Docker · prune images"), run).await;
     r
 }
 
@@ -705,7 +706,7 @@ pub async fn docker_volume_sizes(sessions: tauri::State<'_, Sessions>, server_id
             .map(|v| (s(&v["Name"]), crate::disks::docker_bytes(v["Size"].as_str().unwrap_or("0B"))))
             .collect())
     };
-    let r: AppResult<HashMap<String, u64>> = trace::labelled("Docker · dung lượng volume", run).await;
+    let r: AppResult<HashMap<String, u64>> = trace::labelled(tr("Docker · dung lượng volume", "Docker · volume sizes"), run).await;
     r
 }
 
@@ -722,7 +723,7 @@ pub async fn docker_volume_remove(
         let cmd = format!("docker volume rm {}", shell_quote(&name));
         run_logged(&session, &audit, &server_id, &user, "volumeRemove", &cmd, Duration::from_secs(60)).await.map(|_| ())
     };
-    let r: AppResult<()> = trace::labelled("Docker · xoá volume", run).await;
+    let r: AppResult<()> = trace::labelled(tr("Docker · xoá volume", "Docker · delete volume"), run).await;
     r
 }
 

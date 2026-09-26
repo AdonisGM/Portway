@@ -20,6 +20,7 @@ import {
   type Listen,
   type Server,
 } from '../../lib/api'
+import { locale, t } from '../../i18n'
 import { copyText } from '../../lib/clipboard'
 import { formatBytes } from '../server/format'
 import { METHOD_COLOR, METHODS, ms, newRequest, paramsOf, prettyJson, reasonOf, shortUrl, statusColor, withParams } from './format'
@@ -33,13 +34,13 @@ function errorText(e: unknown) {
   if (!isAppError(e)) return String(e)
   switch (e.code) {
     case 'no_curl':
-      return 'Server chưa có curl. Cài bằng: apt install curl (Debian/Ubuntu), dnf install curl (RHEL), apk add curl (Alpine).'
+      return t('Server chưa có curl. Cài bằng: apt install curl (Debian/Ubuntu), dnf install curl (RHEL), apk add curl (Alpine).')
     case 'invalid_url':
-      return 'URL phải bắt đầu bằng http:// hoặc https:// (bỏ trống thì hiểu là http://).'
+      return t('URL phải bắt đầu bằng http:// hoặc https:// (bỏ trống thì hiểu là http://).')
     case 'invalid_header':
-      return `Header ${e.detail ?? ''} không hợp lệ (tên có dấu hai chấm, hoặc xuống dòng).`
+      return t('Header {name} không hợp lệ (tên có dấu hai chấm, hoặc xuống dòng).', { name: e.detail ?? '' })
     case 'invalid_method':
-      return 'Method chỉ gồm chữ in hoa, ví dụ GET, POST.'
+      return t('Method chỉ gồm chữ in hoa, ví dụ GET, POST.')
     default:
       return e.detail ?? e.code
   }
@@ -140,12 +141,12 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
         <div className="flex min-w-[260px] flex-1 flex-col gap-0.5">
           <span className="text-[15px] font-semibold">HTTP (curl)</span>
           <span className="text-muted">
-            Request chạy bằng curl ngay trên {server.name}, nên gọi được cả dịch vụ chỉ nghe ở localhost, trong container hay mạng nội bộ. ⌘↵ để gửi.
+            {t('Request chạy bằng curl ngay trên {name}, nên gọi được cả dịch vụ chỉ nghe ở localhost, trong container hay mạng nội bộ. ⌘↵ để gửi.', { name: server.name })}
           </span>
         </div>
         <Button size="sm" onClick={() => open(newRequest(), null)}>
           <Plus size={14} strokeWidth={1.8} />
-          Request mới
+          {t('Request mới')}
         </Button>
       </div>
 
@@ -153,13 +154,13 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
         {/* Saved and history */}
         <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
           <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5">
-            <ListTitle icon={Bookmark} title="Đã lưu" />
-            {saved.length === 0 && <span className="block px-2 pb-2 text-[11px] text-muted">Bấm Lưu để giữ request hay dùng.</span>}
+            <ListTitle icon={Bookmark} title={t('Đã lưu')} />
+            {saved.length === 0 && <span className="block px-2 pb-2 text-[11px] text-muted">{t('Bấm Lưu để giữ request hay dùng.')}</span>}
             {saved.map((s) => (
               <ListRow key={s.id} active={s.id === savedId} method={s.request.method} title={s.name} sub={shortUrl(s.request.url)} onClick={() => open(s.request, s.id)}>
                 <button
                   type="button"
-                  title="Xoá request đã lưu"
+                  title={t('Xoá request đã lưu')}
                   onClick={(e) => {
                     e.stopPropagation()
                     void api.httpDelete(s.id).then(() => {
@@ -174,26 +175,26 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
               </ListRow>
             ))}
             <div className="mt-2 flex items-center">
-              <ListTitle icon={History} title="Lịch sử" />
+              <ListTitle icon={History} title={t('Lịch sử')} />
               <span className="flex-1" />
               {history.length > 0 && (
-                <button type="button" title="Xoá lịch sử" onClick={() => void api.httpHistoryClear(server.id).then(loadLists)} className="mr-1 cursor-pointer rounded p-1 text-muted hover:bg-sunken">
+                <button type="button" title={t('Xoá lịch sử')} onClick={() => void api.httpHistoryClear(server.id).then(loadLists)} className="mr-1 cursor-pointer rounded p-1 text-muted hover:bg-sunken">
                   <Trash2 size={12} />
                 </button>
               )}
             </div>
-            {history.length === 0 && <span className="block px-2 text-[11px] text-muted">Chưa gửi request nào tới server này.</span>}
+            {history.length === 0 && <span className="block px-2 text-[11px] text-muted">{t('Chưa gửi request nào tới server này.')}</span>}
             {history.map((h) => (
               <ListRow
                 key={h.id}
                 active={false}
                 method={h.request.method}
                 title={shortUrl(h.request.url)}
-                sub={`${new Date(h.at).toLocaleTimeString('vi-VN')} · ${ms(h.ms)}`}
+                sub={`${new Date(h.at).toLocaleTimeString(locale())} · ${ms(h.ms)}`}
                 onClick={() => open(h.request, null)}
               >
                 <span className="num flex-none text-[11px] font-semibold" style={{ color: h.error ? 'var(--danger)' : statusColor(h.status) }}>
-                  {h.status || 'Lỗi'}
+                  {h.status || t('Lỗi')}
                 </span>
               </ListRow>
             ))}
@@ -216,17 +217,17 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
             />
             <Button variant="primary" onClick={() => void send()} disabled={!req.url.trim() || sending} className="!h-[34px]">
               {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} strokeWidth={1.8} />}
-              Gửi
+              {t('Gửi')}
             </Button>
-            <Button onClick={() => setSaving(true)} title={current ? `Lưu vào "${current.name}"` : 'Lưu request này'} className="!h-[34px]">
+            <Button onClick={() => setSaving(true)} title={current ? t('Lưu vào "{name}"', { name: current.name }) : t('Lưu request này')} className="!h-[34px]">
               <Bookmark size={14} strokeWidth={1.8} />
-              Lưu
+              {t('Lưu')}
             </Button>
           </div>
 
           {quick.length > 0 && (
             <div className="flex flex-none flex-wrap items-center gap-1.5 text-[11px] text-muted">
-              <span>Đang nghe trên server:</span>
+              <span>{t('Đang nghe trên server:')}</span>
               {quick.map((l) => {
                 const host = l.bind === '::' || l.bind === '0.0.0.0' || l.bind === '*' ? '127.0.0.1' : l.bind.includes(':') ? `[${l.bind}]` : l.bind
                 const url = `${l.port === 443 ? 'https' : 'http'}://${host}:${l.port}/`
@@ -255,13 +256,13 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
                 ['headers', 'Headers'],
                 ['body', 'Body'],
                 ['auth', 'Auth'],
-                ['options', 'Tuỳ chọn'],
+                ['options', t('Tuỳ chọn')],
               ]}
               counts={counts}
             />
             <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-3">
-              {reqTab === 'params' && <Pairs rows={params} onChange={(rows) => set({ url: withParams(req.url, rows) })} hint="Sửa ở đây hoặc ngay trong URL, hai bên luôn khớp nhau." />}
-              {reqTab === 'headers' && <Pairs rows={req.headers} onChange={(headers) => set({ headers })} hint="Content-Type được thêm theo kiểu body nếu bạn không tự đặt." />}
+              {reqTab === 'params' && <Pairs rows={params} onChange={(rows) => set({ url: withParams(req.url, rows) })} hint={t('Sửa ở đây hoặc ngay trong URL, hai bên luôn khớp nhau.')} />}
+              {reqTab === 'headers' && <Pairs rows={req.headers} onChange={(headers) => set({ headers })} hint={t('Content-Type được thêm theo kiểu body nếu bạn không tự đặt.')} />}
               {reqTab === 'body' && <BodyEditor body={req.body} onChange={(body) => set({ body })} method={req.method} />}
               {reqTab === 'auth' && <AuthEditor req={req} set={set} />}
               {reqTab === 'options' && <OptionsEditor req={req} set={set} />}
@@ -282,7 +283,7 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
             setSaving(false)
             setSavedId(s.id)
             loadLists()
-            toast({ title: `Đã lưu "${s.name}"`, detail: s.serverId ? `Chỉ hiện ở ${server.name}` : 'Hiện ở mọi server' })
+            toast({ title: t('Đã lưu "{name}"', { name: s.name }), detail: s.serverId ? t('Chỉ hiện ở {server}', { server: server.name }) : t('Hiện ở mọi server') })
           }}
         />
       )}
@@ -344,7 +345,7 @@ function Tabs<T extends string>({ value, onChange, tabs, counts, right }: { valu
 }
 
 /** Name/value rows with an empty one at the end to type into. */
-function Pairs({ rows, onChange, hint, namePlaceholder = 'Tên', valuePlaceholder = 'Giá trị' }: { rows: HttpPair[]; onChange: (rows: HttpPair[]) => void; hint?: string; namePlaceholder?: string; valuePlaceholder?: string }) {
+function Pairs({ rows, onChange, hint, namePlaceholder = t('Tên'), valuePlaceholder = t('Giá trị') }: { rows: HttpPair[]; onChange: (rows: HttpPair[]) => void; hint?: string; namePlaceholder?: string; valuePlaceholder?: string }) {
   const all = [...rows, { name: '', value: '', enabled: true }]
   const update = (i: number, patch: Partial<HttpPair>) => {
     const next = all.map((r, j) => (j === i ? { ...r, ...patch } : r))
@@ -374,7 +375,7 @@ function Pairs({ rows, onChange, hint, namePlaceholder = 'Tên', valuePlaceholde
             {last ? (
               <span />
             ) : (
-              <button type="button" title="Bỏ dòng này" onClick={() => onChange(rows.filter((_, j) => j !== i))} className="flex cursor-pointer justify-center text-muted hover:text-ink">
+              <button type="button" title={t('Bỏ dòng này')} onClick={() => onChange(rows.filter((_, j) => j !== i))} className="flex cursor-pointer justify-center text-muted hover:text-ink">
                 <X size={13} />
               </button>
             )}
@@ -400,7 +401,7 @@ function BodyEditor({ body, onChange, method }: { body: HttpBody; onChange: (b: 
             )
           }
           options={[
-            { id: 'none', label: 'Không có' },
+            { id: 'none', label: t('Không có') },
             { id: 'json', label: 'JSON' },
             { id: 'form', label: 'Form' },
             { id: 'text', label: 'Text' },
@@ -409,9 +410,9 @@ function BodyEditor({ body, onChange, method }: { body: HttpBody; onChange: (b: 
         {body.kind === 'json' && (
           <>
             <Button size="xs" onClick={() => onChange({ kind: 'json', text: prettyJson(body.text) ?? body.text })} disabled={!jsonOk}>
-              Định dạng
+              {t('Định dạng')}
             </Button>
-            {!jsonOk && <span className="text-[11px] text-danger">JSON chưa hợp lệ</span>}
+            {!jsonOk && <span className="text-[11px] text-danger">{t('JSON chưa hợp lệ')}</span>}
           </>
         )}
         {body.kind === 'text' && (
@@ -422,9 +423,9 @@ function BodyEditor({ body, onChange, method }: { body: HttpBody; onChange: (b: 
             className="h-7 w-52 rounded-md border border-line2 bg-sunken px-2 font-mono text-[11.5px] outline-none select-text focus:border-accent"
           />
         )}
-        {(method === 'GET' || method === 'HEAD') && body.kind !== 'none' && <span className="text-[11px] text-warn">{method} kèm body: nhiều server bỏ qua phần này.</span>}
+        {(method === 'GET' || method === 'HEAD') && body.kind !== 'none' && <span className="text-[11px] text-warn">{t('{method} kèm body: nhiều server bỏ qua phần này.', { method })}</span>}
       </div>
-      {body.kind === 'none' && <span className="text-[11.5px] text-muted">Request không gửi body.</span>}
+      {body.kind === 'none' && <span className="text-[11.5px] text-muted">{t('Request không gửi body.')}</span>}
       {(body.kind === 'json' || body.kind === 'text') && (
         <textarea
           value={body.text}
@@ -435,7 +436,7 @@ function BodyEditor({ body, onChange, method }: { body: HttpBody; onChange: (b: 
           className={cx('w-full resize-y rounded-lg border bg-sunken p-2.5 font-mono text-[12px] leading-relaxed outline-none select-text focus:border-accent', jsonOk ? 'border-line2' : 'border-danger')}
         />
       )}
-      {body.kind === 'form' && <Pairs rows={body.fields} onChange={(fields) => onChange({ kind: 'form', fields })} hint="Gửi dạng application/x-www-form-urlencoded." />}
+      {body.kind === 'form' && <Pairs rows={body.fields} onChange={(fields) => onChange({ kind: 'form', fields })} hint={t('Gửi dạng application/x-www-form-urlencoded.')} />}
     </div>
   )
 }
@@ -448,7 +449,7 @@ function AuthEditor({ req, set }: { req: HttpRequest; set: (p: Partial<HttpReque
         value={a.kind}
         onChange={(k) => set({ auth: k === 'none' ? { kind: 'none' } : k === 'bearer' ? { kind: 'bearer', token: '' } : { kind: 'basic', user: '', password: '' } })}
         options={[
-          { id: 'none', label: 'Không có' },
+          { id: 'none', label: t('Không có') },
           { id: 'bearer', label: 'Bearer token' },
           { id: 'basic', label: 'Basic' },
         ]}
@@ -463,12 +464,14 @@ function AuthEditor({ req, set }: { req: HttpRequest; set: (p: Partial<HttpReque
           <Field label="User">
             <TextInput value={a.user} onChange={(user) => set({ auth: { ...a, user } })} />
           </Field>
-          <Field label="Mật khẩu">
+          <Field label={t('Mật khẩu')}>
             <TextInput type="password" value={a.password} onChange={(password) => set({ auth: { ...a, password } })} />
           </Field>
         </div>
       )}
-      <span className="text-[11px] text-muted">Token, mật khẩu và header được đưa cho curl qua tệp cấu hình tạm (chmod 600, xoá ngay sau đó), không nằm trên dòng lệnh nên user khác trên server không thấy qua ps.</span>
+      <span className="text-[11px] text-muted">
+        {t('Token, mật khẩu và header được đưa cho curl qua tệp cấu hình tạm (chmod 600, xoá ngay sau đó), không nằm trên dòng lệnh nên user khác trên server không thấy qua ps.')}
+      </span>
     </div>
   )
 }
@@ -479,19 +482,22 @@ function OptionsEditor({ req, set }: { req: HttpRequest; set: (p: Partial<HttpRe
   return (
     <div className="flex max-w-[560px] flex-col gap-2.5">
       <Checkbox checked={o.followRedirects} onChange={(v) => opt({ followRedirects: v })}>
-        Theo redirect (tối đa 10 lần)
+        {t('Theo redirect (tối đa 10 lần)')}
       </Checkbox>
       <Checkbox checked={o.insecure} onChange={(v) => opt({ insecure: v })}>
-        Bỏ qua kiểm tra chứng chỉ SSL (tự ký, gọi bằng IP)
+        {t('Bỏ qua kiểm tra chứng chỉ SSL (tự ký, gọi bằng IP)')}
       </Checkbox>
       <Checkbox checked={o.compressed} onChange={(v) => opt({ compressed: v })}>
-        Nhận nội dung nén (gzip, br) và tự giải nén
+        {t('Nhận nội dung nén (gzip, br) và tự giải nén')}
       </Checkbox>
       <div className="grid gap-2.5" style={{ gridTemplateColumns: '120px minmax(0,1fr)' }}>
-        <Field label="Timeout (giây)">
+        <Field label={t('Timeout (giây)')}>
           <TextInput value={String(o.timeoutSecs)} onChange={(v) => opt({ timeoutSecs: Math.min(600, Number(v.replace(/\D/g, '')) || 1) })} numeric />
         </Field>
-        <Field label="Gửi tới IP (tuỳ chọn)" help="Giữ tên miền trong URL nhưng kết nối tới IP này (curl --resolve), ví dụ 127.0.0.1 để thử một site nginx ngay trên server.">
+        <Field
+          label={t('Gửi tới IP (tuỳ chọn)')}
+          help={t('Giữ tên miền trong URL nhưng kết nối tới IP này (curl --resolve), ví dụ 127.0.0.1 để thử một site nginx ngay trên server.')}
+        >
           <TextInput value={o.connectTo} onChange={(v) => opt({ connectTo: v.trim() })} placeholder="127.0.0.1" />
         </Field>
       </div>
@@ -517,20 +523,20 @@ function ResponsePanel({
   const [raw, setRaw] = useState(false)
   const pretty = res?.text != null ? prettyJson(res.text) : null
   const body = res?.text == null ? null : raw || !pretty ? res.text : pretty
-  const copy = (text: string, what: string) => void copyText(text).then(() => toast({ title: `Đã sao chép ${what}` }))
+  const copy = (text: string, title: string) => void copyText(text).then(() => toast({ title }))
 
   return (
     <div className="relative flex min-h-[180px] flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
       {res && (
         <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-3.5 py-2">
           <span className="font-semibold" style={{ color: statusColor(res.status) }}>
-            {res.status ? `${res.status} ${reasonOf(res.status, res.reason)}` : 'Không có phản hồi'}
+            {res.status ? `${res.status} ${reasonOf(res.status, res.reason)}` : t('Không có phản hồi')}
           </span>
-          <Stat label="Thời gian" value={ms(res.timings.total)} />
-          <Stat label="Kích thước" value={formatBytes(res.size)} />
-          {res.remote && <Stat label="Tới" value={res.remote} mono />}
+          <Stat label={t('Thời gian')} value={ms(res.timings.total)} />
+          <Stat label={t('Kích thước')} value={formatBytes(res.size)} />
+          {res.remote && <Stat label={t('Tới')} value={res.remote} mono />}
           {res.httpVersion && res.httpVersion !== '0' && <Stat label="HTTP" value={res.httpVersion} />}
-          {res.redirects > 0 && <Stat label="Redirect" value={`${res.redirects} lần`} />}
+          {res.redirects > 0 && <Stat label="Redirect" value={t('{n} lần', { n: res.redirects })} />}
         </div>
       )}
       <Tabs
@@ -539,8 +545,8 @@ function ResponsePanel({
         tabs={[
           ['body', 'Body'],
           ['headers', 'Headers'],
-          ['timing', 'Thời gian'],
-          ['command', 'Lệnh curl'],
+          ['timing', t('Thời gian')],
+          ['command', t('Lệnh curl')],
         ]}
         counts={{ headers: res?.headers.length }}
         right={
@@ -548,12 +554,12 @@ function ResponsePanel({
             <span className="flex items-center gap-1.5 py-1">
               {pretty && (
                 <Button size="xs" variant="ghost" onClick={() => setRaw(!raw)}>
-                  {raw ? 'Định dạng JSON' : 'Xem gốc'}
+                  {raw ? t('Định dạng JSON') : t('Xem gốc')}
                 </Button>
               )}
-              <Button size="xs" variant="ghost" onClick={() => copy(res.text!, 'body')}>
+              <Button size="xs" variant="ghost" onClick={() => copy(res.text!, t('Đã sao chép body'))}>
                 <Copy size={12} strokeWidth={1.8} />
-                Sao chép
+                {t('Sao chép')}
               </Button>
             </span>
           ) : null
@@ -565,23 +571,23 @@ function ResponsePanel({
         ) : !res ? (
           <div className="flex h-full flex-col items-center justify-center gap-1.5 p-6 text-center text-muted">
             <Send size={20} strokeWidth={1.6} />
-            <span>{sending ? 'Đang gửi…' : 'Nhập URL rồi bấm Gửi. Phản hồi hiện ở đây.'}</span>
+            <span>{sending ? t('Đang gửi…') : t('Nhập URL rồi bấm Gửi. Phản hồi hiện ở đây.')}</span>
           </div>
         ) : tab === 'body' ? (
           <>
             {res.error && <div className="border-b border-line bg-danger-soft px-3.5 py-2 font-mono text-[11.5px] text-danger select-text">{res.error}</div>}
-            {res.truncated && <div className="border-b border-line px-3.5 py-1.5 text-[11px] text-warn">Body dài {formatBytes(res.size)}; chỉ hiện 2 MB đầu.</div>}
+            {res.truncated && <div className="border-b border-line px-3.5 py-1.5 text-[11px] text-warn">{t('Body dài {size}; chỉ hiện 2 MB đầu.', { size: formatBytes(res.size) })}</div>}
             {body != null ? (
-              <pre className="p-3.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-ink2 select-text [overflow-wrap:anywhere]">{body || <span className="text-muted">(body rỗng)</span>}</pre>
+              <pre className="p-3.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-ink2 select-text [overflow-wrap:anywhere]">{body || <span className="text-muted">{t('(body rỗng)')}</span>}</pre>
             ) : res.binary ? (
               <div className="p-4 text-muted">
-                Nội dung nhị phân ({res.contentType || 'không rõ kiểu'}, {formatBytes(res.size)}), không hiện dạng chữ.
+                {t('Nội dung nhị phân ({type}, {size}), không hiện dạng chữ.', { type: res.contentType || t('không rõ kiểu'), size: formatBytes(res.size) })}
               </div>
             ) : null}
           </>
         ) : tab === 'headers' ? (
           <div className="flex flex-col p-1.5">
-            {res.headers.length === 0 && <span className="p-3 text-muted">Không có header.</span>}
+            {res.headers.length === 0 && <span className="p-3 text-muted">{t('Không có header.')}</span>}
             {res.headers.map(([k, v], i) => (
               <div key={i} className="grid gap-3 rounded-md px-2 py-1 hover:bg-raised" style={{ gridTemplateColumns: 'minmax(140px,220px) minmax(0,1fr)' }}>
                 <span className="font-mono text-[11.5px] text-muted">{k}</span>
@@ -595,11 +601,11 @@ function ResponsePanel({
           <div className="flex flex-col gap-2 p-3.5">
             <pre className="rounded-lg bg-sunken p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink2 select-text [overflow-wrap:anywhere]">{res.command}</pre>
             <div className="flex gap-2">
-              <Button size="xs" onClick={() => copy(res.command, 'lệnh curl')}>
+              <Button size="xs" onClick={() => copy(res.command, t('Đã sao chép lệnh curl'))}>
                 <Copy size={12} strokeWidth={1.8} />
-                Sao chép lệnh
+                {t('Sao chép lệnh')}
               </Button>
-              <span className="text-[11px] text-muted">Chạy được y hệt trong Terminal của server. Lệnh này có chứa token và mật khẩu nếu request có dùng.</span>
+              <span className="text-[11px] text-muted">{t('Chạy được y hệt trong Terminal của server. Lệnh này có chứa token và mật khẩu nếu request có dùng.')}</span>
             </div>
           </div>
         )}
@@ -618,16 +624,16 @@ function Stat({ label, value, mono }: { label: string; value: string; mono?: boo
 }
 
 function Timing({ res }: { res: HttpResponse }) {
-  const t = res.timings
-  const download = Math.max(0, t.total - t.dns - t.connect - t.tls - t.firstByte)
+  const tm = res.timings
+  const download = Math.max(0, tm.total - tm.dns - tm.connect - tm.tls - tm.firstByte)
   const parts: [string, number, string][] = [
-    ['Phân giải tên (DNS)', t.dns, 'var(--info)'],
-    ['Kết nối TCP', t.connect, 'var(--success)'],
-    ['Bắt tay TLS', t.tls, 'var(--accent)'],
-    ['Chờ phản hồi (xử lý ở server)', t.firstByte, 'var(--warn)'],
-    ['Tải nội dung', download, 'var(--ink2)'],
+    [t('Phân giải tên (DNS)'), tm.dns, 'var(--info)'],
+    [t('Kết nối TCP'), tm.connect, 'var(--success)'],
+    [t('Bắt tay TLS'), tm.tls, 'var(--accent)'],
+    [t('Chờ phản hồi (xử lý ở server)'), tm.firstByte, 'var(--warn)'],
+    [t('Tải nội dung'), download, 'var(--ink2)'],
   ]
-  const total = Math.max(t.total, 0.001)
+  const total = Math.max(tm.total, 0.001)
   let offset = 0
   return (
     <div className="flex flex-col gap-2 p-4">
@@ -645,11 +651,11 @@ function Timing({ res }: { res: HttpResponse }) {
         )
       })}
       <div className="grid gap-3 border-t border-line pt-2" style={{ gridTemplateColumns: '220px minmax(0,1fr) 72px' }}>
-        <span className="text-[12px] font-semibold">Tổng</span>
+        <span className="text-[12px] font-semibold">{t('Tổng')}</span>
         <span />
-        <span className="num text-right text-[12px] font-semibold">{ms(t.total)}</span>
+        <span className="num text-right text-[12px] font-semibold">{ms(tm.total)}</span>
       </div>
-      <span className="text-[11px] text-muted">Đo bởi curl trên server, nên đây là thời gian từ server tới đích, không tính đường từ máy bạn.</span>
+      <span className="text-[11px] text-muted">{t('Đo bởi curl trên server, nên đây là thời gian từ server tới đích, không tính đường từ máy bạn.')}</span>
     </div>
   )
 }
@@ -663,7 +669,7 @@ function SaveDialog({ current, serverId, request, onClose, onSaved }: { current:
       const s = await api.httpSave({ id: asNew || !current ? '' : current.id, serverId: everywhere ? null : serverId, name, request })
       onSaved(s)
     } catch (e) {
-      toast({ title: 'Không lưu được', detail: isAppError(e) ? (e.detail ?? e.code) : String(e) })
+      toast({ title: t('Không lưu được'), detail: isAppError(e) ? (e.detail ?? e.code) : String(e) })
     }
   }
   return (
@@ -671,24 +677,24 @@ function SaveDialog({ current, serverId, request, onClose, onSaved }: { current:
       open
       onClose={onClose}
       width={440}
-      title={current ? `Lưu request · ${current.name}` : 'Lưu request'}
+      title={current ? t('Lưu request · {name}', { name: current.name }) : t('Lưu request')}
       footer={
         <>
-          <Button onClick={onClose}>Huỷ</Button>
-          {current && <Button onClick={() => void save(true)}>Lưu thành bản mới</Button>}
+          <Button onClick={onClose}>{t('Huỷ')}</Button>
+          {current && <Button onClick={() => void save(true)}>{t('Lưu thành bản mới')}</Button>}
           <Button variant="primary" disabled={!name.trim()} onClick={() => void save(false)}>
-            {current ? 'Cập nhật' : 'Lưu'}
+            {current ? t('Cập nhật') : t('Lưu')}
           </Button>
         </>
       }
     >
-      <Field label="Tên">
+      <Field label={t('Tên')}>
         <TextInput value={name} onChange={setName} autoFocus />
       </Field>
       <Checkbox checked={everywhere} onChange={setEverywhere}>
-        Dùng cho mọi server (không chỉ server này)
+        {t('Dùng cho mọi server (không chỉ server này)')}
       </Checkbox>
-      <span className="text-[11px] text-muted">Lưu trên máy này cùng header, body và token của request.</span>
+      <span className="text-[11px] text-muted">{t('Lưu trên máy này cùng header, body và token của request.')}</span>
     </Modal>
   )
 }

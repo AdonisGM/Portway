@@ -7,6 +7,7 @@ import { Button, cx } from '../../components/ui/primitives'
 import { SearchInput } from '../../components/ui/search-input'
 import { SegmentedControl } from '../../components/ui/segmented'
 import { useToast } from '../../components/toast'
+import { t } from '../../i18n'
 import { isAppError, type Server } from '../../lib/api'
 import { authLabel, errorMessage, groupLabel, hostPort } from './format'
 import { ServerEditor } from './server-editor'
@@ -46,14 +47,14 @@ export function ServerListScreen() {
     try {
       const r = await importSshConfig()
       if (r.added.length) {
-        toast({ title: `Đã nhập ${r.added.length} server từ ~/.ssh/config`, detail: r.added.map((s) => s.name).join(', ') })
+        toast({ title: t('Đã nhập {n} server từ ~/.ssh/config', { n: r.added.length }), detail: r.added.map((s) => s.name).join(', ') })
       } else if (r.found) {
-        toast({ title: 'Đã đọc ~/.ssh/config', detail: `Tìm thấy ${r.found} host, tất cả đã có trong Portway` })
+        toast({ title: t('Đã đọc ~/.ssh/config'), detail: t('Tìm thấy {n} host, tất cả đã có trong Portway', { n: r.found }) })
       } else {
-        toast({ title: 'Không có host nào để nhập', detail: '~/.ssh/config không có khối Host cụ thể nào' })
+        toast({ title: t('Không có host nào để nhập'), detail: t('~/.ssh/config không có khối Host cụ thể nào') })
       }
     } catch (e) {
-      toast({ title: 'Không nhập được', detail: isAppError(e) ? errorMessage(e) : String(e) })
+      toast({ title: t('Không nhập được'), detail: isAppError(e) ? errorMessage(e) : String(e) })
     } finally {
       setImporting(false)
     }
@@ -65,42 +66,38 @@ export function ServerListScreen() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end gap-2.5">
         <div className="flex min-w-[220px] flex-1 flex-col gap-[3px]">
-          <h1 className="m-0 text-[23px] font-semibold">Server của bạn</h1>
-          <span className="text-muted">
-            {servers.length} server · {groupCount} nhóm · bấm một dòng để xem và sửa
-          </span>
+          <h1 className="m-0 text-[23px] font-semibold">{t('Server của bạn')}</h1>
+          <span className="text-muted">{t('{n} server · {groups} nhóm · bấm một dòng để xem và sửa', { n: servers.length, groups: groupCount })}</span>
         </div>
         <Button size="sm" onClick={runImport} disabled={importing}>
-          Nhập từ ~/.ssh/config
+          {t('Nhập từ ~/.ssh/config')}
         </Button>
         <Button size="sm" variant="primary" onClick={() => setEditing(null)}>
-          Thêm server
+          {t('Thêm server')}
         </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <SearchInput value={q} onChange={setQ} placeholder="Tìm tên, host, nhóm" className="w-[260px] min-w-0" />
+        <SearchInput value={q} onChange={setQ} placeholder={t('Tìm tên, host, nhóm')} className="w-[260px] min-w-0" />
         {groupCount > 0 && (
           <SegmentedControl
             value={activeGroup}
             onChange={setGroup}
-            options={[{ id: 'all', label: 'Tất cả' }, ...groups.map((g) => ({ id: g, label: groupLabel(g) }))]}
+            options={[{ id: 'all', label: t('Tất cả') }, ...groups.map((g) => ({ id: g, label: groupLabel(g) }))]}
           />
         )}
         <span className="flex-1" />
-        <span className="num text-[11px] text-muted">
-          {list.length}/{servers.length} server
-        </span>
+        <span className="num text-[11px] text-muted">{t('{n}/{total} server', { n: list.length, total: servers.length })}</span>
       </div>
 
       <div className="overflow-auto rounded-xl border border-line bg-surface">
         <div style={{ minWidth: 560 }}>
           <div className="grid gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted" style={{ gridTemplateColumns: ROW_COLS }}>
-            <span>Tên</span>
+            <span>{t('Tên')}</span>
             <span>Host</span>
             <span>User</span>
             <span>Tag</span>
-            <span>Nhóm</span>
+            <span>{t('Nhóm')}</span>
             <span />
           </div>
 
@@ -122,34 +119,37 @@ export function ServerListScreen() {
                   <span className="flex min-w-0 items-baseline gap-1.5">
                     <span className="truncate font-mono text-[11.5px] text-ink2">{hostPort(s.host, s.port)}</span>
                     {s.jump && (
-                      <span title={`Kết nối qua ${s.jump.user}@${byId(s.jump.serverId)?.name ?? '?'}`} className="flex-none truncate text-[11px] text-muted">
-                        qua {byId(s.jump.serverId)?.name ?? '?'}
+                      <span
+                        title={t('Kết nối qua {via}', { via: `${s.jump.user}@${byId(s.jump.serverId)?.name ?? '?'}` })}
+                        className="flex-none truncate text-[11px] text-muted"
+                      >
+                        {t('qua {name}', { name: byId(s.jump.serverId)?.name ?? '?' })}
                       </span>
                     )}
                   </span>
                   <span className="min-w-0">
                     <button
                       type="button"
-                      title="Xem tài khoản đăng nhập"
+                      title={t('Xem tài khoản đăng nhập')}
                       onClick={(e) => {
                         e.stopPropagation()
                         setExpanded((x) => ({ ...x, [s.id]: !x[s.id] }))
                       }}
                       className="inline-flex max-w-full cursor-pointer items-center gap-1 rounded-md border border-line2 bg-surface py-px pr-1.5 pl-[7px] text-[11.5px] text-ink hover:border-muted"
                     >
-                      <span className={cx('truncate', !multi && 'font-mono')}>{multi ? `${s.accounts.length} user` : s.accounts[0]?.user}</span>
+                      <span className={cx('truncate', !multi && 'font-mono')}>{multi ? t('{n} user', { n: s.accounts.length }) : s.accounts[0]?.user}</span>
                       <Chevron size={12} strokeWidth={2} className="flex-none" />
                     </button>
                   </span>
                   <span className="flex min-w-0 flex-wrap gap-1">
-                    {s.tags.map((t) => (
-                      <span key={t} className="rounded-full border border-line2 px-[7px] py-px text-[11px] whitespace-nowrap text-ink2">
-                        {t}
+                    {s.tags.map((tag) => (
+                      <span key={tag} className="rounded-full border border-line2 px-[7px] py-px text-[11px] whitespace-nowrap text-ink2">
+                        {tag}
                       </span>
                     ))}
                   </span>
                   <span className={cx('truncate', s.group ? 'text-ink2' : 'text-muted')}>{groupLabel(s.group)}</span>
-                  <span className="flex justify-center text-muted" title={s.pinned ? 'Đã ghim' : undefined}>
+                  <span className="flex justify-center text-muted" title={s.pinned ? t('Đã ghim') : undefined}>
                     {s.pinned && <Pin size={12} strokeWidth={2} />}
                   </span>
                 </div>
@@ -166,7 +166,7 @@ export function ServerListScreen() {
                           <span className={a.auth.kind === 'key' ? 'font-mono' : undefined}>{authLabel(a.auth)}</span>
                         </span>
                         <Button size="xs" onClick={() => connect(s, a.user)}>
-                          Kết nối
+                          {t('Kết nối')}
                         </Button>
                       </div>
                     ))}
@@ -179,10 +179,10 @@ export function ServerListScreen() {
           {!loading && list.length === 0 && (
             <div className="border-t border-line p-8 text-center text-muted">
               {loadError
-                ? `Không đọc được danh sách server: ${loadError}`
+                ? t('Không đọc được danh sách server: {error}', { error: loadError })
                 : servers.length
-                  ? 'Không có server nào khớp bộ lọc'
-                  : 'Chưa có server nào. Bấm “Thêm server” hoặc nhập từ ~/.ssh/config.'}
+                  ? t('Không có server nào khớp bộ lọc')
+                  : t('Chưa có server nào. Bấm “Thêm server” hoặc nhập từ ~/.ssh/config.')}
             </div>
           )}
         </div>

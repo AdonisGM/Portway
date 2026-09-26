@@ -1,4 +1,5 @@
 import { Server } from 'lucide-react'
+import { t } from '../i18n'
 import {
   siAlmalinux,
   siAlpinelinux,
@@ -59,7 +60,7 @@ export function OsBadge({ os, size = 18 }: { os: string | null | undefined; size
 
   if (!logo) {
     return (
-      <span title="Chưa rõ hệ điều hành, sẽ tự nhận khi kết nối" className="flex flex-none items-center justify-center bg-sunken text-muted" style={box}>
+      <span title={t('Chưa rõ hệ điều hành, sẽ tự nhận khi kết nối')} className="flex flex-none items-center justify-center bg-sunken text-muted" style={box}>
         <Server size={glyph} strokeWidth={2} />
       </span>
     )

@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::ssh::{exec_input, Sessions, MARK};
 use crate::trace;
 
@@ -472,7 +473,7 @@ pub async fn http_send(
         let out = exec_input(&session, &script(has_body), &input, false, timeout).await?;
         parse_output(&out.stdout, command)
     };
-    let r: AppResult<Response> = trace::labelled("HTTP · gửi request", run).await;
+    let r: AppResult<Response> = trace::labelled(tr("HTTP · gửi request", "HTTP · send request"), run).await;
     let resp = r?;
     let mut data = store.data.lock().unwrap();
     let list = data.history.entry(server_id).or_default();

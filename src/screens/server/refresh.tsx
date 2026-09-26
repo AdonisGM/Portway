@@ -1,6 +1,7 @@
 import { RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useConnections } from '../../app/connections'
+import { t } from '../../i18n'
 import { readCache, writeCache } from '../../app/session-cache'
 import { isAppError, type AppError } from '../../lib/api'
 
@@ -92,17 +93,25 @@ export function RefreshControl({
 }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000)
-    return () => clearInterval(t)
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
   }, [])
   const mins = at ? Math.floor((now - at.getTime()) / 60_000) : 0
-  const label = !live ? 'tạm dừng' : error ? 'không đọc được' : !at ? 'đang đọc…' : mins < 1 ? 'cập nhật vừa xong' : `cập nhật ${mins} phút trước`
+  const label = !live
+    ? t('tạm dừng')
+    : error
+      ? t('không đọc được')
+      : !at
+        ? t('đang đọc…')
+        : mins < 1
+          ? t('cập nhật vừa xong')
+          : t('cập nhật {n} phút trước', { n: mins })
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap text-muted">
       {label}
       <button
         type="button"
-        title="Làm mới"
+        title={t('Làm mới')}
         onClick={onRefresh}
         disabled={busy || !live}
         className="flex size-5 cursor-pointer items-center justify-center rounded-[5px] border border-line2 text-ink2 hover:border-muted disabled:cursor-default"

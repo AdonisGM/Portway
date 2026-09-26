@@ -18,6 +18,7 @@ import { ImagesView, PruneDialog } from './images'
 import { LogsDialog } from './logs-dialog'
 import { VolumesView } from './volumes'
 import { withSudo } from '../../lib/commands'
+import { t } from '../../i18n'
 
 const OVERVIEW_MS = 15_000
 const STATS_MS = 10_000
@@ -70,8 +71,8 @@ function useDocker(serverId: string, user: string) {
   useEffect(() => {
     if (!live) return
     void load()
-    const t = setInterval(load, OVERVIEW_MS)
-    return () => clearInterval(t)
+    const timer = setInterval(load, OVERVIEW_MS)
+    return () => clearInterval(timer)
     // Sudo changes what Docker lets this session see.
   }, [live, sudo, load])
 
@@ -96,16 +97,16 @@ function useStats(serverId: string, user: string, on: boolean) {
       }
     }
     void read()
-    const t = setInterval(read, STATS_MS)
+    const timer = setInterval(read, STATS_MS)
     return () => {
       stop = true
-      clearInterval(t)
+      clearInterval(timer)
     }
   }, [serverId, user, live, on])
   return stats
 }
 
-const TITLES = { containers: 'Container', compose: 'Compose', images: 'Images', volumes: 'Volumes' } as const
+const titles = () => ({ containers: t('Container#title'), compose: 'Compose', images: 'Images', volumes: 'Volumes' })
 
 export function DockerScreen({ server, user }: { server: Server; user: string }) {
   const nav = useNav()
@@ -144,7 +145,7 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
         toast({ title, detail: withSudo(command, sudo && user !== 'root') })
       } catch (e) {
         const err = asError(e)
-        toast({ title: 'Không chạy được lệnh', detail: err.detail ?? err.code })
+        toast({ title: t('Không chạy được lệnh'), detail: err.detail ?? err.code })
       }
       await reload()
     },
@@ -158,8 +159,8 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
     terminal: (tool, container) => {
       void api
         .openTerminal(server.id, user, tool, undefined, container)
-        .then(() => toast({ title: 'Đã mở Terminal', detail: container ? `${tool === 'dockerLogs' ? 'docker logs -f' : 'docker exec -it'} ${container}` : undefined }))
-        .catch((e) => toast({ title: 'Không mở được Terminal', detail: asError(e).detail ?? asError(e).code }))
+        .then(() => toast({ title: t('Đã mở Terminal'), detail: container ? `${tool === 'dockerLogs' ? 'docker logs -f' : 'docker exec -it'} ${container}` : undefined }))
+        .catch((e) => toast({ title: t('Không mở được Terminal'), detail: asError(e).detail ?? asError(e).code }))
     },
     toast,
     reload,
@@ -168,13 +169,14 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
 
   const running = ok ? ok.containers.filter((c) => c.state === 'running').length : 0
   const sub = !state
-    ? 'Đang đọc…'
+    ? t('Đang đọc…')
     : state.kind !== 'ok'
       ? ''
       : view === 'containers'
-        ? `${running}/${state.containers.length} container đang chạy · Docker ${state.version}${state.compose ? ` · compose v${state.compose}` : ''}`
+        ? t('{running}/{total} container đang chạy · Docker {version}', { running, total: state.containers.length, version: state.version }) +
+          (state.compose ? ` · compose v${state.compose}` : '')
         : view === 'compose'
-          ? `${projectsOf(state.containers).length} project compose`
+          ? t('{n} project compose', { n: projectsOf(state.containers).length })
           : null
 
   const rootAccount = user !== 'root' && server.accounts.some((a) => a.user === 'root')
@@ -186,21 +188,25 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       {(!ok || view === 'containers' || view === 'compose') && (
-        <Header title={`Docker · ${TITLES[view]}`} sub={sub}>
-          {ok && view === 'containers' && <SearchInput value={query} onChange={setQuery} placeholder="Tìm container, image" className="w-60 min-w-0" />}
+        <Header title={`Docker · ${titles()[view]}`} sub={sub}>
+          {ok && view === 'containers' && <SearchInput value={query} onChange={setQuery} placeholder={t('Tìm container, image')} className="w-60 min-w-0" />}
           {ok && view === 'containers' && (
             <Button size="sm" onClick={() => setPrune(true)}>
-              Dọn image thừa
+              {t('Dọn image thừa')}
             </Button>
           )}
         </Header>
       )}
 
-      {error && !state && <Blank icon={PackageX} title="Không đọc được Docker" text={error.detail ?? error.code} />}
+      {error && !state && <Blank icon={PackageX} title={t('Không đọc được Docker')} text={error.detail ?? error.code} />}
       {!state && !error && <Loading />}
 
       {state?.kind === 'notInstalled' && (
-        <Blank icon={PackageX} title={`Docker chưa được cài trên ${server.name}`} text="Không tìm thấy lệnh docker. Có thể cài bằng script chính thức của Docker:">
+        <Blank
+          icon={PackageX}
+          title={t('Docker chưa được cài trên {server}', { server: server.name })}
+          text={t('Không tìm thấy lệnh docker. Có thể cài bằng script chính thức của Docker:')}
+        >
           <span className="rounded-md bg-sunken px-2.5 py-1.5 font-mono text-[11.5px] select-text">curl -fsSL https://get.docker.com | sudo sh</span>
         </Blank>
       )}
@@ -208,14 +214,14 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
       {state?.kind === 'noAccess' && (
         <Blank
           icon={Lock}
-          title="Cần quyền root hoặc thuộc group docker"
-          text={`User ${user} không thuộc group docker nên không đọc được /var/run/docker.sock.`}
+          title={t('Cần quyền root hoặc thuộc group docker')}
+          text={t('User {user} không thuộc group docker nên không đọc được /var/run/docker.sock.', { user })}
         >
           <div className="flex flex-wrap justify-center gap-1.5">
             <UseSudoButton server={server} user={user} />
             {rootAccount && (
               <Button size="xs" variant="primary" onClick={openAsRoot}>
-                Mở bằng kết nối root
+                {t('Mở bằng kết nối root')}
               </Button>
             )}
           </div>
@@ -224,7 +230,11 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
       )}
 
       {state?.kind === 'daemonDown' && (
-        <Blank icon={Power} title="Docker daemon không chạy" text="Docker đã được cài nhưng daemon không trả lời, nên không đọc được container, image, volume.">
+        <Blank
+          icon={Power}
+          title={t('Docker daemon không chạy')}
+          text={t('Docker đã được cài nhưng daemon không trả lời, nên không đọc được container, image, volume.')}
+        >
           <span className="max-w-[560px] rounded-md bg-sunken px-2.5 py-1.5 font-mono text-[11.5px] break-all select-text">{state.detail}</span>
           {state.systemd && (
             <div className="flex flex-wrap justify-center gap-1.5">
@@ -234,21 +244,21 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
                   variant="primary"
                   onClick={() =>
                     setAsk({
-                      title: 'Khởi động Docker?',
-                      body: 'Chạy lại docker.service. Container có restart policy "always" hoặc "unless-stopped" sẽ tự chạy theo.',
+                      title: t('Khởi động Docker?'),
+                      body: t('Chạy lại docker.service. Container có restart policy "always" hoặc "unless-stopped" sẽ tự chạy theo.'),
                       command: 'systemctl start docker',
-                      confirm: 'Khởi động',
+                      confirm: t('Khởi động'),
                       run: () => ctx.act(() => api.dockerStartDaemon(server.id, user)),
                     })
                   }
                 >
-                  Khởi động Docker
+                  {t('Khởi động Docker')}
                 </Button>
               ) : (
                 <UseSudoButton server={server} user={user} />
               )}
               <Button size="xs" onClick={() => ctx.terminal('dockerDaemonLog')}>
-                Xem log trong Terminal
+                {t('Xem log trong Terminal')}
               </Button>
             </div>
           )}
@@ -268,7 +278,7 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
           sudo={sudo}
           onClose={() => setAsk(null)}
           onDone={() => {
-            toast({ title: 'Đã chạy lệnh', detail: withSudo(ask.command, sudo && user !== 'root') })
+            toast({ title: t('Đã chạy lệnh'), detail: withSudo(ask.command, sudo && user !== 'root') })
             setAsk(null)
           }}
         />

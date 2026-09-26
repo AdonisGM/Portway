@@ -1,6 +1,7 @@
 // Ported from HomeUI (home/apps/web/src/components/ui/pager.tsx).
 import { useMemo, type ReactNode } from 'react'
 import { Button, cx } from './primitives'
+import { t } from '../../i18n'
 
 export const pageCountOf = (total: number, size: number) => Math.max(1, Math.ceil(total / size))
 export const clampPage = (page: number, total: number, size: number) => Math.min(Math.max(1, page), pageCountOf(total, size))
@@ -54,7 +55,7 @@ export function Pager({
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-line bg-raised px-4 py-2.5 first:border-t-0">
       <span className="mr-auto text-[11px] whitespace-nowrap text-muted">
-        {children ?? `Hiển thị ${from} tới ${to} trong ${total} ${unit}`}
+        {children ?? t('Hiển thị {from} tới {to} trong {total} {unit}', { from, to, total, unit })}
       </span>
 
       {/* Only offer page sizes when there is something to choose. */}
@@ -62,19 +63,19 @@ export function Pager({
         <select
           value={size}
           onChange={(e) => onSize(Number(e.target.value))}
-          title="Số dòng mỗi trang"
+          title={t('Số dòng mỗi trang')}
           className="h-7 cursor-pointer rounded-[7px] border border-line2 bg-surface px-1.5 text-[11.5px] text-ink2 outline-none"
         >
           {sizes.map((n) => (
             <option key={n} value={n}>
-              {n} dòng
+              {t('{n} dòng#row', { n })}
             </option>
           ))}
         </select>
       ) : null}
 
       <Button size="sm" disabled={cur === 1} onClick={() => onPage(cur - 1)}>
-        Trước
+        {t('Trước#pager')}
       </Button>
       {pages.map((p, i) =>
         p === '…' ? (
@@ -96,7 +97,7 @@ export function Pager({
         ),
       )}
       <Button size="sm" disabled={cur === pageCount} onClick={() => onPage(cur + 1)}>
-        Sau
+        {t('Sau#pager')}
       </Button>
     </div>
   )

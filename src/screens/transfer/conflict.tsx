@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Modal } from '../../components/ui/modal'
 import { Button, cx } from '../../components/ui/primitives'
+import { t } from '../../i18n'
 import type { FileEntry } from '../../lib/api'
 import { isDirLike, shortTime } from '../files/format'
 import { formatBytes } from '../server/format'
@@ -11,7 +12,7 @@ export type Clash = { name: string; src?: FileEntry; dest: FileEntry }
 /** A file and a folder with the same name cannot replace each other. */
 export const mixedKinds = (c: Clash) => !!c.src && isDirLike(c.src) !== isDirLike(c.dest)
 
-const describe = (e: FileEntry) => (isDirLike(e) ? `Thư mục · ${shortTime(e.mtime)}` : `${formatBytes(e.size)} · ${shortTime(e.mtime)}`)
+const describe = (e: FileEntry) => (isDirLike(e) ? t('Thư mục · {time}', { time: shortTime(e.mtime) }) : `${formatBytes(e.size)} · ${shortTime(e.mtime)}`)
 
 /** Asks what to do with items that already exist at the destination; one choice for all of them. */
 export function ConflictDialog({
@@ -33,18 +34,18 @@ export function ConflictDialog({
   const [choice, setChoice] = useState<Choice>('keep')
   const mixed = clashes.filter(mixedKinds)
   const options: { id: Choice; label: string; text: string; off?: boolean }[] = [
-    { id: 'keep', label: 'Giữ cả hai', text: `Chép thành tên mới, ví dụ ${example(clashes[0].name)}.` },
+    { id: 'keep', label: t('Giữ cả hai'), text: t('Chép thành tên mới, ví dụ {name}.', { name: example(clashes[0].name) }) },
     {
       id: 'overwrite',
-      label: 'Ghi đè',
+      label: t('Ghi đè'),
       text:
-        'Thay bản ở đích, không hoàn tác được. Thư mục trùng tên được gộp: tệp trùng bên trong bị thay, tệp khác giữ nguyên.' +
-        (mixed.length ? ` ${mixed.map((c) => c.name).join(', ')} khác loại (tệp và thư mục) nên vẫn giữ cả hai.` : ''),
+        t('Thay bản ở đích, không hoàn tác được. Thư mục trùng tên được gộp: tệp trùng bên trong bị thay, tệp khác giữ nguyên.') +
+        (mixed.length ? t(' {names} khác loại (tệp và thư mục) nên vẫn giữ cả hai.', { names: mixed.map((c) => c.name).join(', '), n: mixed.length }) : ''),
     },
     {
       id: 'skip',
-      label: 'Bỏ qua mục trùng',
-      text: rest ? `Chỉ chép ${rest} mục không trùng.` : 'Mọi mục đều trùng, sẽ không chép gì.',
+      label: t('Bỏ qua mục trùng'),
+      text: rest ? t('Chỉ chép {n} mục không trùng.', { n: rest }) : t('Mọi mục đều trùng, sẽ không chép gì.'),
       off: !rest,
     },
   ]
@@ -54,22 +55,22 @@ export function ConflictDialog({
       open
       onClose={onCancel}
       width={580}
-      title={clashes.length === 1 ? `Đã có ${clashes[0].name} ở đích` : `${clashes.length} mục đã có ở đích`}
+      title={clashes.length === 1 ? t('Đã có {name} ở đích', { name: clashes[0].name }) : t('{n} mục đã có ở đích', { n: clashes.length })}
       subtitle={where}
       footer={
         <>
-          <Button onClick={onCancel}>Huỷ</Button>
+          <Button onClick={onCancel}>{t('Huỷ')}</Button>
           <Button variant={choice === 'overwrite' ? 'danger' : 'primary'} onClick={() => onChoose(choice)}>
-            {choice === 'overwrite' ? 'Ghi đè' : choice === 'keep' ? 'Chép, giữ cả hai' : `Chép ${rest} mục`}
+            {choice === 'overwrite' ? t('Ghi đè') : choice === 'keep' ? t('Chép, giữ cả hai') : t('Chép {n} mục', { n: rest })}
           </Button>
         </>
       }
     >
       <div className="flex max-h-48 flex-col overflow-auto rounded-lg border border-line">
         <div className="sticky top-0 grid gap-3 bg-sunken px-2.5 py-1.5 text-[11px] text-muted" style={{ gridTemplateColumns: 'minmax(0,1fr) 150px 150px' }}>
-          <span>Tên</span>
-          <span>Bản đang chép</span>
-          <span>Bản ở đích</span>
+          <span>{t('Tên')}</span>
+          <span>{t('Bản đang chép')}</span>
+          <span>{t('Bản ở đích')}</span>
         </div>
         {clashes.map((c) => {
           // Within a minute counts as the same time: that is all the list shows.
@@ -81,12 +82,12 @@ export function ConflictDialog({
                 {c.name}
               </span>
               <span className={cx('num text-[11.5px]', newer === 'src' ? 'text-ink' : 'text-muted')}>
-                {c.src ? describe(c.src) : 'từ Finder'}
-                {newer === 'src' && ' · mới hơn'}
+                {c.src ? describe(c.src) : t('từ Finder')}
+                {newer === 'src' && t(' · mới hơn')}
               </span>
               <span className={cx('num text-[11.5px]', newer === 'dest' ? 'text-ink' : 'text-muted')}>
                 {describe(c.dest)}
-                {newer === 'dest' && ' · mới hơn'}
+                {newer === 'dest' && t(' · mới hơn')}
               </span>
             </div>
           )

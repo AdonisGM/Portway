@@ -26,6 +26,7 @@ use tokio::sync::watch;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
+use crate::i18n::tr;
 use crate::servers::ServerStore;
 use crate::ssh::{open_for_tunnel, ssh_target_args, Client, Conn, Forward, Sessions};
 use crate::trace;
@@ -342,7 +343,7 @@ impl Tunnels {
             span.ok(|_| {});
             if spec.kind == Kind::Remote {
                 if let Err(e) = handle.tcpip_forward("localhost", spec.port as u32).await {
-                    let text = format!("Server không cho mở cổng {} (đang bận, dưới 1024, hoặc sshd tắt AllowTcpForwarding): {e}", spec.port);
+                    let text = tr(format!("Server không cho mở cổng {} (đang bận, dưới 1024, hoặc sshd tắt AllowTcpForwarding): {e}", spec.port), format!("The server wouldn't open port {} (in use, below 1024, or sshd has AllowTcpForwarding off): {e}", spec.port));
                     audit.record(&spec.server_id, &spec.user, "tunnelStart", &command, false, Some(text.clone()));
                     self.set_state(&id, RunState::Error { code: "remote_forward_refused".into(), detail: Some(text) });
                     let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
@@ -392,7 +393,7 @@ impl Tunnels {
                 break;
             }
             attempt += 1;
-            self.set_state(&id, RunState::Retrying { attempt, error: "Mất kết nối tới server".into(), next_at: now_ms() + RETRY[0] * 1000 });
+            self.set_state(&id, RunState::Retrying { attempt, error: tr("Mất kết nối tới server", "Lost connection to the server"), next_at: now_ms() + RETRY[0] * 1000 });
             if sleep_or_stop(&mut stop, RETRY[0]).await {
                 break;
             }

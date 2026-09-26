@@ -1,4 +1,5 @@
 import { Lock } from 'lucide-react'
+import { t } from '../../i18n'
 import { api, type Disks, type DockerDisk, type DockerUsage, type Server } from '../../lib/api'
 import { formatBytes, formatPercent, inUnit, unitName, unitOf } from './format'
 import { ErrorLine, RefreshControl, useRefreshed } from './refresh'
@@ -22,15 +23,15 @@ function reclaimText(r: DockerUsage) {
   const idle = r.total - r.active
   switch (r.kind) {
     case 'Images':
-      return r.reclaimable > 0 ? `thu hồi được ${formatBytes(r.reclaimable)} (${idle} image không dùng)` : `${r.total} image, đều đang dùng`
+      return r.reclaimable > 0 ? t('thu hồi được {size} ({n} image không dùng)', { size: formatBytes(r.reclaimable), n: idle }) : t('{n} image, đều đang dùng', { n: r.total })
     case 'Containers':
-      return idle > 0 ? `${idle} container đã dừng` : `${r.total} container, đều đang chạy`
+      return idle > 0 ? t('{n} container đã dừng', { n: idle }) : t('{n} container, đều đang chạy', { n: r.total })
     case 'Local Volumes':
-      return idle > 0 ? `${idle} volume không gắn container` : `${r.total} volume, đều đang dùng`
+      return idle > 0 ? t('{n} volume không gắn container', { n: idle }) : t('{n} volume, đều đang dùng', { n: r.total })
     case 'Build Cache':
-      return r.reclaimable > 0 ? `thu hồi được ${formatBytes(r.reclaimable)}` : 'không có gì để dọn'
+      return r.reclaimable > 0 ? t('thu hồi được {size}', { size: formatBytes(r.reclaimable) }) : t('không có gì để dọn')
     default:
-      return r.reclaimable > 0 ? `thu hồi được ${formatBytes(r.reclaimable)}` : ''
+      return r.reclaimable > 0 ? t('thu hồi được {size}', { size: formatBytes(r.reclaimable) }) : ''
   }
 }
 
@@ -47,7 +48,7 @@ export function DisksCard({ server, user }: { server: Server; user: string }) {
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start gap-2">
-        <span className="flex-1 text-[15px] font-semibold">Ổ đĩa</span>
+        <span className="flex-1 text-[15px] font-semibold">{t('Ổ đĩa')}</span>
         <RefreshControl at={at} busy={busy || docker.busy} error={error} onRefresh={refresh} live={live} />
       </div>
       <ErrorLine error={error} />
@@ -56,8 +57,9 @@ export function DisksCard({ server, user }: { server: Server; user: string }) {
         ? data.mounts.map((m) => {
             const pct = m.used + m.avail ? (100 * m.used) / (m.used + m.avail) : 0
             const u = unitOf(m.total)
+            const free = t('còn {size}', { size: formatBytes(m.avail) })
             return (
-              <div key={m.path} className="flex flex-col gap-[5px]" title={`${m.device}${m.fsType ? ` · ${m.fsType}` : ''} · còn ${formatBytes(m.avail)}`}>
+              <div key={m.path} className="flex flex-col gap-[5px]" title={`${m.device}${m.fsType ? ` · ${m.fsType}` : ''} · ${free}`}>
                 <div className="flex items-baseline gap-2">
                   <span className="flex-1 truncate font-mono text-[12px] font-semibold select-text">{m.path}</span>
                   <span className="num text-[11.5px] text-muted">
@@ -83,7 +85,7 @@ export function DisksCard({ server, user }: { server: Server; user: string }) {
           <span className="font-semibold">Docker</span>
           {docker.busy && !docker.error && (
             <span className="text-[11.5px] text-muted">
-              {dd ? 'Đang tính lại dung lượng Docker…' : 'Đang tính dung lượng Docker, có thể mất vài chục giây…'}
+              {dd ? t('Đang tính lại dung lượng Docker…') : t('Đang tính dung lượng Docker, có thể mất vài chục giây…')}
             </span>
           )}
           <ErrorLine error={docker.error} />
@@ -99,9 +101,9 @@ export function DisksCard({ server, user }: { server: Server; user: string }) {
             <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-line2 bg-raised px-3 py-2.5">
               <Lock size={16} strokeWidth={1.9} className="flex-none text-muted" />
               <div className="flex min-w-0 flex-1 flex-col gap-px">
-                <span className="text-[12px] font-semibold">Cần quyền Docker</span>
+                <span className="text-[12px] font-semibold">{t('Cần quyền Docker')}</span>
                 <span className="text-[11px] leading-snug text-muted">
-                  User này không thuộc nhóm docker nên không đọc được dung lượng image, container, volume.
+                  {t('User này không thuộc nhóm docker nên không đọc được dung lượng image, container, volume.')}
                 </span>
               </div>
               <UseSudoButton server={server} user={user} />
@@ -109,7 +111,7 @@ export function DisksCard({ server, user }: { server: Server; user: string }) {
           )}
           {dd?.kind === 'daemonDown' && (
             <span className="text-[12px] text-danger" title={dd.detail}>
-              Docker daemon không chạy
+              {t('Docker daemon không chạy')}
             </span>
           )}
         </div>

@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api, type Settings } from '../lib/api'
 import { applyTheme } from '../lib/theme'
+import { getLang, setLang } from '../i18n'
 
 type Ctx = {
   settings: Settings
@@ -10,7 +11,7 @@ type Ctx = {
   update: (patch: Partial<Settings>) => Promise<Settings>
 }
 
-const DEFAULTS: Settings = { downloadDir: null, askDownload: null, theme: 'dark', editor: null }
+const DEFAULTS: Settings = { language: getLang(), downloadDir: null, askDownload: null, theme: 'dark', editor: null }
 
 /** Whether downloads ask for a folder, with older settings files read as they worked. */
 export const asksDownload = (s: Settings) => s.askDownload ?? s.downloadDir === null
@@ -33,6 +34,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const next = await api.setSettings({ ...settings, ...patch })
     setSettings(next)
     applyTheme(next.theme)
+    setLang(next.language)
     return next
   }
 

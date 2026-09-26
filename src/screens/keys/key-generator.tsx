@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useServers } from '../../app/servers'
+import { t } from '../../i18n'
 import { Field, TextInput } from '../../components/ui/form-controls'
 import { Modal } from '../../components/ui/modal'
 import { Button } from '../../components/ui/primitives'
@@ -39,7 +40,7 @@ export function KeyGenerator({ onClose, onCreated }: { onClose: () => void; onCr
   const canCreate = !!name.trim() && !mismatch && !busy
 
   const create = async () => {
-    if (mismatch) return setError({ pass: 'Hai lần nhập passphrase không khớp' })
+    if (mismatch) return setError({ pass: t('Hai lần nhập passphrase không khớp') })
     setBusy(true)
     setError({})
     try {
@@ -61,18 +62,21 @@ export function KeyGenerator({ onClose, onCreated }: { onClose: () => void; onCr
       open
       onClose={onClose}
       width={480}
-      title="Tạo khoá mới"
-      subtitle="Tạo cặp khoá trong ~/.ssh trên máy này"
+      title={t('Tạo khoá mới')}
+      subtitle={t('Tạo cặp khoá trong ~/.ssh trên máy này')}
       footer={
         <>
-          <Button onClick={onClose}>Huỷ</Button>
+          <Button onClick={onClose}>{t('Huỷ')}</Button>
           <Button variant="primary" onClick={create} disabled={!canCreate}>
-            {busy ? 'Đang tạo…' : 'Tạo khoá'}
+            {busy ? t('Đang tạo…') : t('Tạo khoá')}
           </Button>
         </>
       }
     >
-      <Field label="Loại khoá" help={kind === 'rsa' ? 'Chỉ dùng cho server cũ không nhận ED25519.' : 'Nên dùng: ngắn, nhanh, mọi server OpenSSH hiện nay đều nhận.'}>
+      <Field
+        label={t('Loại khoá')}
+        help={kind === 'rsa' ? t('Chỉ dùng cho server cũ không nhận ED25519.') : t('Nên dùng: ngắn, nhanh, mọi server OpenSSH hiện nay đều nhận.')}
+      >
         <SegmentedControl
           value={kind}
           onChange={changeKind}
@@ -84,7 +88,7 @@ export function KeyGenerator({ onClose, onCreated }: { onClose: () => void; onCr
         />
       </Field>
 
-      <Field label="Tên tệp" error={error.name} help="Lưu thành ~/.ssh/<tên> và ~/.ssh/<tên>.pub">
+      <Field label={t('Tên tệp')} error={error.name} help={t('Lưu thành ~/.ssh/<tên> và ~/.ssh/<tên>.pub')}>
         <TextInput
           value={name}
           onChange={(v) => {
@@ -97,21 +101,21 @@ export function KeyGenerator({ onClose, onCreated }: { onClose: () => void; onCr
         />
       </Field>
 
-      <Field label="Ghi chú trong khoá" help="Để trống thì dùng user@tên-máy, giống ssh-keygen.">
-        <TextInput value={comment} onChange={setComment} placeholder="VD: adonis@macbook" />
+      <Field label={t('Ghi chú trong khoá')} help={t('Để trống thì dùng user@tên-máy, giống ssh-keygen.')}>
+        <TextInput value={comment} onChange={setComment} placeholder={t('VD: adonis@macbook')} />
       </Field>
 
       <div className="grid grid-cols-2 gap-2.5">
-        <Field label="Passphrase" help="Để trống nếu không cần.">
+        <Field label="Passphrase" help={t('Để trống nếu không cần.')}>
           <TextInput type="password" value={pass} onChange={(v) => { setPass(v); setError({}) }} />
         </Field>
-        <Field label="Nhập lại passphrase" error={error.pass ?? (pass2 && mismatch ? 'Chưa khớp' : undefined)}>
+        <Field label={t('Nhập lại passphrase')} error={error.pass ?? (pass2 && mismatch ? t('Chưa khớp') : undefined)}>
           <TextInput type="password" value={pass2} onChange={(v) => { setPass2(v); setError({}) }} invalid={!!pass2 && mismatch} />
         </Field>
       </div>
 
       <div className="flex flex-col gap-1">
-        <span className="text-[11px] text-muted">Lệnh tương ứng</span>
+        <span className="text-[11px] text-muted">{t('Lệnh tương ứng')}</span>
         <span className="rounded-md bg-sunken px-2 py-1.5 font-mono text-[11.5px] leading-normal break-all text-ink2 select-text">{command}</span>
       </div>
 

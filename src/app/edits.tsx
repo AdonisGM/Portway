@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useToast } from '../components/toast'
 import { api, isAppError, type Edit, type EditorApp } from '../lib/api'
+import { t } from '../i18n'
 
 type Edits = {
   list: Edit[]
@@ -22,13 +23,15 @@ function editError(e: unknown): string {
   if (!isAppError(e)) return String(e)
   switch (e.code) {
     case 'permission_denied':
-      return `Không có quyền đọc ${e.detail ?? 'tệp này'}. Bật sudo cho phiên này để sửa tệp của root.`
+      return e.detail
+        ? t('Không có quyền đọc {path}. Bật sudo cho phiên này để sửa tệp của root.', { path: e.detail })
+        : t('Không có quyền đọc tệp này. Bật sudo cho phiên này để sửa tệp của root.')
     case 'too_big':
-      return 'Tệp lớn hơn 20 MB, không mở để sửa.'
+      return t('Tệp lớn hơn 20 MB, không mở để sửa.')
     case 'not_a_file':
-      return 'Chỉ sửa được tệp, không phải thư mục.'
+      return t('Chỉ sửa được tệp, không phải thư mục.')
     case 'not_connected':
-      return 'Phiên SSH chưa kết nối.'
+      return t('Phiên SSH chưa kết nối.')
     default:
       return e.detail ?? e.code
   }
@@ -56,7 +59,7 @@ export function EditsProvider({ children }: { children: ReactNode }) {
       try {
         await api.editOpen(serverId, user, path, app)
       } catch (e) {
-        toast({ title: 'Không mở được để sửa', detail: editError(e) })
+        toast({ title: t('Không mở được để sửa'), detail: editError(e) })
       }
     },
     [toast],
@@ -72,8 +75,8 @@ export function EditsProvider({ children }: { children: ReactNode }) {
           setList((l) => l.filter((x) => x.id !== id))
           void api.editStop(id)
         },
-        resolve: (id, overwrite) => api.editResolve(id, overwrite).catch((e) => toast({ title: 'Không làm được', detail: editError(e) })),
-        reopen: (id, app) => void api.editReopen(id, app).catch((e) => toast({ title: 'Không mở lại được', detail: editError(e) })),
+        resolve: (id, overwrite) => api.editResolve(id, overwrite).catch((e) => toast({ title: t('Không làm được'), detail: editError(e) })),
+        reopen: (id, app) => void api.editReopen(id, app).catch((e) => toast({ title: t('Không mở lại được'), detail: editError(e) })),
         refreshApps: () => void api.editorApps().then(setApps),
       }}
     >

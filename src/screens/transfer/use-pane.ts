@@ -3,6 +3,7 @@ import { useConnections, type Connection } from '../../app/connections'
 import { useNav, type PaneSide, type PaneSource } from '../../app/nav'
 import { useSettings } from '../../app/settings'
 import { useToast } from '../../components/toast'
+import { t } from '../../i18n'
 import { api, isAppError, type AppError, type FileEntry, type Listing } from '../../lib/api'
 import { fileError, isDirLike } from '../files/format'
 import { sourceKey } from './format'
@@ -58,7 +59,7 @@ export function usePane(side: PaneSide) {
         if (fallback !== undefined && err.code === 'not_found') return load(fallback)
         if (src.kind === 'remote' && (err.code === 'connection_lost' || err.code === 'not_connected')) markLost(src.serverId, src.user, err)
         else if (listedKey.current !== key || !listing) setError(err)
-        else toast({ title: 'Không mở được thư mục', detail: fileError(err) })
+        else toast({ title: t('Không mở được thư mục'), detail: fileError(err) })
         return null
       } finally {
         if (n === seq.current) setLoading(false)

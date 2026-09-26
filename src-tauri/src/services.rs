@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
-use crate::ssh::{exec_priv, shell_quote, Session, Sessions, MARK};
+use crate::ssh::{exec_priv, shell_quote, shown_as_run, Sessions, MARK};
 use crate::trace;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -301,7 +301,7 @@ pub async fn services_action(
         return Err(AppError::new("needs_root"));
     }
     let log = format!("service{}{}", action[..1].to_uppercase(), &action[1..]);
-    let shown = as_run(&session, &cmd);
+    let shown = shown_as_run(&session, &cmd);
     let out = trace::labelled("Dịch vụ · thao tác", exec_priv(&session, &format!("{cmd} 2>&1"), Duration::from_secs(120))).await;
     let out = match out {
         Ok(o) => o,
@@ -320,13 +320,6 @@ pub async fn services_action(
     }
 }
 
-fn as_run(session: &Session, cmd: &str) -> String {
-    if session.is_root() {
-        cmd.to_string()
-    } else {
-        format!("sudo {cmd}")
-    }
-}
 
 #[cfg(test)]
 mod tests {

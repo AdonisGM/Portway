@@ -1,5 +1,6 @@
 import { EyeOff, FileText, Play, RotateCw, Square, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
+import { RowMenu } from '../../components/ui/row-menu'
 import { useServers } from '../../app/servers'
 import { useToast } from '../../components/toast'
 import { TextInput } from '../../components/ui/form-controls'
@@ -235,55 +236,6 @@ export function UnitsView({
             void reload()
           }}
         />
-      )}
-    </div>
-  )
-}
-
-function RowMenu({
-  open,
-  setOpen,
-  items,
-}: {
-  open: boolean
-  setOpen: (v: boolean) => void
-  items: { label: string; run: () => void; ok: boolean; why?: string; danger?: boolean }[]
-}) {
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        title="Thêm thao tác"
-        onClick={() => setOpen(!open)}
-        className="flex size-[26px] cursor-pointer items-center justify-center rounded-md border border-line2 text-[14px] leading-none hover:border-muted"
-      >
-        ⋯
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute top-[30px] right-0 z-40 flex min-w-[190px] flex-col rounded-lg border border-line bg-surface p-1 shadow-pop">
-            {items.map((i) => (
-              <button
-                key={i.label}
-                type="button"
-                disabled={!i.ok}
-                title={i.ok ? undefined : i.why}
-                onClick={() => {
-                  setOpen(false)
-                  i.run()
-                }}
-                className={cx(
-                  'flex cursor-pointer flex-col rounded-md px-2.5 py-1.5 text-left hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent',
-                  i.danger ? 'text-danger' : 'text-ink',
-                )}
-              >
-                {i.label}
-                {!i.ok && i.why && <span className="text-[10.5px] text-muted">{i.why}</span>}
-              </button>
-            ))}
-          </div>
-        </>
       )}
     </div>
   )

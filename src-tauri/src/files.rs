@@ -527,7 +527,7 @@ pub async fn sftp_chown(
         let out = exec_priv(&session, &cmd, Duration::from_secs(60)).await?;
         let ok = out.code == Some(0);
         // Logged as it ran: through sudo unless the session is root.
-        let shown = if session.is_root() { cmd } else { format!("sudo {cmd}") };
+        let shown = crate::ssh::shown_as_run(&session, &cmd);
         audit.record(&server_id, &user, "chown", &shown, ok, (!ok).then(|| out.stderr.trim().to_string()));
         if ok {
             Ok(())

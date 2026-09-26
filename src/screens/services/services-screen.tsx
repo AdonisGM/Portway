@@ -12,6 +12,7 @@ import { useLive } from '../server/refresh'
 import { PickUnits } from './dialogs'
 import { defaultWatch } from './format'
 import { UnitsView } from './units'
+import { withSudo } from '../../lib/commands'
 
 const STATUS_MS = 10_000
 
@@ -134,7 +135,7 @@ export function ServicesScreen({ server, user }: { server: Server; user: string 
           sudo={sudo}
           onClose={() => setAsk(null)}
           onDone={() => {
-            toast({ title: 'Đã chạy lệnh', detail: (sudo && user !== 'root' ? 'sudo ' : '') + ask.command })
+            toast({ title: 'Đã chạy lệnh', detail: withSudo(ask.command, sudo && user !== 'root') })
             setAsk(null)
           }}
         />

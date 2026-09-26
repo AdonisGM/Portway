@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, FileText, Play, RotateCw, Square, SquareTerminal, X, type LucideIcon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button, Chip, cx } from '../../components/ui/primitives'
+import { RowMenu } from '../../components/ui/row-menu'
 import type { ComposeAction, Container, DockerStats } from '../../lib/api'
 import { formatBytes } from '../server/format'
 import type { DockerCtx } from './docker-screen'
@@ -182,41 +183,6 @@ function PortList({ c }: { c: Container }) {
         </span>
       ))}
     </span>
-  )
-}
-
-function RowMenu({ open, setOpen, items }: { open: boolean; setOpen: (v: boolean) => void; items: { label: string; run: () => void; danger?: boolean }[] }) {
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        title="Thêm thao tác"
-        onClick={() => setOpen(!open)}
-        className="flex size-[26px] cursor-pointer items-center justify-center rounded-md border border-line2 text-[14px] leading-none hover:border-muted"
-      >
-        ⋯
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute top-[30px] right-0 z-40 flex min-w-[190px] flex-col rounded-lg border border-line bg-surface p-1 shadow-pop">
-            {items.map((i) => (
-              <button
-                key={i.label}
-                type="button"
-                onClick={() => {
-                  setOpen(false)
-                  i.run()
-                }}
-                className={cx('cursor-pointer rounded-md px-2.5 py-1.5 text-left hover:bg-raised', i.danger ? 'text-danger' : 'text-ink')}
-              >
-                {i.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
   )
 }
 

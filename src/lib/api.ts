@@ -266,6 +266,29 @@ export type JournalLine = { at: number; priority: number | null; message: string
 export type JournalPage = { lines: JournalLine[]; cursor: string | null; limited: boolean }
 export type ServiceAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable' | 'resetFailed'
 
+/** A UFW user rule as `ufw show added` lists it. */
+export type FwRule = {
+  /** What `ufw delete` takes (no "ufw", no comment). */
+  spec: string[]
+  action: 'allow' | 'deny' | 'reject' | 'limit'
+  direction: 'in' | 'out'
+  route: boolean
+  interface: string | null
+  port: string | null
+  proto: string | null
+  app: string | null
+  appPorts: string | null
+  from: string
+  to: string
+  comment: string | null
+}
+export type FirewallState =
+  | { kind: 'noUfw'; firewalld: boolean }
+  | { kind: 'needsRoot' }
+  | { kind: 'error'; detail: string }
+  | { kind: 'ufw'; active: boolean; incoming: string; outgoing: string; rules: FwRule[] }
+export type FwRuleInput = { action: 'allow' | 'deny' | 'limit'; port: string; proto: 'tcp' | 'udp' | 'any'; from: string | null; comment: string | null }
+
 export type TraceKind = 'exec' | 'sftp' | 'connect' | 'transfer'
 export type TraceStatus = 'waiting' | 'running' | 'ok' | 'error'
 /** One thing Portway did on a server, from the debug trace. */
@@ -367,6 +390,12 @@ type Api = {
   openTerminal(serverId: string, user: string, tool?: TerminalTool, cwd?: string, target?: string): Promise<void>
   /** Open (or bring to the front) the debug trace window. */
   openDebugWindow(): Promise<void>
+  firewallState(serverId: string, user: string): Promise<FirewallState>
+  firewallAdd(serverId: string, user: string, rule: FwRuleInput): Promise<string>
+  /** Remove the rule with this spec, or replace it with `replaceWith`. */
+  firewallDelete(serverId: string, user: string, spec: string[], replaceWith?: FwRuleInput): Promise<string>
+  firewallEnable(serverId: string, user: string, sshPorts: number[]): Promise<string>
+  firewallDisable(serverId: string, user: string): Promise<string>
   servicesAll(serverId: string, user: string): Promise<UnitBrief[]>
   servicesStatus(serverId: string, user: string, units: string[]): Promise<Unit[]>
   servicesJournal(serverId: string, user: string, unit: string, tail: number, cursor?: string | null): Promise<JournalPage>
@@ -429,6 +458,11 @@ const tauriApi: Api = {
   dockerDisk: (serverId, user) => invoke('server_docker_disk', { serverId, user }),
   openTerminal: (serverId, user, tool, cwd, target) => invoke('open_terminal', { serverId, user, tool, cwd, target }),
   openDebugWindow: () => invoke('open_debug_window'),
+  firewallState: (serverId, user) => invoke('firewall_state', { serverId, user }),
+  firewallAdd: (serverId, user, rule) => invoke('firewall_add', { serverId, user, rule }),
+  firewallDelete: (serverId, user, spec, replaceWith) => invoke('firewall_delete', { serverId, user, spec, replaceWith }),
+  firewallEnable: (serverId, user, sshPorts) => invoke('firewall_enable', { serverId, user, sshPorts }),
+  firewallDisable: (serverId, user) => invoke('firewall_disable', { serverId, user }),
   servicesAll: (serverId, user) => invoke('services_all', { serverId, user }),
   servicesStatus: (serverId, user, units) => invoke('services_status', { serverId, user, units }),
   servicesJournal: (serverId, user, unit, tail, cursor) => invoke('services_journal', { serverId, user, unit, tail, cursor }),
@@ -589,6 +623,11 @@ function browserApi(): Api {
       fail('needs_app')
     },
     openDebugWindow: async () => fail('needs_app'),
+    firewallState: async () => fail('needs_app'),
+    firewallAdd: async () => fail('needs_app'),
+    firewallDelete: async () => fail('needs_app'),
+    firewallEnable: async () => fail('needs_app'),
+    firewallDisable: async () => fail('needs_app'),
     servicesAll: async () => fail('needs_app'),
     servicesStatus: async () => fail('needs_app'),
     servicesJournal: async () => fail('needs_app'),

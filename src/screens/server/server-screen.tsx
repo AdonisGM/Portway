@@ -14,6 +14,7 @@ import { connectError, formatUptime } from './format'
 import { DockerScreen } from '../docker/docker-screen'
 import { ServicesScreen } from '../services/services-screen'
 import { FilesScreen } from '../files/files-screen'
+import { FirewallScreen } from '../firewall/firewall-screen'
 import { Overview } from './overview'
 import { SudoBanner, SudoPrompt } from './sudo'
 
@@ -72,6 +73,8 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
                   <DockerScreen server={server} user={user} />
                 ) : module === 'services' ? (
                   <ServicesScreen server={server} user={user} />
+                ) : module === 'firewall' ? (
+                  <FirewallScreen server={server} user={user} />
                 ) : (
                   <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">
                     Mục {MODULE_LABELS[module]} sẽ làm ở bước sau

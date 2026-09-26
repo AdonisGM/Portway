@@ -36,6 +36,11 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   serviceEnable: 'Bật tự khởi động',
   serviceDisable: 'Tắt tự khởi động',
   serviceResetFailed: 'Xoá trạng thái lỗi',
+  ufwAdd: 'Thêm rule firewall',
+  ufwDelete: 'Xoá rule firewall',
+  ufwReplace: 'Sửa rule firewall',
+  ufwEnable: 'Bật firewall',
+  ufwDisable: 'Tắt firewall',
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')

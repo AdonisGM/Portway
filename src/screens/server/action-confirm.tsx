@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Modal } from '../../components/ui/modal'
 import { Button } from '../../components/ui/primitives'
 import { isAppError } from '../../lib/api'
+import { withSudo } from '../../lib/commands'
 
 export type ActionAsk = {
   title: string
@@ -36,7 +37,7 @@ export function ActionConfirm({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const viaSudo = sudo && user !== 'root'
-  const full = (viaSudo ? 'sudo ' : '') + ask.command
+  const full = withSudo(ask.command, viaSudo)
 
   const go = async () => {
     setPending(true)

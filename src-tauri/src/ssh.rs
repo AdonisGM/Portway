@@ -1311,6 +1311,15 @@ pub async fn server_ports(sessions: tauri::State<'_, Sessions>, server_id: Strin
 }
 
 /// Quote a value for a POSIX shell.
+/// A command as the session runs it, for logs and previews: through sudo
+/// unless root, each step of an `a && b` chain prefixed (`cd` only moves).
+pub(crate) fn shown_as_run(session: &Session, cmd: &str) -> String {
+    if session.is_root() || !session.sudo_on() {
+        return cmd.to_string();
+    }
+    cmd.split(" && ").map(|c| if c.starts_with("cd ") { c.to_string() } else { format!("sudo {c}") }).collect::<Vec<_>>().join(" && ")
+}
+
 /// Quote for sh. Words made only of characters the shell leaves alone stay as
 /// they are, so logged commands read like typed ones (and match the UI's previews).
 pub(crate) fn shell_quote(s: &str) -> String {
@@ -1616,6 +1625,23 @@ mod tests {
         let backup = units.iter().find(|u| u.name == "backup-db.service").unwrap();
         assert_eq!((backup.active_state.as_str(), backup.exit_status), ("failed", Some(1)));
         assert!(units.iter().any(|u| u.name == "ssh.service" && u.aliases.contains(&"sshd.service".to_string())));
+
+        // UFW on pw-ubuntu: read the rules as added, add one, delete it by its spec.
+        let fw = crate::firewall::parse_state(&exec_priv(&session, crate::firewall::STATE_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout);
+        let crate::firewall::FirewallState::Ufw { active, rules, .. } = fw else { panic!("ufw state: {fw:?}") };
+        assert!(active);
+        assert!(rules.iter().any(|r| r.action == "deny" && r.from == "203.0.113.7" && r.port.is_none()));
+        assert!(rules.iter().any(|r| r.port.as_deref() == Some("8443") && r.comment.as_deref() == Some("Admin panel")));
+        let input = crate::firewall::RuleInput { action: "allow".into(), port: "7777".into(), proto: "udp".into(), from: Some("10.9.0.0/16".into()), comment: Some("live test".into()) };
+        let add = crate::firewall::add_args(&input).unwrap();
+        let line = format!("ufw {}", add.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" "));
+        assert_eq!(exec_priv(&session, &line, EXEC_TIMEOUT).await.unwrap().code, Some(0));
+        let added = exec_priv(&session, "ufw show added", EXEC_TIMEOUT).await.unwrap().stdout;
+        let rule = added.lines().filter_map(|l| crate::firewall::parse_rule(l, &HashMap::new())).find(|r| r.port.as_deref() == Some("7777")).expect("rule added");
+        assert_eq!((rule.proto.as_deref(), rule.from.as_str(), rule.comment.as_deref()), (Some("udp"), "10.9.0.0/16", Some("live test")));
+        let del = format!("ufw delete {}", rule.spec.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" "));
+        assert_eq!(exec_priv(&session, &del, EXEC_TIMEOUT).await.unwrap().code, Some(0));
+        assert!(!exec_priv(&session, "ufw show added", EXEC_TIMEOUT).await.unwrap().stdout.contains("7777"));
 
         // Nothing listening: refused.
         let err = open(&target(2299, "root"), Credential::Key(key), None).await.err().unwrap();

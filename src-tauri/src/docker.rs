@@ -11,7 +11,7 @@ use std::time::Duration;
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
 use crate::trace;
-use crate::ssh::{exec_priv, shell_quote, Session, Sessions, MARK};
+use crate::ssh::{exec_priv, shell_quote, shown_as_run, Session, Sessions, MARK};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -336,13 +336,6 @@ pub async fn docker_stats(sessions: tauri::State<'_, Sessions>, server_id: Strin
 // ------------------------------------------------------------------- actions
 
 /// The command as it ran, for the action log: with sudo when it went through sudo.
-fn as_run(session: &Session, cmd: &str) -> String {
-    if session.is_root() || !session.sudo_on() {
-        cmd.to_string()
-    } else {
-        format!("sudo {cmd}")
-    }
-}
 
 fn docker_error(stderr: &str) -> AppError {
     let msg = stderr.trim();
@@ -365,7 +358,7 @@ async fn run_logged(
     cmd: &str,
     timeout: Duration,
 ) -> AppResult<String> {
-    let shown = as_run(session, cmd);
+    let shown = shown_as_run(session, cmd);
     let out = match exec_priv(session, &format!("{cmd} 2>&1"), timeout).await {
         Ok(o) => o,
         Err(e) => {

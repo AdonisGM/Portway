@@ -1,0 +1,487 @@
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useConnections } from '../../app/connections'
+import { readCache, writeCache } from '../../app/session-cache'
+import { useToast } from '../../components/toast'
+import { Button, Chip, cx, TONES } from '../../components/ui/primitives'
+import { RowMenu } from '../../components/ui/row-menu'
+import { api, isAppError, type AppError, type FirewallState, type FwRule, type Listen, type Ports, type Server } from '../../lib/api'
+import { copyText } from '../../lib/clipboard'
+import { ActionConfirm, type ActionAsk } from '../server/action-confirm'
+import { useLive } from '../server/refresh'
+import { DeleteSshRule, DockerFix, EnableDialog, RuleDialog } from './dialogs'
+import { ACTIONS, addWords, allows, deleteLine, shadowedBy, ufwLine, isPublicBind, protoLabel, ruleLabel, ruleTarget, sourceLabel, toInput } from './format'
+import { withSudo } from '../../lib/commands'
+
+const REFRESH_MS = 30_000
+
+type Data = { fw: FirewallState; ports: Ports }
+
+const asError = (e: unknown): AppError => (isAppError(e) ? e : { code: 'unknown', detail: String(e) })
+
+function useFirewall(serverId: string, user: string) {
+  const { markLost } = useConnections()
+  const { live, sudo } = useLive(serverId, user)
+  const [data, setData] = useState<Data | null>(() => readCache<Data>(serverId, user, 'firewall')?.data ?? null)
+  const [error, setError] = useState<AppError | null>(null)
+  const load = useCallback(async () => {
+    try {
+      const [fw, ports] = await Promise.all([api.firewallState(serverId, user), api.ports(serverId, user)])
+      setData({ fw, ports })
+      setError(null)
+      writeCache(serverId, user, 'firewall', { fw, ports }, new Date())
+    } catch (e) {
+      const err = asError(e)
+      if (err.code === 'connection_lost' || err.code === 'not_connected') markLost(serverId, user, err)
+      else setError(err)
+    }
+  }, [serverId, user, markLost])
+  useEffect(() => {
+    if (!live) return
+    void load()
+    const t = setInterval(load, REFRESH_MS)
+    return () => clearInterval(t)
+  }, [live, sudo, load])
+  return { data, error, load }
+}
+
+/** Ports sshd listens on (so enabling UFW never locks the session out). */
+function sshPortsOf(ports: Ports, server: Server): number[] {
+  const byProcess = ports.listening.filter((l) => l.proto === 'tcp' && l.process?.startsWith('sshd')).map((l) => l.port)
+  if (byProcess.length) return [...new Set(byProcess)]
+  if (ports.listening.some((l) => l.proto === 'tcp' && l.port === 22)) return [22]
+  return [server.port]
+}
+
+const bindText = (l: Listen) => `${l.bind.includes(':') ? `[${l.bind}]` : l.bind}:${l.port}`
+
+export function FirewallScreen({ server, user }: { server: Server; user: string }) {
+  const toast = useToast()
+  const { sudo } = useLive(server.id, user)
+  const priv = user === 'root' || sudo
+  const { data, error, load } = useFirewall(server.id, user)
+  const [menu, setMenu] = useState<string | null>(null)
+  const [ask, setAsk] = useState<ActionAsk | null>(null)
+  const [ruleDlg, setRuleDlg] = useState<{ editing: FwRule | null } | null>(null)
+  const [enable, setEnable] = useState(false)
+  const [sshDelete, setSshDelete] = useState<FwRule | null>(null)
+  const [fix, setFix] = useState<{ port: number; container: string } | null>(null)
+
+  const done = (title: string, cmd: string) => {
+    toast({ title, detail: cmd })
+    setRuleDlg(null)
+    setEnable(false)
+    setSshDelete(null)
+    void load()
+  }
+  const viaSudo = sudo && user !== 'root'
+
+  if (!data) {
+    return error ? (
+      <span className="font-mono text-[11.5px] text-danger select-text">{error.detail ?? error.code}</span>
+    ) : (
+      <div className="flex flex-col overflow-hidden rounded-xl border border-line bg-surface" aria-busy="true">
+        {['55%', '40%', '65%', '45%'].map((w, i) => (
+          <div key={i} className="flex items-center gap-4 border-t border-line px-3.5 py-3 first:border-t-0">
+            <span className="h-3 rounded-[5px] bg-sunken" style={{ width: w }} />
+            <span className="h-2.5 w-24 rounded-[5px] bg-sunken" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const { fw, ports } = data
+  const ufw = fw.kind === 'ufw' ? fw : null
+  const rules = ufw?.rules ?? []
+  const sshPorts = sshPortsOf(ports, server)
+  // Ports Docker publishes to everyone, and the container.
+  const bypass = new Map<number, string>()
+  for (const w of ports.warnings) if (w.kind === 'dockerBypass' || w.kind === 'ruleIneffective') bypass.set(w.port, w.container)
+  const publicListen = ports.listening.filter((l) => isPublicBind(l) && !l.container)
+  const blocked = ufw?.active && ufw.incoming !== 'allow' ? publicListen.filter((l) => !rules.some((r) => allows(r, l.port, l.proto))) : []
+  const exposedOff = ufw && !ufw.active ? publicListen : []
+  const local = ports.listening.filter((l) => l.scope === 'loopback')
+  const stale = rules.filter((r) => {
+    if (r.action === 'deny' || r.action === 'reject' || r.route || r.direction !== 'in') return false
+    const t = ruleTarget(r)
+    if (!t) return false
+    return !ports.listening.some((l) => allows(r, l.port, l.proto)) && ![...bypass.keys()].some((p) => allows(r, p, 'tcp'))
+  })
+  const sshRules = rules.filter((r) => sshPorts.some((p) => allows(r, p, 'tcp')))
+
+  const deleteRule = (r: FwRule) => {
+    const guarded = ufw?.active && sshRules.includes(r)
+    if (guarded) return setSshDelete(r)
+    setAsk({
+      title: `Xoá rule ${ruleLabel(r)}?`,
+      body:
+        r.action === 'deny' || r.action === 'reject'
+          ? `Kết nối từ ${sourceLabel(r.from).toLowerCase()} sẽ không còn bị chặn riêng nữa mà theo các rule còn lại.`
+          : `Kết nối từ ${sourceLabel(r.from).toLowerCase()} tới ${ruleLabel(r)} sẽ theo mặc định (${ufw?.incoming === 'allow' ? 'cho phép' : 'chặn'})${ufw?.active ? '' : ' khi firewall được bật'}.`,
+      command: deleteLine(r.spec),
+      confirm: 'Xoá rule',
+      danger: true,
+      run: async () => {
+        await api.firewallDelete(server.id, user, r.spec)
+        await load()
+      },
+    })
+  }
+
+  const disable = () =>
+    setAsk({
+      title: 'Tắt firewall?',
+      body: 'Mọi cổng đang lắng nghe trên địa chỉ công khai sẽ truy cập được từ internet. Các rule vẫn được giữ để bật lại sau.',
+      command: 'ufw disable',
+      confirm: 'Tắt firewall',
+      danger: true,
+      run: async () => {
+        await api.firewallDisable(server.id, user)
+        await load()
+      },
+    })
+
+  const tunnelCmd = (port: number) => {
+    const account = server.accounts.find((a) => a.user === user)
+    const key = account?.auth.kind === 'key' ? ` -i ${account.auth.path}` : ''
+    return `ssh -N -L ${port}:127.0.0.1:${port}${server.port !== 22 ? ` -p ${server.port}` : ''}${key} ${user}@${server.host}`
+  }
+
+  const sub = !ufw
+    ? fw.kind === 'noUfw'
+      ? fw.firewalld
+        ? 'firewalld đang chạy'
+        : 'Chưa cài UFW'
+      : fw.kind === 'needsRoot'
+        ? 'Cần quyền root để đọc'
+        : 'Không đọc được'
+    : ufw.active
+      ? `Đang bật · mặc định ${ufw.incoming === 'allow' ? 'cho phép' : ufw.incoming === 'reject' ? 'từ chối' : 'chặn'} kết nối vào, ${ufw.outgoing === 'allow' ? 'cho phép' : 'chặn'} kết nối ra`
+      : 'Đang tắt'
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-[260px] flex-1 flex-col gap-0.5">
+          <span className="text-[15px] font-semibold">Firewall (UFW)</span>
+          <span className="text-muted">{sub}</span>
+          <span className="text-[11px] text-muted">Firewall của nhà cung cấp cloud (security group / security list) không kiểm tra được từ bên trong server.</span>
+        </div>
+        {ufw?.active && (
+          <Button size="sm" onClick={disable} disabled={!priv}>
+            Tắt firewall
+          </Button>
+        )}
+        <Button size="sm" variant="primary" onClick={() => setRuleDlg({ editing: null })} disabled={!ufw || !priv}>
+          Mở cổng
+        </Button>
+      </div>
+
+      {error && <span className="font-mono text-[11.5px] text-danger select-text">{error.detail ?? error.code}</span>}
+
+      {fw.kind === 'noUfw' && (
+        <Card>
+          <div className="flex flex-col items-center gap-2 px-6 py-8 text-center">
+            <span className="text-[14px] font-semibold">{fw.firewalld ? 'Server dùng firewalld' : 'Chưa cài UFW'}</span>
+            <span className="max-w-[520px] leading-normal text-muted">
+              {fw.firewalld
+                ? 'Portway chưa hỗ trợ quản lý rule firewalld, bên dưới chỉ có các cổng đang lắng nghe.'
+                : 'Portway quản lý firewall qua UFW. Cài xong bạn có thể mở cổng, giới hạn SSH và xem rule tại đây.'}
+            </span>
+            {!fw.firewalld && (
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-sunken px-2.5 py-1.5 font-mono text-[11.5px] select-text">sudo apt install ufw</span>
+                <Button size="xs" onClick={() => void copyText('sudo apt install ufw')}>
+                  Sao chép
+                </Button>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+      {fw.kind === 'error' && <span className="font-mono text-[11.5px] text-danger select-text">{fw.detail}</span>}
+
+      {ufw && !ufw.active && (
+        <div className="flex items-center gap-3 rounded-[10px] border border-line bg-warn-soft px-3.5 py-2.5">
+          <span className="size-2 flex-none rounded-full bg-warn" />
+          <div className="flex flex-1 flex-col gap-0.5">
+            <span className="font-semibold">Firewall đang tắt</span>
+            <span className="text-[11.5px] text-ink2">Mọi cổng lắng nghe trên địa chỉ công khai đều truy cập được từ internet. Rule bên dưới chưa có hiệu lực.</span>
+          </div>
+          <Button size="xs" variant="primary" onClick={() => setEnable(true)} disabled={!priv}>
+            Bật firewall
+          </Button>
+        </div>
+      )}
+
+      {bypass.size > 0 && ufw && (
+        <Group title="⚠ Mở ra internet, không đi qua firewall" hint="Docker tự mở các cổng này trước UFW, rule UFW không có tác dụng." tone="danger">
+          {[...bypass].map(([port, container]) => (
+            <Line key={port} cols="70px minmax(0,1fr) auto">
+              <span className="num font-semibold">{port}</span>
+              <span className="truncate">
+                {container} <span className="text-muted">· container</span>
+              </span>
+              <Button size="xs" onClick={() => setFix({ port, container })}>
+                Cách khắc phục
+              </Button>
+            </Line>
+          ))}
+        </Group>
+      )}
+
+      {ufw && (
+        <Group
+          title={ufw.active ? 'Rule firewall' : 'Rule firewall (chưa có hiệu lực)'}
+          hint="Rule khớp đầu tiên được áp dụng, thứ tự từ trên xuống. Lấy từ ufw show added."
+        >
+          <div className="grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted" style={{ gridTemplateColumns: RULE_COLS }}>
+            <span>#</span>
+            <span>Cổng / App</span>
+            <span>Từ</span>
+            <span>Hành động</span>
+            <span>Ghi chú</span>
+            <span />
+          </div>
+          {rules.map((r, i) => {
+            const act = ACTIONS[r.action]
+            const isSsh = sshRules.includes(r)
+            const editable = !r.route && r.direction === 'in' && !r.interface && r.to === 'any' && !!r.port
+            const noEffect = (r.action === 'allow' || r.action === 'limit') && r.from !== 'any' && [...bypass.keys()].some((p) => allows(r, p, 'tcp'))
+            const lastSsh = ufw.active && isSsh && sshRules.length === 1
+            const shadow = shadowedBy(rules, i)
+            const key = r.spec.join(' ')
+            return (
+              <div key={key} className="grid items-center gap-3 border-t border-line px-3.5 py-2" style={{ gridTemplateColumns: RULE_COLS }}>
+                <span className="num text-muted">{i + 1}</span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate font-mono text-[12px] font-semibold">{ruleLabel(r)}</span>
+                  <span className="truncate text-[11px] text-muted">
+                    {protoLabel(r)}
+                    {r.route ? ' · route (chuyển tiếp)' : ''}
+                    {r.direction === 'out' ? ' · chiều ra' : ''}
+                    {r.interface ? ` · on ${r.interface}` : ''}
+                  </span>
+                </span>
+                <span className="truncate font-mono text-[12px]">{sourceLabel(r.from)}</span>
+                <span>
+                  <span className="rounded-[5px] px-2 py-[3px] text-[11px] font-medium" style={{ color: act.fg, background: act.bg }}>
+                    {act.label}
+                  </span>
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-ink2">{r.comment ?? '—'}</span>
+                  {isSsh && (
+                    <span className="text-[11px] text-info">
+                      Portway đang dùng (SSH){r.action === 'allow' ? ' · nên dùng Giới hạn để chống dò mật khẩu' : ''}
+                    </span>
+                  )}
+                  {noEffect && <span className="text-[11px] text-danger">Không có hiệu lực: Docker đã mở cổng này cho mọi nơi</span>}
+                  {shadow != null && (
+                    <span className="text-[11px] text-warn">
+                      Không có tác dụng: rule #{shadow + 1} ({ruleLabel(rules[shadow])}, {ACTIONS[rules[shadow].action].label.toLowerCase()}) khớp trước
+                    </span>
+                  )}
+                </span>
+                <span className="flex justify-end">
+                  <RowMenu
+                    open={menu === key}
+                    setOpen={(v) => setMenu(v ? key : null)}
+                    items={[
+                      { label: 'Sửa', run: () => setRuleDlg({ editing: r }), ok: priv && editable, why: !priv ? 'Cần quyền root' : r.app ? 'Rule theo app profile: xoá rồi mở cổng mới' : 'Rule có interface, chiều ra hoặc route: sửa trong Terminal' },
+                      ...(isSsh && r.action === 'allow' && editable
+                        ? [
+                            {
+                              label: 'Đổi sang Giới hạn (limit)',
+                              ok: priv,
+                              why: 'Cần quyền root',
+                              run: () => {
+                                const next = { ...toInput(r), action: 'limit' as const }
+                                // The new rule goes last: say if an earlier rule would still win.
+                                const after = [...rules.filter((x) => x !== r), { ...r, action: 'limit' as const, spec: [] }]
+                                const blocker = shadowedBy(after, after.length - 1)
+                                setAsk({
+                                  title: `Đổi rule ${ruleLabel(r)} sang Giới hạn?`,
+                                  body: 'UFW sẽ chặn một IP nếu nó mở quá 6 kết nối trong 30 giây, đủ để chặn dò mật khẩu mà không ảnh hưởng người dùng bình thường. Kết nối SSH đang mở không bị ngắt.',
+                                  note:
+                                    blocker != null
+                                      ? `Rule mới được thêm vào cuối danh sách, sau ${ruleLabel(after[blocker])} (${ACTIONS[after[blocker].action].label.toLowerCase()} từ ${sourceLabel(after[blocker].from).toLowerCase()}). Rule đó khớp trước nên limit sẽ không có tác dụng cho tới khi bạn xoá nó.`
+                                      : 'UFW không sửa rule tại chỗ: rule cũ bị xoá và rule mới được thêm vào cuối danh sách.',
+                                  command: `${deleteLine(r.spec)} && ${ufwLine(addWords(next))}`,
+                                  confirm: 'Đổi sang Giới hạn',
+                                  run: async () => {
+                                    await api.firewallDelete(server.id, user, r.spec, next)
+                                    await load()
+                                  },
+                                })
+                              },
+                            },
+                          ]
+                        : []),
+                      {
+                        label: 'Xoá',
+                        run: () => deleteRule(r),
+                        ok: priv && !lastSsh,
+                        why: !priv ? 'Cần quyền root' : 'Rule SSH duy nhất: xoá sẽ làm mất kết nối tới server',
+                        danger: true,
+                      },
+                    ]}
+                  />
+                </span>
+              </div>
+            )
+          })}
+          {!rules.length && <div className="px-3.5 py-6 text-center text-muted">Chưa có rule nào. Kết nối vào đều theo mặc định.</div>}
+        </Group>
+      )}
+
+      {exposedOff.length > 0 && (
+        <Group title="Mở ra internet vì firewall đang tắt" hint="Tiến trình lắng nghe trên địa chỉ công khai, không có gì chặn." tone="warn">
+          {exposedOff.map((l) => (
+            <ListenLine key={`${l.proto}${l.port}`} l={l} complete={ports.processesComplete} />
+          ))}
+        </Group>
+      )}
+
+      {blocked.length > 0 && (
+        <Group title="Lắng nghe công khai nhưng bị firewall chặn" hint="An toàn: tiến trình bind địa chỉ công khai nhưng không có rule cho phép.">
+          {blocked.map((l) => (
+            <ListenLine key={`${l.proto}${l.port}`} l={l} complete={ports.processesComplete}>
+              <Chip tone={TONES.success}>Đang bị chặn</Chip>
+            </ListenLine>
+          ))}
+        </Group>
+      )}
+
+      {!ufw && publicListen.length > 0 && (
+        <Group
+          title="Lắng nghe trên địa chỉ công khai"
+          hint={`Không đọc được rule UFW nên Portway không biết cổng nào bị chặn (có thể có iptables/nftables hoặc firewall của cloud).${ports.processesComplete ? '' : ' Tên tiến trình của user khác cần quyền root.'}`}
+          tone="warn"
+        >
+          {publicListen.map((l) => (
+            <ListenLine key={`${l.proto}${l.port}${l.bind}`} l={l} complete={ports.processesComplete} />
+          ))}
+        </Group>
+      )}
+      {local.length > 0 && (
+        <Group title="Chỉ truy cập trong server (127.0.0.1)" hint="Không mở ra ngoài. Dùng SSH tunnel để truy cập từ máy bạn.">
+          {local.map((l) => (
+            <ListenLine key={`${l.proto}${l.port}${l.bind}`} l={l} complete={ports.processesComplete}>
+              {l.proto === 'tcp' && (
+                <Button
+                  size="xs"
+                  onClick={() => {
+                    const c = tunnelCmd(l.port)
+                    void copyText(c).then(() => toast({ title: 'Đã sao chép lệnh tunnel', detail: c }))
+                  }}
+                >
+                  Sao chép lệnh tunnel
+                </Button>
+              )}
+            </ListenLine>
+          ))}
+        </Group>
+      )}
+
+      {stale.length > 0 && ufw && (
+        <Group title="Rule thừa" hint="Rule cho phép cổng nhưng không có tiến trình nào lắng nghe." tone="warn">
+          {stale.map((r) => (
+            <Line key={r.spec.join(' ')} cols="120px minmax(0,1fr) auto auto">
+              <span className="font-mono text-[12px] font-semibold">{ruleLabel(r)}</span>
+              <span className="truncate text-ink2">
+                {r.comment ? `${r.comment} · ` : ''}từ {sourceLabel(r.from)}
+              </span>
+              <Chip tone={TONES.warn}>Không có tiến trình</Chip>
+              <Button size="xs" onClick={() => deleteRule(r)} disabled={!priv}>
+                Xoá rule
+              </Button>
+            </Line>
+          ))}
+        </Group>
+      )}
+
+
+      {ruleDlg && (
+        <RuleDialog
+          server={server}
+          user={user}
+          sudo={sudo}
+          editing={ruleDlg.editing}
+          dockerPorts={bypass}
+          onFix={(port) => setFix({ port, container: bypass.get(port) ?? '' })}
+          onClose={() => setRuleDlg(null)}
+          onDone={done}
+        />
+      )}
+      {enable && ufw && (
+        <EnableDialog
+          server={server}
+          user={user}
+          sudo={sudo}
+          rules={rules}
+          sshPorts={sshPorts.filter((p) => !rules.some((r) => allows(r, p, 'tcp')))}
+          incoming={ufw.incoming}
+          onClose={() => setEnable(false)}
+          onDone={done}
+        />
+      )}
+      {sshDelete && (
+        <DeleteSshRule server={server} user={user} sudo={sudo} rule={sshDelete} others={sshRules.filter((r) => r.spec.join(' ') !== sshDelete.spec.join(' '))} onClose={() => setSshDelete(null)} onDone={done} />
+      )}
+      {fix && <DockerFix server={server} user={user} port={fix.port} container={fix.container} onClose={() => setFix(null)} />}
+      {ask && (
+        <ActionConfirm
+          ask={ask}
+          serverName={server.name}
+          user={user}
+          sudo={sudo}
+          onClose={() => setAsk(null)}
+          onDone={() => {
+            toast({ title: 'Đã chạy lệnh', detail: withSudo(ask.command, viaSudo) })
+            setAsk(null)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+const RULE_COLS = '28px minmax(130px,1fr) minmax(120px,0.8fr) 90px minmax(160px,1.4fr) 40px'
+
+function Card({ children }: { children: ReactNode }) {
+  // No overflow-hidden: row menus must be able to hang outside the card.
+  return <div className="rounded-xl border border-line bg-surface">{children}</div>
+}
+
+function Group({ title, hint, tone, children }: { title: string; hint: string; tone?: 'danger' | 'warn'; children: ReactNode }) {
+  return (
+    <Card>
+      <div className={cx('flex flex-col gap-0.5 rounded-t-xl border-b border-line px-3.5 py-2.5', tone === 'danger' ? 'bg-danger-soft' : tone === 'warn' ? 'bg-warn-soft' : 'bg-raised')}>
+        <span className={cx('font-semibold', tone === 'danger' && 'text-danger')}>{title}</span>
+        <span className="text-[11.5px] text-ink2">{hint}</span>
+      </div>
+      {children}
+    </Card>
+  )
+}
+
+function Line({ cols, children }: { cols: string; children: ReactNode }) {
+  return (
+    <div className="grid items-center gap-3 border-t border-line px-3.5 py-2 first:border-t-0" style={{ gridTemplateColumns: cols }}>
+      {children}
+    </div>
+  )
+}
+
+function ListenLine({ l, children, complete }: { l: Listen; children?: ReactNode; complete: boolean }) {
+  return (
+    <Line cols="70px 44px minmax(0,1fr) minmax(0,1fr) auto">
+      <span className="num font-semibold">{l.port}</span>
+      <span className="text-[11.5px] text-muted">{l.proto}</span>
+      <span className="truncate">{l.container ? `docker · ${l.container}` : (l.process ?? (complete ? '— (không thuộc tiến trình nào trong server)' : '— (cần root để biết tiến trình)'))}</span>
+      <span className={cx('truncate font-mono text-[11.5px]', isPublicBind(l) ? 'text-warn' : 'text-muted')}>{bindText(l)}</span>
+      <span className="flex justify-end">{children}</span>
+    </Line>
+  )
+}

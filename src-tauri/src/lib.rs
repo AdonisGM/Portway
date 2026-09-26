@@ -3,6 +3,7 @@ mod disks;
 mod docker;
 mod error;
 mod files;
+mod firewall;
 mod keys;
 mod paths;
 mod ports;
@@ -129,6 +130,11 @@ pub fn run() {
             services::services_action,
             servers::server_set_watched_units,
             servers::server_set_unit_name,
+            firewall::firewall_state,
+            firewall::firewall_add,
+            firewall::firewall_delete,
+            firewall::firewall_enable,
+            firewall::firewall_disable,
             docker::docker_overview,
             docker::docker_stats,
             docker::docker_container,

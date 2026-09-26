@@ -16,6 +16,7 @@ import { projectsOf } from './format'
 import { ImagesView, PruneDialog } from './images'
 import { LogsDialog } from './logs-dialog'
 import { VolumesView } from './volumes'
+import { withSudo } from '../../lib/commands'
 
 const OVERVIEW_MS = 15_000
 const STATS_MS = 10_000
@@ -136,7 +137,7 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
     runNow: async (title, command, work) => {
       try {
         await work()
-        toast({ title, detail: (sudo && user !== 'root' ? 'sudo ' : '') + command })
+        toast({ title, detail: withSudo(command, sudo && user !== 'root') })
       } catch (e) {
         const err = asError(e)
         toast({ title: 'Không chạy được lệnh', detail: err.detail ?? err.code })
@@ -257,7 +258,7 @@ export function DockerScreen({ server, user }: { server: Server; user: string })
           sudo={sudo}
           onClose={() => setAsk(null)}
           onDone={() => {
-            toast({ title: 'Đã chạy lệnh', detail: (sudo && user !== 'root' ? 'sudo ' : '') + ask.command })
+            toast({ title: 'Đã chạy lệnh', detail: withSudo(ask.command, sudo && user !== 'root') })
             setAsk(null)
           }}
         />

@@ -10,6 +10,7 @@ import { copyText } from '../../lib/clipboard'
 import { hostPort, sshCommand } from '../servers/format'
 import { ConnectPrompt } from './connect-prompt'
 import { connectError, formatUptime } from './format'
+import { FilesScreen } from '../files/files-screen'
 import { Overview } from './overview'
 import { SudoBanner, SudoPrompt } from './sudo'
 
@@ -41,6 +42,8 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
           <div className="flex flex-col gap-4 transition-opacity duration-200" style={{ opacity: conn.status === 'reconnecting' ? 0.55 : 1 }}>
             {module === 'overview' ? (
               <Overview server={server} user={user} />
+            ) : module === 'files' ? (
+              <FilesScreen server={server} user={user} />
             ) : (
               <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">
                 Mục {MODULE_LABELS[module]} sẽ làm ở bước sau

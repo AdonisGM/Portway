@@ -34,7 +34,7 @@ pub enum HostKeyIssue {
     Changed { fingerprint: String, algorithm: String, line: usize },
 }
 
-struct Client {
+pub(crate) struct Client {
     host: String,
     port: u16,
     known_hosts: PathBuf,
@@ -104,13 +104,17 @@ enum SudoMode {
     Password(String),
 }
 
-struct Session {
-    handle: Handle<Client>,
-    user: String,
+pub(crate) struct Session {
+    pub(crate) handle: Handle<Client>,
+    pub(crate) user: String,
     /// Limits channels open at once. OpenSSH allows 10 per connection
     /// (MaxSessions); the overview alone reads six things in parallel.
     channels: tokio::sync::Semaphore,
     sudo: Mutex<Option<SudoMode>>,
+    /// SFTP over its own long-lived channel, opened on first use.
+    pub(crate) sftp: tokio::sync::Mutex<Option<Arc<russh_sftp::client::SftpSession>>>,
+    /// uid, groups and name maps of the session's user, read on first use.
+    pub(crate) ident: tokio::sync::Mutex<Option<Arc<crate::files::Identity>>>,
     /// Previous counters, to turn totals into CPU % and network rates.
     last: Mutex<Option<(Instant, Counters)>>,
     /// Previous CPU ticks per pid, for per-process CPU %.
@@ -118,12 +122,22 @@ struct Session {
 }
 
 impl Session {
+    pub(crate) fn is_root(&self) -> bool {
+        self.user == "root"
+    }
+
+    pub(crate) fn sudo_on(&self) -> bool {
+        self.sudo.lock().unwrap().is_some()
+    }
+
     fn new(handle: Handle<Client>, user: &str) -> Self {
         Self {
             handle,
             user: user.to_string(),
             channels: tokio::sync::Semaphore::new(CHANNELS_PER_SESSION),
             sudo: Mutex::new(None),
+            sftp: tokio::sync::Mutex::new(None),
+            ident: tokio::sync::Mutex::new(None),
             last: Mutex::new(None),
             last_procs: Mutex::new(None),
         }
@@ -148,7 +162,7 @@ fn session_key(server_id: &str, user: &str) -> String {
 }
 
 impl Sessions {
-    fn get(&self, server_id: &str, user: &str) -> AppResult<Arc<Session>> {
+    pub(crate) fn get(&self, server_id: &str, user: &str) -> AppResult<Arc<Session>> {
         let map = self.map.lock().unwrap();
         match map.get(&session_key(server_id, user)) {
             Some(s) if !s.handle.is_closed() => Ok(s.clone()),
@@ -553,7 +567,7 @@ pub fn ssh_sudo_off(sessions: tauri::State<'_, Sessions>, audit: tauri::State<'_
     Ok(())
 }
 
-pub struct ExecOutput {
+pub(crate) struct ExecOutput {
     pub stdout: String,
     pub stderr: String,
     pub code: Option<u32>,
@@ -562,7 +576,7 @@ pub struct ExecOutput {
 impl ExecOutput {
     /// Output of a command that must print something; a failure with no stdout
     /// becomes an error carrying stderr.
-    fn stdout_or_err(self) -> AppResult<String> {
+    pub(crate) fn stdout_or_err(self) -> AppResult<String> {
         if self.stdout.trim().is_empty() && self.code != Some(0) {
             return Err(AppError::detail("remote_command", self.stderr.trim()));
         }
@@ -571,12 +585,12 @@ impl ExecOutput {
 }
 
 /// Run a script in a new channel and collect its output, with the default timeout.
-async fn exec(session: &Session, command: &str) -> AppResult<ExecOutput> {
+pub(crate) async fn exec(session: &Session, command: &str) -> AppResult<ExecOutput> {
     exec_with(session, command, EXEC_TIMEOUT, false).await
 }
 
 /// Like `exec`, but through sudo when the user turned it on for this session.
-async fn exec_priv(session: &Session, command: &str, timeout: Duration) -> AppResult<ExecOutput> {
+pub(crate) async fn exec_priv(session: &Session, command: &str, timeout: Duration) -> AppResult<ExecOutput> {
     exec_with(session, command, timeout, true).await
 }
 
@@ -1196,7 +1210,7 @@ pub async fn server_ports(sessions: tauri::State<'_, Sessions>, server_id: Strin
 }
 
 /// Quote a value for a POSIX shell.
-fn shell_quote(s: &str) -> String {
+pub(crate) fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
@@ -1210,12 +1224,15 @@ pub fn open_terminal(
     server_id: String,
     user: String,
     tool: Option<String>,
+    cwd: Option<String>,
 ) -> AppResult<()> {
-    // Remote commands are fixed here; the UI only picks one by name.
-    let remote = match tool.as_deref() {
-        None => None,
-        Some("htop") => Some("command -v htop >/dev/null 2>&1 && exec htop || exec top"),
-        Some(_) => return Err(AppError::new("unknown_tool")),
+    // Remote commands are fixed here; the UI only picks one by name, or a
+    // directory to start the shell in (quoted, never run as code).
+    let remote: Option<String> = match (tool.as_deref(), cwd) {
+        (None, None) => None,
+        (Some("htop"), _) => Some("command -v htop >/dev/null 2>&1 && exec htop || exec top".into()),
+        (None, Some(dir)) => Some(format!("cd {} && exec \"$SHELL\" -l", shell_quote(&dir))),
+        (Some(_), _) => return Err(AppError::new("unknown_tool")),
     };
     let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
     let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
@@ -1231,7 +1248,7 @@ pub fn open_terminal(
     }
     args.push(shell_quote(&format!("{}@{}", account.user, server.host)));
     if let Some(cmd) = remote {
-        args.push(shell_quote(cmd));
+        args.push(shell_quote(&cmd));
     }
 
     let dir = std::env::temp_dir().join("portway");
@@ -1349,6 +1366,31 @@ mod tests {
         assert_ne!(refused.code, Some(0));
         assert!(sudo_refused(&refused.stderr), "{}", refused.stderr);
         assert!(sudo_reason(&refused.stderr).contains("not in the sudoers"));
+
+        // SFTP as root: list, create, rename, chmod, remove.
+        let listing = crate::files::list(&session, "/root").await.unwrap();
+        assert!(!listing.denied && listing.path == "/root");
+        let s = crate::files::sftp(&session).await.unwrap();
+        let dir = "/tmp/portway-sftp-test";
+        let _ = s.remove_file(format!("{dir}/b.txt")).await;
+        let _ = s.remove_dir(dir).await;
+        s.create_dir(dir).await.unwrap();
+        let f = s.create(format!("{dir}/a.txt")).await.unwrap();
+        drop(f);
+        s.rename(format!("{dir}/a.txt"), format!("{dir}/b.txt")).await.unwrap();
+        let mut attrs = russh_sftp::protocol::FileAttributes::empty();
+        attrs.permissions = Some(0o600);
+        s.set_metadata(format!("{dir}/b.txt"), attrs).await.unwrap();
+        let listing = crate::files::list(&session, dir).await.unwrap();
+        let b = listing.entries.iter().find(|e| e.name == "b.txt").expect("b.txt listed");
+        assert_eq!((b.mode, b.owner.as_deref(), b.readable, b.writable), (0o600, Some("root"), true, true));
+        s.remove_file(format!("{dir}/b.txt")).await.unwrap();
+        s.remove_dir(dir).await.unwrap();
+
+        // SFTP as deploy: /root is not listable, and says so instead of failing.
+        let denied = crate::files::list(&deploy, "/root").await.unwrap();
+        assert!(denied.denied && denied.entries.is_empty());
+        assert!(!denied.dir.readable);
 
         // A probe running as root under sudo stays out of the process list.
         let bg = deploy.clone();

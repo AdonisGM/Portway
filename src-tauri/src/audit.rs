@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const KEEP: usize = 1000;
@@ -29,9 +29,11 @@ pub struct AuditEntry {
     pub detail: Option<String>,
 }
 
+/// Cheap to clone; clones share the same log.
+#[derive(Clone)]
 pub struct AuditLog {
-    path: PathBuf,
-    entries: Mutex<Vec<AuditEntry>>,
+    path: Arc<PathBuf>,
+    entries: Arc<Mutex<Vec<AuditEntry>>>,
 }
 
 impl AuditLog {
@@ -44,7 +46,7 @@ impl AuditLog {
             let text: String = entries.iter().filter_map(|e| serde_json::to_string(e).ok()).map(|l| l + "\n").collect();
             let _ = fs::write(&path, text);
         }
-        Self { path, entries: Mutex::new(entries) }
+        Self { path: Arc::new(path), entries: Arc::new(Mutex::new(entries)) }
     }
 
     pub fn record(&self, server_id: &str, user: &str, action: &str, command: impl Into<String>, ok: bool, detail: Option<String>) {
@@ -61,7 +63,7 @@ impl AuditLog {
         if let Some(dir) = self.path.parent() {
             let _ = fs::create_dir_all(dir);
         }
-        if let (Ok(mut f), Ok(line)) = (OpenOptions::new().create(true).append(true).open(&self.path), serde_json::to_string(&entry)) {
+        if let (Ok(mut f), Ok(line)) = (OpenOptions::new().create(true).append(true).open(self.path.as_ref()), serde_json::to_string(&entry)) {
             let _ = writeln!(f, "{line}");
         }
         let mut entries = self.entries.lock().unwrap();

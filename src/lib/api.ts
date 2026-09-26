@@ -145,11 +145,58 @@ export type AuditEntry = {
   at: number
   serverId: string
   user: string
-  /** connect, reconnect, disconnect, trustHostKey, openTerminal, sudoOn, sudoOff */
+  /** connect, reconnect, disconnect, trustHostKey, openTerminal, sudoOn, sudoOff,
+   *  mkdir, touch, rename, remove, chmod, chown, download, upload */
   action: string
   command: string
   ok: boolean
   detail?: string
+}
+
+export type FileKind = 'dir' | 'file' | 'link' | 'other'
+
+export type FileEntry = {
+  name: string
+  path: string
+  kind: FileKind
+  /** What a link points to; null for a broken link or a non-link. */
+  targetKind: FileKind | null
+  linkTarget: string | null
+  size: number
+  /** Seconds since epoch. */
+  mtime: number | null
+  atime: number | null
+  /** Permission bits (0o7777). */
+  mode: number
+  uid: number | null
+  gid: number | null
+  owner: string | null
+  group: string | null
+  /** Which permission bits apply to the session's user. */
+  class: 'root' | 'owner' | 'group' | 'other'
+  readable: boolean
+  writable: boolean
+}
+
+export type Listing = { path: string; dir: FileEntry; entries: FileEntry[]; denied: boolean; user: string }
+
+export type Transfer = {
+  id: string
+  serverId: string
+  user: string
+  direction: 'up' | 'down'
+  name: string
+  from: string
+  to: string
+  /** Local file for a download, remote path for an upload. */
+  target: string
+  size: number
+  done: number
+  speed: number
+  status: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
+  error: string | null
+  startedAt: number
+  finishedAt: number | null
 }
 
 export type ConnectOptions = {
@@ -204,8 +251,21 @@ type Api = {
   disks(serverId: string, user: string): Promise<Disks>
   /** Slow on servers with large volumes (docker system df). */
   dockerDisk(serverId: string, user: string): Promise<DockerDisk>
-  /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop). */
-  openTerminal(serverId: string, user: string, tool?: 'htop'): Promise<void>
+  /** Open Terminal with ssh; `tool` runs a known remote program (e.g. htop), `cwd` starts in a directory. */
+  openTerminal(serverId: string, user: string, tool?: 'htop', cwd?: string): Promise<void>
+  sftpList(serverId: string, user: string, path: string): Promise<Listing>
+  sftpMkdir(serverId: string, user: string, dir: string, name: string): Promise<string>
+  sftpTouch(serverId: string, user: string, dir: string, name: string): Promise<string>
+  sftpRename(serverId: string, user: string, path: string, name: string): Promise<string>
+  sftpRemove(serverId: string, user: string, paths: string[]): Promise<void>
+  sftpChmod(serverId: string, user: string, paths: string[], mode: number, recursive: boolean): Promise<void>
+  sftpChown(serverId: string, user: string, paths: string[], owner: string, group: string, recursive: boolean): Promise<void>
+  download(serverName: string, serverId: string, user: string, paths: string[]): Promise<Transfer[]>
+  upload(serverName: string, serverId: string, user: string, localPaths: string[], remoteDir: string, overwrite: boolean): Promise<Transfer[]>
+  transfers(): Promise<Transfer[]>
+  cancelTransfer(id: string): Promise<void>
+  retryTransfer(id: string): Promise<void>
+  clearTransfers(): Promise<Transfer[]>
 }
 
 const tauriApi: Api = {
@@ -230,7 +290,21 @@ const tauriApi: Api = {
   ports: (serverId, user) => invoke('server_ports', { serverId, user }),
   disks: (serverId, user) => invoke('server_disks', { serverId, user }),
   dockerDisk: (serverId, user) => invoke('server_docker_disk', { serverId, user }),
-  openTerminal: (serverId, user, tool) => invoke('open_terminal', { serverId, user, tool }),
+  openTerminal: (serverId, user, tool, cwd) => invoke('open_terminal', { serverId, user, tool, cwd }),
+  sftpList: (serverId, user, path) => invoke('sftp_list', { serverId, user, path }),
+  sftpMkdir: (serverId, user, dir, name) => invoke('sftp_mkdir', { serverId, user, dir, name }),
+  sftpTouch: (serverId, user, dir, name) => invoke('sftp_touch', { serverId, user, dir, name }),
+  sftpRename: (serverId, user, path, name) => invoke('sftp_rename', { serverId, user, path, name }),
+  sftpRemove: (serverId, user, paths) => invoke('sftp_remove', { serverId, user, paths }),
+  sftpChmod: (serverId, user, paths, mode, recursive) => invoke('sftp_chmod', { serverId, user, paths, mode, recursive }),
+  sftpChown: (serverId, user, paths, owner, group, recursive) => invoke('sftp_chown', { serverId, user, paths, owner, group, recursive }),
+  download: (serverName, serverId, user, paths) => invoke('transfer_download', { serverName, serverId, user, paths }),
+  upload: (serverName, serverId, user, localPaths, remoteDir, overwrite) =>
+    invoke('transfer_upload', { serverName, serverId, user, localPaths, remoteDir, overwrite }),
+  transfers: () => invoke('transfer_list'),
+  cancelTransfer: (id) => invoke('transfer_cancel', { id }),
+  retryTransfer: (id) => invoke('transfer_retry', { id }),
+  clearTransfers: () => invoke('transfer_clear'),
 }
 
 /** Stand-in used when the UI runs in a plain browser (vite dev without Tauri):
@@ -355,6 +429,19 @@ function browserApi(): Api {
     async openTerminal() {
       fail('needs_app')
     },
+    sftpList: async () => fail('needs_app'),
+    sftpMkdir: async () => fail('needs_app'),
+    sftpTouch: async () => fail('needs_app'),
+    sftpRename: async () => fail('needs_app'),
+    sftpRemove: async () => fail('needs_app'),
+    sftpChmod: async () => fail('needs_app'),
+    sftpChown: async () => fail('needs_app'),
+    download: async () => fail('needs_app'),
+    upload: async () => fail('needs_app'),
+    transfers: async () => [],
+    cancelTransfer: async () => {},
+    retryTransfer: async () => {},
+    clearTransfers: async () => [],
   }
 }
 

@@ -12,6 +12,14 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   openTerminal: 'Mở Terminal',
   sudoOn: 'Bật sudo',
   sudoOff: 'Tắt sudo',
+  mkdir: 'Tạo thư mục',
+  touch: 'Tạo tệp',
+  rename: 'Đổi tên',
+  remove: 'Xoá',
+  chmod: 'Sửa quyền',
+  chown: 'Đổi owner',
+  download: 'Tải xuống',
+  upload: 'Tải lên',
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')

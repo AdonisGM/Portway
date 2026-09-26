@@ -1,12 +1,14 @@
 mod audit;
 mod disks;
 mod error;
+mod files;
 mod keys;
 mod paths;
 mod ports;
 mod servers;
 mod ssh;
 mod ssh_config;
+mod transfers;
 
 use tauri::Manager;
 
@@ -50,6 +52,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             set_window_controls_visible,
             servers::servers_list,
@@ -66,6 +69,19 @@ pub fn run() {
             ssh::ssh_sudo,
             ssh::ssh_sudo_off,
             audit::audit_list,
+            files::sftp_list,
+            files::sftp_mkdir,
+            files::sftp_touch,
+            files::sftp_rename,
+            files::sftp_remove,
+            files::sftp_chmod,
+            files::sftp_chown,
+            transfers::transfer_download,
+            transfers::transfer_upload,
+            transfers::transfer_list,
+            transfers::transfer_cancel,
+            transfers::transfer_retry,
+            transfers::transfer_clear,
             ssh::ssh_disconnect_all,
             ssh::ssh_forget_secret,
             ssh::server_stats,
@@ -83,6 +99,7 @@ pub fn run() {
             app.manage(store);
             app.manage(ssh::Sessions::default());
             app.manage(audit::AuditLog::load(data_dir.join("audit.jsonl")));
+            app.manage(std::sync::Arc::new(transfers::Transfers::new(app.handle().clone())));
 
             // Hidden from the first frame; the splash shows them again when it fades.
             if let Some(window) = app.get_webview_window("main") {

@@ -408,6 +408,9 @@ export type TransferEnd = { kind: 'local' } | { kind: 'remote'; serverId: string
 /** `name` renames the item at the destination; `overwrite` replaces what is there. */
 export type TransferItem = { path: string; name?: string; overwrite: boolean }
 
+/** A batch of lines from a followed log (`logtail` event). */
+export type LogBatch = { id: string; lines: string[]; dropped: number; notes: string[]; ended: boolean; error: string | null }
+
 export type ConnectOptions = {
   password?: string
   passphrase?: string
@@ -520,6 +523,8 @@ type Api = {
   localMkdir(dir: string, name: string): Promise<string>
   localTerminal(path: string): Promise<void>
   transfers(): Promise<Transfer[]>
+  logTailStart(serverId: string, user: string, path: string, lines: number, sudo: boolean): Promise<string>
+  logTailStop(id: string): Promise<void>
   cancelTransfer(id: string): Promise<void>
   retryTransfer(id: string): Promise<void>
   clearTransfers(): Promise<Transfer[]>
@@ -600,6 +605,8 @@ const tauriApi: Api = {
   localMkdir: (dir, name) => invoke('local_mkdir', { dir, name }),
   localTerminal: (path) => invoke('local_terminal', { path }),
   transfers: () => invoke('transfer_list'),
+  logTailStart: (serverId, user, path, lines, sudo) => invoke('log_tail_start', { serverId, user, path, lines, sudo }),
+  logTailStop: (id) => invoke('log_tail_stop', { id }),
   cancelTransfer: (id) => invoke('transfer_cancel', { id }),
   retryTransfer: (id) => invoke('transfer_retry', { id }),
   clearTransfers: () => invoke('transfer_clear'),
@@ -781,6 +788,8 @@ function browserApi(): Api {
     localMkdir: async () => fail('needs_app'),
     localTerminal: async () => fail('needs_app'),
     transfers: async () => [],
+    logTailStart: async () => fail('needs_app'),
+    logTailStop: async () => {},
     cancelTransfer: async () => {},
     retryTransfer: async () => {},
     clearTransfers: async () => [],

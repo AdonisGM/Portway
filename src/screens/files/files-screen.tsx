@@ -12,6 +12,7 @@ import {
   Folder,
   Lock,
   Pencil,
+  ScrollText,
   ShieldCheck,
   SquareTerminal,
   Terminal,
@@ -35,6 +36,7 @@ import { chooseDownloadDir } from '../../lib/download-dir'
 import { formatBytes } from '../server/format'
 import { FileDialog, type FileAction } from './dialogs'
 import { crumbs, fileError, fullTime, isDirLike, joinPath, matcher, modeString, octal, parentOf, q, shortTime, tagOf, typeChar } from './format'
+import { LogTail } from './log-tail'
 import { TransferQueue } from './queue'
 
 const GRID = '28px minmax(160px,1fr) 72px 104px 92px'
@@ -159,6 +161,8 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
 
   // Dialogs.
   const [action, setAction] = useState<FileAction | null>(null)
+  // A file followed with tail -F takes the place of the list until closed.
+  const [tailing, setTailing] = useState<{ path: string; sudo: boolean } | null>(null)
   const [panel, setPanel] = useState(true)
   const [more, setMore] = useState(false)
 
@@ -252,6 +256,10 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
     setAction(null)
     toast({ title: message, detail })
     void reload().then(() => name && setSelection({ path: pathRef.current, names: [name], anchor: name }))
+  }
+
+  if (tailing) {
+    return <LogTail server={server} user={user} path={tailing.path} sudo={tailing.sudo} onClose={() => setTailing(null)} />
   }
 
   if (!listing) {
@@ -470,6 +478,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                 void run(() => copyText(text).then(() => toast({ title: 'Đã sao chép', detail: text })), 'Không sao chép được')
               },
               terminal: () => one && void terminalAt(isDirLike(one) ? one.path : path),
+              follow: () => one && setTailing({ path: one.path, sudo: !isRoot && !one.readable && sudo }),
             }}
           />
         )}
@@ -741,7 +750,7 @@ function Blank({ icon: Icon, title, children }: { icon: LucideIcon; title: strin
   )
 }
 
-type Acts = Record<'rename' | 'chmod' | 'chown' | 'remove' | 'download' | 'copy' | 'terminal', () => void>
+type Acts = Record<'rename' | 'chmod' | 'chown' | 'remove' | 'download' | 'copy' | 'terminal' | 'follow', () => void>
 
 /** Right-hand panel: what this user may do with the selection, its details and the actions. */
 function Details({
@@ -869,6 +878,14 @@ function Details({
         { label: 'Sửa quyền', icon: ShieldCheck, run: act.chmod, ok: ownsAll, why: 'Chỉ owner hoặc root mới đổi được quyền', meta: 'chmod' },
         { label: 'Đổi owner', icon: Users, run: act.chown, ok: canChown, why: 'Chỉ root mới đổi được owner. Bật sudo cho phiên này.', meta: 'chown' },
         { label: 'Tải xuống', icon: Download, run: act.download, ok: isRoot || sel.every((e) => e.readable), why: 'Có mục không đọc được', meta: 'chọn nơi lưu' },
+        {
+          label: 'Theo dõi (tail -f)',
+          icon: ScrollText,
+          run: act.follow,
+          ok: !!one && !isDirLike(one) && one.kind !== 'other' && (isRoot || one.readable || sudo),
+          why: !one || isDirLike(one) ? 'Chọn một tệp' : 'Không có quyền đọc. Bật sudo cho phiên này để theo dõi.',
+          meta: one && !isRoot && !one.readable && sudo ? 'sudo' : undefined,
+        },
         { label: 'Sao chép đường dẫn', icon: Copy, run: act.copy, ok: true },
         { label: 'Mở trong Terminal', icon: SquareTerminal, run: act.terminal, ok: !!one, why: 'Chỉ áp dụng cho một mục' },
         { label: 'Xoá', icon: Trash2, run: act.remove, ok: canWrite, why: `Cần quyền ghi trên ${path}`, danger: true },

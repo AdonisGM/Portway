@@ -7,6 +7,7 @@ mod firewall;
 mod firewalld;
 mod keys;
 mod local;
+mod logtail;
 mod paths;
 mod ports;
 mod servers;
@@ -159,6 +160,8 @@ pub fn run() {
             docker::docker_volumes,
             docker::docker_volume_sizes,
             docker::docker_volume_remove,
+            logtail::log_tail_start,
+            logtail::log_tail_stop,
             settings::settings_get,
             settings::settings_set,
             settings::app_data_path,
@@ -172,6 +175,7 @@ pub fn run() {
             app.manage(store);
             app.manage(settings::SettingsStore::load(data_dir.join("settings.json")));
             app.manage(ssh::Sessions::default());
+            app.manage(std::sync::Arc::new(logtail::LogTails::default()));
             app.manage(audit::AuditLog::load(data_dir.join("audit.jsonl")));
             app.manage(std::sync::Arc::new(transfers::Transfers::new(app.handle().clone())));
             trace::init(app.handle().clone());

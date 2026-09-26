@@ -20,6 +20,7 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   chown: 'Đổi owner',
   download: 'Tải xuống',
   upload: 'Tải lên',
+  copy: 'Chép giữa server',
   dockerStart: 'Chạy container',
   dockerStop: 'Dừng container',
   dockerRestart: 'Khởi động lại container',
@@ -47,6 +48,7 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   fwEnable: 'Bật firewall',
   fwDisable: 'Tắt firewall',
   tunnelStart: 'Bật tunnel',
+  logTail: 'Theo dõi log',
   tunnelStop: 'Tắt tunnel',
 }
 

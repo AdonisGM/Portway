@@ -856,17 +856,24 @@ pub(crate) async fn exec_priv(session: &Session, command: &str, timeout: Duratio
 /// Portway's own commands can be left out of the process list.
 async fn exec_with(session: &Session, command: &str, timeout: Duration, privileged: bool) -> AppResult<ExecOutput> {
     let token = format!("@@PW{}@@", uuid::Uuid::new_v4().simple());
-    let inner = format!("env PORTWAY_PROBE=1 sh -c {}", shell_quote(&command.replace(MARK, &token)));
-    let sudo = if privileged && session.user != "root" { session.sudo.lock().unwrap().clone() } else { None };
-    let shown = if sudo.is_some() { format!("sudo {command}") } else { command.to_string() };
-    let (line, stdin) = match sudo {
-        None => (inner, None),
-        Some(SudoMode::NoPassword) => (format!("sudo -n {inner}"), None),
-        Some(SudoMode::Password(p)) => (format!("sudo -S -p '' {inner}"), Some(format!("{p}\n"))),
-    };
+    let (line, stdin, shown) = wrap_command(session, &command.replace(MARK, &token), privileged);
+    let shown = shown.replace(&token, MARK);
     let mut out = run_channel(session, &line, &shown, stdin, timeout).await?;
     out.stdout = out.stdout.replace(&token, MARK);
     Ok(out)
+}
+
+/// The line to run for `command` (through sudo when asked and turned on), the
+/// stdin to feed (the sudo password) and the command as shown to the user.
+pub(crate) fn wrap_command(session: &Session, command: &str, privileged: bool) -> (String, Option<String>, String) {
+    let inner = format!("env PORTWAY_PROBE=1 sh -c {}", shell_quote(command));
+    let sudo = if privileged && session.user != "root" { session.sudo.lock().unwrap().clone() } else { None };
+    let shown = if sudo.is_some() { format!("sudo {command}") } else { command.to_string() };
+    match sudo {
+        None => (inner, None, shown),
+        Some(SudoMode::NoPassword) => (format!("sudo -n {inner}"), None, shown),
+        Some(SudoMode::Password(p)) => (format!("sudo -S -p '' {inner}"), Some(format!("{p}\n")), shown),
+    }
 }
 
 /// Open a channel, run `line` as is, optionally feed stdin, collect the output.

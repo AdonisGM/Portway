@@ -17,6 +17,7 @@ import {
   Layers,
   LayoutDashboard,
   List,
+  Send,
   Server,
   Shield,
   X,
@@ -163,6 +164,7 @@ function ServerMenu() {
     { id: 'overview', icon: LayoutDashboard },
     { id: 'files', icon: Folder },
     { id: 'nginx', icon: Globe, hidden: !hasNginx },
+    { id: 'http', icon: Send },
     {
       id: 'docker',
       hidden: !hasDocker,

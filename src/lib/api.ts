@@ -477,6 +477,36 @@ export type TransferEnd = { kind: 'local' } | { kind: 'remote'; serverId: string
 /** `name` renames the item at the destination; `overwrite` replaces what is there. */
 export type TransferItem = { path: string; name?: string; overwrite: boolean }
 
+export type HttpPair = { name: string; value: string; enabled: boolean }
+export type HttpBody =
+  | { kind: 'none' }
+  | { kind: 'json'; text: string }
+  | { kind: 'form'; fields: HttpPair[] }
+  | { kind: 'text'; text: string; contentType: string }
+export type HttpAuth = { kind: 'none' } | { kind: 'bearer'; token: string } | { kind: 'basic'; user: string; password: string }
+export type HttpOptions = { followRedirects: boolean; insecure: boolean; timeoutSecs: number; connectTo: string; compressed: boolean }
+export type HttpRequest = { method: string; url: string; headers: HttpPair[]; body: HttpBody; auth: HttpAuth; options: HttpOptions }
+export type HttpResponse = {
+  /** 0 when curl got no answer (see error). */
+  status: number
+  reason: string
+  httpVersion: string
+  headers: [string, string][]
+  text: string | null
+  binary: string | null
+  size: number
+  truncated: boolean
+  contentType: string
+  timings: { dns: number; connect: number; tls: number; firstByte: number; total: number }
+  remote: string
+  finalUrl: string
+  redirects: number
+  error: string | null
+  command: string
+}
+export type HttpSaved = { id: string; serverId: string | null; name: string; request: HttpRequest }
+export type HttpHistoryItem = { id: string; at: number; request: HttpRequest; status: number; ms: number; error: boolean }
+
 /** A batch of lines from a followed log (`logtail` event). */
 export type LogBatch = { id: string; lines: string[]; dropped: number; notes: string[]; ended: boolean; error: string | null }
 
@@ -592,6 +622,12 @@ type Api = {
   localMkdir(dir: string, name: string): Promise<string>
   localTerminal(path: string): Promise<void>
   transfers(): Promise<Transfer[]>
+  httpSend(serverId: string, user: string, request: HttpRequest): Promise<HttpResponse>
+  httpSaved(serverId: string): Promise<HttpSaved[]>
+  httpHistory(serverId: string): Promise<HttpHistoryItem[]>
+  httpHistoryClear(serverId: string): Promise<void>
+  httpSave(saved: HttpSaved): Promise<HttpSaved>
+  httpDelete(id: string): Promise<void>
   editOpen(serverId: string, user: string, path: string, app?: string | null): Promise<Edit>
   editStop(id: string): Promise<void>
   editResolve(id: string, overwrite: boolean): Promise<void>
@@ -683,6 +719,12 @@ const tauriApi: Api = {
   localMkdir: (dir, name) => invoke('local_mkdir', { dir, name }),
   localTerminal: (path) => invoke('local_terminal', { path }),
   transfers: () => invoke('transfer_list'),
+  httpSend: (serverId, user, request) => invoke('http_send', { serverId, user, request }),
+  httpSaved: (serverId) => invoke('http_saved', { serverId }),
+  httpHistory: (serverId) => invoke('http_history', { serverId }),
+  httpHistoryClear: (serverId) => invoke('http_history_clear', { serverId }),
+  httpSave: (saved) => invoke('http_save', { saved }),
+  httpDelete: (id) => invoke('http_delete', { id }),
   editOpen: (serverId, user, path, app) => invoke('edit_open', { serverId, user, path, app: app ?? null }),
   editStop: (id) => invoke('edit_stop', { id }),
   editResolve: (id, overwrite) => invoke('edit_resolve', { id, overwrite }),
@@ -875,6 +917,12 @@ function browserApi(): Api {
     localMkdir: async () => fail('needs_app'),
     localTerminal: async () => fail('needs_app'),
     transfers: async () => [],
+    httpSend: async () => fail('needs_app'),
+    httpSaved: async () => [],
+    httpHistory: async () => [],
+    httpHistoryClear: async () => {},
+    httpSave: async () => fail('needs_app'),
+    httpDelete: async () => {},
     editOpen: async () => fail('needs_app'),
     editStop: async () => {},
     editResolve: async () => {},

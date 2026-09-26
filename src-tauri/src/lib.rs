@@ -4,6 +4,7 @@ mod docker;
 mod editing;
 mod error;
 mod files;
+mod http;
 mod firewall;
 mod firewalld;
 mod keys;
@@ -168,6 +169,12 @@ pub fn run() {
             editing::edit_reopen,
             editing::edit_list,
             editing::editor_apps,
+            http::http_send,
+            http::http_saved,
+            http::http_history,
+            http::http_history_clear,
+            http::http_save,
+            http::http_delete,
             logtail::log_tail_start,
             nginx::nginx_state,
             nginx::nginx_action,
@@ -185,6 +192,7 @@ pub fn run() {
                 .map_err(|e| format!("cannot load servers.json: {} {}", e.code, e.detail.unwrap_or_default()))?;
             app.manage(store);
             app.manage(settings::SettingsStore::load(data_dir.join("settings.json")));
+            app.manage(http::HttpStore::load(data_dir.join("http.json")));
             app.manage(ssh::Sessions::default());
             let edits = std::sync::Arc::new(editing::Edits::new(app.handle().clone()));
             edits.clean_stale();

@@ -16,6 +16,7 @@ import { ServicesScreen } from '../services/services-screen'
 import { FilesScreen } from '../files/files-screen'
 import { FirewallScreen } from '../firewall/firewall-screen'
 import { NginxScreen } from '../nginx/nginx-screen'
+import { HttpScreen } from '../http/http-screen'
 import { Overview } from './overview'
 import { SudoBanner, SudoPrompt } from './sudo'
 
@@ -42,7 +43,7 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
 
   // The header never scrolls; only the area under it does. Modules that manage
   // their own scrolling (the file browser) get exactly that area's height.
-  const fill = module === 'files' || module === 'docker' || module === 'services' || module === 'nginx'
+  const fill = module === 'files' || module === 'docker' || module === 'services' || module === 'nginx' || module === 'http'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -71,6 +72,8 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
                   <Overview server={server} user={user} />
                 ) : module === 'files' ? (
                   <FilesScreen server={server} user={user} />
+                ) : module === 'http' ? (
+                  <HttpScreen server={server} user={user} />
                 ) : module === 'nginx' ? (
                   <NginxScreen server={server} user={user} />
                 ) : module === 'docker' ? (

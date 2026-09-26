@@ -4,6 +4,7 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
   overview: 'Tổng quan',
   files: 'Tệp (SFTP)',
   nginx: 'Nginx',
+  http: 'HTTP (curl)',
   docker: 'Docker',
   services: 'Dịch vụ',
   firewall: 'Firewall',

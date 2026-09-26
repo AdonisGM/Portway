@@ -1,0 +1,28 @@
+# SSH test server: Oracle Linux 9 with systemd as PID 1 and firewalld, the
+# default firewall of the RHEL family (Oracle Linux, Rocky, Alma, RHEL).
+# Needs privileged + the host cgroup namespace (see compose.yml).
+FROM oraclelinux:9
+ENV container=docker
+
+RUN dnf -y install systemd openssh-server firewalld sudo procps-ng python3 passwd iproute \
+ && dnf clean all \
+ && useradd -m -G wheel deploy && echo 'deploy:portway' | chpasswd \
+ && useradd -m viewer && echo 'viewer:portway' | chpasswd \
+ && systemctl mask systemd-firstboot.service getty@tty1.service console-getty.service
+
+COPY sshd_portway.conf /etc/ssh/sshd_config.d/portway.conf
+COPY systemd/portway-keys.service /etc/systemd/system/portway-keys.service
+COPY systemd/bin/portway-keys /usr/local/bin/portway-keys
+COPY oracle/ /etc/
+RUN chmod +x /usr/local/bin/portway-keys \
+ && mkdir -p /srv/www && echo portway > /srv/www/index.html \
+ && systemctl enable portway-keys.service sshd.service firewalld.service portway-web.service \
+ # Sample rules in the permanent config: a port, a source-limited rich rule, a blocked address.
+ && firewall-offline-cmd --zone=public --add-port=8443/tcp \
+ && firewall-offline-cmd --zone=public --add-port=3000-3005/tcp \
+ && firewall-offline-cmd --zone=public --add-rich-rule='rule family="ipv4" source address="10.0.0.0/8" port port="5432" protocol="tcp" accept' \
+ && firewall-offline-cmd --zone=public --add-rich-rule='rule family="ipv4" source address="203.0.113.7" reject'
+
+STOPSIGNAL SIGRTMIN+3
+EXPOSE 22
+CMD ["/usr/sbin/init"]

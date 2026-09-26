@@ -1,5 +1,4 @@
 import type { FwRule, FwRuleInput, Listen } from '../../lib/api'
-import { q } from '../files/format'
 
 /** "22" / "80,443" / "6000:6010" → ranges. */
 export function ranges(ports: string): [number, number][] {
@@ -42,37 +41,29 @@ export function ruleLabel(r: FwRule) {
   return `${r.port}${r.proto ? `/${r.proto}` : ''}`
 }
 
-export const protoLabel = (r: FwRule) => (r.app ? (r.appPorts ? `app profile → ${r.appPorts}` : 'app profile') : r.proto ? r.proto : r.port ? 'tcp+udp' : '')
+/** Second line under the port: protocol, or what a UFW app profile / firewalld service opens. */
+export function protoLabel(r: FwRule) {
+  const kind = r.zone != null ? 'service' : 'app profile'
+  if (r.app) return r.appPorts ? `${kind} → ${r.appPorts.split('|').join(', ')}` : kind
+  return r.proto ? r.proto : r.port ? 'tcp+udp' : ''
+}
 
 export const ACTIONS: Record<FwRule['action'], { label: string; fg: string; bg: string }> = {
   allow: { label: 'Cho phép', fg: 'var(--success)', bg: 'var(--success-soft)' },
   limit: { label: 'Giới hạn', fg: 'var(--info)', bg: 'var(--info-soft)' },
   deny: { label: 'Chặn', fg: 'var(--danger)', bg: 'var(--danger-soft)' },
   reject: { label: 'Từ chối', fg: 'var(--warn)', bg: 'var(--warn-soft)' },
+  other: { label: 'Khác', fg: 'var(--ink2)', bg: 'var(--sunken)' },
 }
+
+export const BACKEND_LABELS = { ufw: 'UFW', firewalld: 'firewalld' } as const
 
 export const sourceLabel = (from: string) => (from === 'any' ? 'Mọi nơi' : from)
-
-/** `ufw …` words for a new rule; the Rust side builds the same list. */
-export function addWords(r: FwRuleInput): string[] {
-  const port = r.port.replace(/\s/g, '')
-  const words: string[] = [r.action]
-  if (!r.from) words.push(r.proto === 'any' ? port : `${port}/${r.proto}`)
-  else {
-    words.push('from', r.from, 'to', 'any', 'port', port)
-    if (r.proto !== 'any') words.push('proto', r.proto)
-  }
-  if (r.comment?.trim()) words.push('comment', r.comment.trim())
-  return words
-}
-
-export const ufwLine = (words: string[]) => ['ufw', ...words.map(q)].join(' ')
-export const deleteLine = (spec: string[]) => ufwLine(['delete', ...spec])
 
 /** The rule as the form edits it. */
 export function toInput(r: FwRule): FwRuleInput {
   return {
-    action: r.action === 'reject' ? 'deny' : r.action,
+    action: r.action === 'reject' || r.action === 'other' ? 'deny' : r.action,
     port: r.port ?? '',
     proto: r.proto === 'tcp' || r.proto === 'udp' ? r.proto : 'any',
     from: r.from === 'any' ? null : r.from,

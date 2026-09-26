@@ -4,6 +4,7 @@ mod docker;
 mod error;
 mod files;
 mod firewall;
+mod firewalld;
 mod keys;
 mod paths;
 mod ports;
@@ -132,10 +133,8 @@ pub fn run() {
             servers::server_set_watched_units,
             servers::server_set_unit_name,
             firewall::firewall_state,
-            firewall::firewall_add,
-            firewall::firewall_delete,
-            firewall::firewall_enable,
-            firewall::firewall_disable,
+            firewall::firewall_plan,
+            firewall::firewall_apply,
             tunnels::tunnels_list,
             tunnels::tunnel_save,
             tunnels::tunnel_delete,

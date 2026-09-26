@@ -41,6 +41,11 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   ufwReplace: 'Sửa rule firewall',
   ufwEnable: 'Bật firewall',
   ufwDisable: 'Tắt firewall',
+  fwAdd: 'Thêm rule firewall',
+  fwDelete: 'Xoá rule firewall',
+  fwReplace: 'Sửa rule firewall',
+  fwEnable: 'Bật firewall',
+  fwDisable: 'Tắt firewall',
   tunnelStart: 'Bật tunnel',
   tunnelStop: 'Tắt tunnel',
 }

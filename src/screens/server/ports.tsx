@@ -1,6 +1,6 @@
 import { AlertTriangle, Info, Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { api, type Ports, type PortWarning, type Server } from '../../lib/api'
+import { api, type FirewallState, type Ports, type PortWarning, type Server } from '../../lib/api'
 import { ErrorLine, RefreshControl, useRefreshed } from './refresh'
 import { UseSudoButton } from './sudo'
 
@@ -26,7 +26,7 @@ function describe(w: PortWarning): { severity: Severity; title: string; desc: st
     case 'dockerBypass':
       return {
         severity: 'warn',
-        title: `Cổng Docker ${w.port} không đi qua UFW`,
+        title: `Cổng Docker ${w.port} không đi qua firewall`,
         desc: `Container ${w.container} được publish bằng rule iptables của Docker, nằm trước UFW, nên cổng ${w.port} mở ra ngoài dù UFW không cho phép.`,
       }
     case 'ruleIneffective':
@@ -55,36 +55,45 @@ function Tile({ label, children, title }: { label: string; children: ReactNode; 
   )
 }
 
-function FirewallTile({ ports, server, user }: { ports: Ports; server: Server; user: string }) {
-  const fw = ports.firewall
+const POLICY: Record<string, string> = { allow: 'cho phép', reject: 'từ chối', deny: 'chặn' }
+const TOOL = { ufw: 'UFW', firewalld: 'firewalld' } as const
+
+function FirewallTile({ fw, server, user }: { fw: FirewallState | null; server: Server; user: string }) {
+  if (!fw) return <span className="pt-[3px] text-[12px] text-muted">Đang đọc…</span>
   if (fw.kind === 'needsRoot')
     return (
       <span className="flex items-center gap-1.5 pt-[3px] text-[12px] text-muted">
         <Lock size={13} strokeWidth={1.9} />
-        <span className="flex-1">Cần root để đọc rule</span>
+        <span className="flex-1">{TOOL[fw.backend]} · cần root để đọc rule</span>
         <UseSudoButton server={server} user={user} />
       </span>
     )
   if (fw.kind === 'error')
     return (
       <span className="pt-[3px] text-[12px] text-danger" title={fw.detail}>
-        Không đọc được UFW
+        Không đọc được {TOOL[fw.backend]}
       </span>
     )
-  if (fw.kind === 'notInstalled') return <span className="pt-[3px] text-[12px] text-muted">Server không dùng UFW</span>
-  if (fw.kind === 'inactive') return <span className="pt-[3px] text-[12px] text-warn">UFW đang tắt, mọi cổng đang lắng nghe đều mở ra ngoài</span>
-  const allow = fw.rules.filter((r) => r.action.startsWith('ALLOW')).length
+  if (fw.kind === 'none')
+    return <span className="pt-[3px] text-[12px] text-muted">{fw.iptables ? `Dùng iptables trực tiếp (${fw.iptables} rule)` : 'Không có UFW hay firewalld'}</span>
+  if (!fw.enabled) return <span className="pt-[3px] text-[12px] text-warn">{TOOL[fw.backend]} đang tắt, mọi cổng đang lắng nghe đều mở ra ngoài</span>
+  const allow = fw.rules.filter((r) => r.action === 'allow' || r.action === 'limit').length
   return (
     <span className="flex items-baseline gap-1.5">
       <span className="num text-[18px] font-semibold">{allow}</span>
-      <span className="text-[12px] text-ink2">rule · UFW đang bật, mặc định {fw.defaultIncoming === 'deny' ? 'chặn' : fw.defaultIncoming} kết nối vào</span>
+      <span className="text-[12px] text-ink2">
+        rule cho phép · {TOOL[fw.backend]} đang bật, mặc định {POLICY[fw.incoming] ?? fw.incoming} kết nối vào
+      </span>
     </span>
   )
 }
 
+const loadFirewall = (s: string, u: string) => api.firewallState(s, u)
+
 /** "Cổng mạng & firewall": what listens, what UFW allows, and what to worry about. */
 export function PortsCard({ server, user }: { server: Server; user: string }) {
   const { data, error, at, busy, refresh, live } = useRefreshed<Ports>(server.id, user, 'ports', loadPorts)
+  const firewall = useRefreshed<FirewallState>(server.id, user, 'firewallState', loadFirewall)
   const publicCount = data?.listening.filter((l) => l.scope === 'public').length ?? 0
   const listTitle = data?.listening
     .map((l) => `${l.port}/${l.proto} · ${hostPort(l.bind, l.port)}${l.container ? ` · ${l.container}` : l.process ? ` · ${l.process}` : ''}`)
@@ -94,7 +103,16 @@ export function PortsCard({ server, user }: { server: Server; user: string }) {
     <div className="flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start gap-2">
         <span className="flex-1 text-[15px] font-semibold">Cổng mạng & firewall</span>
-        <RefreshControl at={at} busy={busy} error={error} onRefresh={refresh} live={live} />
+        <RefreshControl
+          at={at}
+          busy={busy || firewall.busy}
+          error={error}
+          onRefresh={() => {
+            void refresh()
+            void firewall.refresh()
+          }}
+          live={live}
+        />
       </div>
       <ErrorLine error={error} />
 
@@ -107,8 +125,8 @@ export function PortsCard({ server, user }: { server: Server; user: string }) {
                 <span className="text-[12px] text-ink2">cổng · {publicCount} trên IP công khai</span>
               </span>
             </Tile>
-            <Tile label="Firewall (UFW) cho phép">
-              <FirewallTile ports={data} server={server} user={user} />
+            <Tile label="Firewall">
+              <FirewallTile fw={firewall.data} server={server} user={user} />
             </Tile>
           </div>
 

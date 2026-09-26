@@ -18,7 +18,7 @@ Script tự nạp Rust vào PATH, cài dependency khi lockfile thay đổi, báo
 
 ## Server thử
 
-Bốn server SSH chạy bằng Docker, chỉ mở trên `127.0.0.1`, dùng khoá `~/.ssh/id_ed25519.pub` của máy (đổi bằng biến `PORTWAY_TEST_PUBKEY`):
+Năm server SSH chạy bằng Docker, chỉ mở trên `127.0.0.1`, dùng khoá `~/.ssh/id_ed25519.pub` của máy (đổi bằng biến `PORTWAY_TEST_PUBKEY`):
 
 ```sh
 ./scripts/test-servers.sh up      # dựng và chạy
@@ -31,6 +31,7 @@ Bốn server SSH chạy bằng Docker, chỉ mở trên `127.0.0.1`, dùng khoá
 | Ubuntu 24.04 (`pw-ubuntu`) | 2201 | `root`, `deploy`, `viewer` bằng khoá; có Docker CLI dùng socket **thật** của máy (chỉ nên xem, đừng dừng/xoá) và UFW đang bật |
 | Debian 12 (`pw-debian`) | 2202 | `root`, `deploy`, `viewer` bằng khoá; `deploy` còn đăng nhập được bằng mật khẩu; có Docker riêng (service `dind`), `deploy` thuộc group docker, thử dừng/xoá/dọn thoải mái |
 | Debian 12 + systemd (`pw-systemd`) | 2204 | `root`, `deploy`, `viewer` bằng khoá; systemd thật với nginx, redis, một worker lỗi liên tục, timer và crontab mẫu |
+| Oracle Linux 9 + firewalld (`pw-oracle`) | 2205 | `root`, `deploy`, `viewer` bằng khoá; firewalld đang chạy với port, dải port, rich rule mẫu |
 | Alpine 3.20 (`pw-alpine`) | 2203 | `root`, `deploy`, `viewer` bằng khoá; không có Docker |
 
 Mật khẩu của `deploy` và `viewer` là `portway`. `deploy` dùng được sudo (cần mật khẩu), `viewer` không có sudo.

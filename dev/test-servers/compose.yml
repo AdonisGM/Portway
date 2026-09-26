@@ -61,6 +61,19 @@ services:
       - ${PORTWAY_TEST_PUBKEY:-${HOME}/.ssh/id_ed25519.pub}:/authorized_keys:ro
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
 
+  # Oracle Linux 9 with firewalld (RHEL family), for the firewall screen.
+  oracle:
+    build: { context: ., dockerfile: Dockerfile.oracle }
+    restart: unless-stopped
+    hostname: pw-oracle
+    privileged: true
+    cgroup: host
+    tmpfs: [/run, /run/lock, /tmp]
+    ports: ["127.0.0.1:2205:22"]
+    volumes:
+      - ${PORTWAY_TEST_PUBKEY:-${HOME}/.ssh/id_ed25519.pub}:/authorized_keys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+
   alpine:
     <<: *server
     build: { context: ., dockerfile: Dockerfile.alpine }

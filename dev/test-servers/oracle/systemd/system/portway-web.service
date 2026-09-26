@@ -1,0 +1,10 @@
+[Unit]
+Description=Sample web servers: one on every address (8080), one on loopback (5000)
+After=network.target
+
+[Service]
+WorkingDirectory=/srv/www
+ExecStart=/bin/sh -c 'python3 -m http.server 5000 --bind 127.0.0.1 & exec python3 -m http.server 8080 --bind 0.0.0.0'
+
+[Install]
+WantedBy=multi-user.target

@@ -1720,20 +1720,47 @@ mod tests {
 
         // UFW on pw-ubuntu: read the rules as added, add one, delete it by its spec.
         let fw = crate::firewall::parse_state(&exec_priv(&session, crate::firewall::STATE_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout);
-        let crate::firewall::FirewallState::Ufw { active, rules, .. } = fw else { panic!("ufw state: {fw:?}") };
-        assert!(active);
+        let crate::firewall::FirewallState::Managed { backend, enabled, rules, .. } = fw else { panic!("firewall state: {fw:?}") };
+        assert_eq!((backend, enabled), (crate::firewall::Backend::Ufw, true));
         assert!(rules.iter().any(|r| r.action == "deny" && r.from == "203.0.113.7" && r.port.is_none()));
         assert!(rules.iter().any(|r| r.port.as_deref() == Some("8443") && r.comment.as_deref() == Some("Admin panel")));
+        let ctx = crate::firewall::Ctx { backend: crate::firewall::Backend::Ufw, zone: None, enabled: true };
         let input = crate::firewall::RuleInput { action: "allow".into(), port: "7777".into(), proto: "udp".into(), from: Some("10.9.0.0/16".into()), comment: Some("live test".into()) };
-        let add = crate::firewall::add_args(&input).unwrap();
-        let line = format!("ufw {}", add.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" "));
-        assert_eq!(exec_priv(&session, &line, EXEC_TIMEOUT).await.unwrap().code, Some(0));
+        let p = crate::firewall::plan(&ctx, &crate::firewall::Op::Add { rule: input }).unwrap();
+        assert_eq!(exec_priv(&session, &p.apply[0], EXEC_TIMEOUT).await.unwrap().code, Some(0));
         let added = exec_priv(&session, "ufw show added", EXEC_TIMEOUT).await.unwrap().stdout;
-        let rule = added.lines().filter_map(|l| crate::firewall::parse_rule(l, &HashMap::new())).find(|r| r.port.as_deref() == Some("7777")).expect("rule added");
+        let rule = added.lines().filter_map(|l| crate::firewall::parse_ufw_rule(l, &HashMap::new())).find(|r| r.port.as_deref() == Some("7777")).expect("rule added");
         assert_eq!((rule.proto.as_deref(), rule.from.as_str(), rule.comment.as_deref()), (Some("udp"), "10.9.0.0/16", Some("live test")));
-        let del = format!("ufw delete {}", rule.spec.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" "));
-        assert_eq!(exec_priv(&session, &del, EXEC_TIMEOUT).await.unwrap().code, Some(0));
+        assert_eq!(exec_priv(&session, &crate::firewall::delete_line(&rule.spec), EXEC_TIMEOUT).await.unwrap().code, Some(0));
         assert!(!exec_priv(&session, "ufw show added", EXEC_TIMEOUT).await.unwrap().stdout.contains("7777"));
+
+        // firewalld on pw-oracle (Oracle Linux 9): picked as the tool, rules read,
+        // a planned change applied at runtime and permanently, then undone.
+        {
+            use crate::firewall::{parse_state, plan, Backend, Ctx, FirewallState, Op, RuleInput, STATE_SCRIPT};
+            let fp = match open(&target(2205, "root"), Credential::Key(key.clone()), None).await.unwrap() {
+                Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) => Some(fingerprint),
+                _ => None,
+            };
+            let Opened::Ready(h) = open(&target(2205, "root"), Credential::Key(key.clone()), fp).await.unwrap() else { panic!("root@pw-oracle") };
+            let ol = Session::new(h, "test", "root");
+            let state = parse_state(&exec_priv(&ol, STATE_SCRIPT, EXEC_TIMEOUT).await.unwrap().stdout);
+            let FirewallState::Managed { backend, enabled, zone, rules, family, .. } = state else { panic!("{state:?}") };
+            assert_eq!((backend, enabled, zone.as_deref(), family.as_str()), (Backend::Firewalld, true, Some("public"), "rhel"));
+            assert!(rules.iter().any(|r| r.app.as_deref() == Some("ssh") && r.app_ports.as_deref() == Some("22/tcp")));
+            assert!(rules.iter().any(|r| r.port.as_deref() == Some("5432") && r.from == "10.0.0.0/8"));
+            let ctx = Ctx { backend, zone, enabled };
+            let add = plan(&ctx, &Op::Add { rule: RuleInput { action: "allow".into(), port: "7777".into(), proto: "udp".into(), from: None, comment: None } }).unwrap();
+            for c in add.apply.iter().chain(&add.commit) {
+                assert_eq!(exec_priv(&ol, c, EXEC_TIMEOUT).await.unwrap().code, Some(0), "{c}");
+            }
+            let both = exec_priv(&ol, "firewall-cmd --zone=public --list-ports; firewall-cmd --permanent --zone=public --list-ports", EXEC_TIMEOUT).await.unwrap().stdout;
+            assert_eq!(both.matches("7777/udp").count(), 2, "{both}");
+            for c in add.rollback.iter() {
+                exec_priv(&ol, c, EXEC_TIMEOUT).await.unwrap();
+            }
+            exec_priv(&ol, "firewall-cmd --permanent --zone=public --remove-port=7777/udp", EXEC_TIMEOUT).await.unwrap();
+        }
 
         // Tunnels through pw-ubuntu. Local and SOCKS reach its web server that
         // only listens on 127.0.0.1:5000; remote brings the server back to a

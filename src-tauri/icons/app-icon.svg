@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3c40"/>
+      <stop offset="1" stop-color="#1e1f22"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="101" y="101" width="822" height="822" rx="184" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+  <svg x="252" y="205.2" width="520" height="520" viewBox="0 0 100 100" fill="#ffffff" aria-hidden="true"><g style="opacity:0.55;--tone:0.55;transform-box:fill-box;transform-origin:center"><polygon points="11.5,73.86 50,96 88.5,73.86 80.4,69.21 50,86.76 19.6,69.21"></polygon></g><g style="opacity:1;--tone:1;transform-box:fill-box;transform-origin:center"><polygon points="10,27 10,71.27 18.2,66.55 18.2,31.6"></polygon></g><g style="opacity:1;--tone:1;transform-box:fill-box;transform-origin:center"><polygon points="90,27 90,71.27 81.8,66.55 81.8,31.6"></polygon></g><defs><clipPath id="am-appicon-cube"><polygon points="50,22 74.2,36 50,50 25.8,36"></polygon></clipPath></defs><g clip-path="url(#am-appicon-cube)"><g style="opacity:0.2;--tone:0.2;transform-box:fill-box;transform-origin:center"><polygon points="50,22 72.7,35.13 62.1,41.27 50,34.27 37.9,41.27 27.3,35.13"></polygon></g><g style="opacity:1;--tone:1;transform-box:fill-box;transform-origin:center"><polygon points="50,37.73 59.1,43 50,48.27 40.9,43"></polygon></g></g><g style="opacity:1;--tone:1;transform-box:fill-box;transform-origin:center"><polygon points="25.8,37.73 48.5,50.87 48.5,77.13 25.8,64"></polygon></g><g style="opacity:1;--tone:1;transform-box:fill-box;transform-origin:center"><polygon points="74.2,37.73 51.5,50.87 51.5,77.13 74.2,64"></polygon></g></svg>
+</svg>

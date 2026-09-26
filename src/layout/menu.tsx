@@ -1,13 +1,13 @@
 import {
   Activity,
   ArrowLeftRight,
-  ArrowUpDown,
   Box,
   ChevronDown,
   ChevronRight,
   Clock,
   Database,
   Folder,
+  FolderSync,
   KeyRound,
   Layers,
   LayoutDashboard,
@@ -74,7 +74,7 @@ function TransferMenu() {
     <>
       <MenuTitle>Chuyển tệp</MenuTitle>
       <MenuItem
-        icon={ArrowUpDown}
+        icon={FolderSync}
         label="Chuyển tệp"
         count={running ? `${running} đang chạy` : undefined}
         active={nav.screen.kind === 'transfer'}

@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowUpDown, Bug, LayoutGrid, Server, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, Bug, FolderSync, LayoutGrid, Server, type LucideIcon } from 'lucide-react'
 import { useTrace } from '../app/trace'
 import { useTransfers } from '../app/transfers'
 import { useTunnels } from '../app/tunnels'
@@ -8,7 +8,7 @@ import { useNav, type RailId } from '../app/nav'
 const ITEMS: { id: RailId; label: string; icon: LucideIcon }[] = [
   { id: 'conn', label: 'Quản lý kết nối', icon: LayoutGrid },
   { id: 'server', label: 'Server đang kết nối', icon: Server },
-  { id: 'transfer', label: 'Chuyển tệp', icon: ArrowUpDown },
+  { id: 'transfer', label: 'Chuyển tệp', icon: FolderSync },
   { id: 'tunnels', label: 'Tunnel', icon: ArrowLeftRight },
 ]
 

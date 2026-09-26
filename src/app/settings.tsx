@@ -10,7 +10,10 @@ type Ctx = {
   update: (patch: Partial<Settings>) => Promise<Settings>
 }
 
-const DEFAULTS: Settings = { downloadDir: null, theme: 'dark' }
+const DEFAULTS: Settings = { downloadDir: null, askDownload: null, theme: 'dark' }
+
+/** Whether downloads ask for a folder, with older settings files read as they worked. */
+export const asksDownload = (s: Settings) => s.askDownload ?? s.downloadDir === null
 const SettingsContext = createContext<Ctx | null>(null)
 
 /** App preferences, kept in settings.json by the Rust side. */

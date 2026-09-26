@@ -12,16 +12,19 @@ function readLast(): string | null {
   }
 }
 
-/** Where to save a download: the folder set in Cài đặt, or ask, opening at
- *  the folder picked last time (or ~/Downloads). Null when the user cancels. */
+/** Where to save a download: the default folder from Cài đặt (~/Downloads
+ *  if none), or, when set to ask, the folder the user picks, opening at the
+ *  default one (or the one picked last). Null when the user cancels. */
 export async function chooseDownloadDir(count: number): Promise<string | null> {
-  const fixed = (await api.settings().catch(() => null))?.downloadDir
-  if (fixed) return fixed
+  const s = await api.settings().catch(() => null)
+  const base = s?.downloadDir ?? (await downloadDir())
+  const ask = s ? (s.askDownload ?? s.downloadDir === null) : true
+  if (!ask) return base
   const picked = await open({
     directory: true,
     canCreateDirectories: true,
     title: count === 1 ? 'Chọn nơi lưu tệp tải xuống' : `Chọn nơi lưu ${count} mục tải xuống`,
-    defaultPath: readLast() ?? (await downloadDir()),
+    defaultPath: s?.downloadDir ?? readLast() ?? base,
   })
   if (typeof picked !== 'string') return null
   try {

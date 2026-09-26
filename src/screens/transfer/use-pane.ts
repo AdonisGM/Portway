@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useConnections, type Connection } from '../../app/connections'
 import { useNav, type PaneSide, type PaneSource } from '../../app/nav'
+import { useSettings } from '../../app/settings'
 import { useToast } from '../../components/toast'
 import { api, isAppError, type AppError, type FileEntry, type Listing } from '../../lib/api'
 import { fileError, isDirLike } from '../files/format'
@@ -19,6 +20,7 @@ export function usePane(side: PaneSide) {
   const nav = useNav()
   const conns = useConnections()
   const toast = useToast()
+  const { settings } = useSettings()
   const spot = nav.panes[side]
   const src = spot.src
   const key = sourceKey(src)
@@ -135,7 +137,8 @@ export function usePane(side: PaneSide) {
     select,
     cursor,
     setCursor,
-    setSource: (next: PaneSource) => setPane(side, { src: next, path: next.kind === 'local' ? '~/Downloads' : '' }),
+    // This Mac opens at the download folder from Cài đặt.
+    setSource: (next: PaneSource) => setPane(side, { src: next, path: next.kind === 'local' ? (settings.downloadDir ?? '~/Downloads') : '' }),
   }
 }
 

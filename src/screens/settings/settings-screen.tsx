@@ -1,15 +1,18 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { isTauri } from '@tauri-apps/api/core'
-import { downloadDir } from '@tauri-apps/api/path'
+import { downloadDir, homeDir } from '@tauri-apps/api/path'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useServers } from '../../app/servers'
-import { useSettings } from '../../app/settings'
+import { asksDownload, useSettings } from '../../app/settings'
 import { useToast } from '../../components/toast'
 import { Button } from '../../components/ui/primitives'
 import { SegmentedControl } from '../../components/ui/segmented'
 import { api, isAppError, type Theme } from '../../lib/api'
+
+/** "~/Downloads" for a folder under the home folder. */
+const shownDir = (dir: string, home: string) => (home && dir.startsWith(home + '/') ? '~' + dir.slice(home.length) : dir)
 
 const errText = (e: unknown) => (isAppError(e) ? (e.code === 'not_a_dir' ? `${e.detail} không phải thư mục` : (e.detail ?? e.code)) : String(e))
 
@@ -20,11 +23,17 @@ export function SettingsScreen() {
   const toast = useToast()
   const [dataPath, setDataPath] = useState('')
   const [version, setVersion] = useState('')
+  // macOS's own Downloads folder, used while no default is chosen.
+  const [systemDownloads, setSystemDownloads] = useState('')
+  const [home, setHome] = useState('')
+  const ask = asksDownload(settings)
 
   useEffect(() => {
     if (!isTauri()) return
     void api.appDataPath().then(setDataPath).catch(() => {})
     void getVersion().then(setVersion)
+    void downloadDir().then((d) => setSystemDownloads(d.replace(/\/+$/, '')))
+    void homeDir().then((d) => setHome(d.replace(/\/+$/, '')))
   }, [])
 
   const run = async (what: () => Promise<unknown>, fail: string) => {
@@ -37,7 +46,7 @@ export function SettingsScreen() {
 
   const pickDownloadDir = () =>
     run(async () => {
-      const picked = await open({ directory: true, canCreateDirectories: true, title: 'Thư mục lưu tệp tải xuống', defaultPath: settings.downloadDir ?? (await downloadDir()) })
+      const picked = await open({ directory: true, canCreateDirectories: true, title: 'Thư mục tải về mặc định', defaultPath: settings.downloadDir ?? (await downloadDir()) })
       if (typeof picked === 'string') await update({ downloadDir: picked })
     }, 'Không lưu được thư mục')
 
@@ -70,31 +79,38 @@ export function SettingsScreen() {
       </div>
 
       <Section id="download" title="Tải xuống">
+        <Row label="Thư mục tải về mặc định" hint={shownDir(settings.downloadDir ?? systemDownloads, home) || '…'} mono>
+          <div className="flex gap-1.5">
+            <Button size="sm" disabled={!(settings.downloadDir ?? systemDownloads)} onClick={() => void revealItemInDir(settings.downloadDir ?? systemDownloads)}>
+              Mở trong Finder
+            </Button>
+            <Button size="sm" onClick={() => void pickDownloadDir()}>
+              Chọn thư mục…
+            </Button>
+            {settings.downloadDir && (
+              <Button size="sm" variant="ghost" title="Về thư mục Downloads của máy" onClick={() => void run(() => update({ downloadDir: null }), 'Không lưu được')}>
+                Dùng Downloads
+              </Button>
+            )}
+          </div>
+        </Row>
         <Row
-          label="Khi tải tệp từ server"
-          hint={settings.downloadDir ? 'Tệp được lưu thẳng vào thư mục bên dưới, không hỏi lại. Tên trùng được thêm (1), (2)…' : 'Mỗi lần tải sẽ hỏi nơi lưu, mở sẵn ở thư mục chọn lần trước.'}
+          label="Hỏi nơi lưu mỗi lần tải"
+          hint={
+            ask
+              ? 'Mỗi lần tải sẽ mở hộp chọn thư mục, mở sẵn ở thư mục mặc định.'
+              : 'Tệp được lưu thẳng vào thư mục mặc định, không hỏi. Tên trùng được thêm (1), (2)…'
+          }
         >
           <SegmentedControl
-            value={settings.downloadDir ? 'fixed' : 'ask'}
-            onChange={(v) => (v === 'ask' ? void run(() => update({ downloadDir: null }), 'Không lưu được') : void pickDownloadDir())}
+            value={ask ? 'ask' : 'direct'}
+            onChange={(v) => void run(() => update({ askDownload: v === 'ask' }), 'Không lưu được')}
             options={[
               { id: 'ask', label: 'Hỏi mỗi lần' },
-              { id: 'fixed', label: 'Luôn lưu vào một thư mục' },
+              { id: 'direct', label: 'Lưu thẳng' },
             ]}
           />
         </Row>
-        {settings.downloadDir && (
-          <Row label="Thư mục lưu" hint={settings.downloadDir} mono>
-            <div className="flex gap-1.5">
-              <Button size="sm" onClick={() => void revealItemInDir(settings.downloadDir!)}>
-                Mở trong Finder
-              </Button>
-              <Button size="sm" onClick={() => void pickDownloadDir()}>
-                Đổi thư mục…
-              </Button>
-            </div>
-          </Row>
-        )}
       </Section>
 
       <Section id="appearance" title="Giao diện">

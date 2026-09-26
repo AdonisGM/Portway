@@ -23,8 +23,11 @@ pub enum Theme {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
-    /// Save downloads here without asking; None asks every time.
+    /// Default folder for downloads; None is ~/Downloads.
     pub download_dir: Option<String>,
+    /// Ask where to save each download (opening at the default folder).
+    /// None for files from before this setting: they asked unless a folder was set.
+    pub ask_download: Option<bool>,
     pub theme: Theme,
 }
 
@@ -71,6 +74,7 @@ pub fn settings_set(app: AppHandle, store: tauri::State<'_, SettingsStore>, sett
             return Err(AppError::detail("not_a_dir", dir));
         }
     }
+    next.ask_download = Some(next.ask_download.unwrap_or(next.download_dir.is_none()));
     let saved = store.save(next)?;
     let _ = app.emit("settings", saved.clone());
     Ok(saved)
@@ -93,12 +97,12 @@ mod tests {
         let path = std::env::temp_dir().join(format!("portway-settings-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         let store = SettingsStore::load(path.clone());
-        assert_eq!(store.get(), Settings { download_dir: None, theme: Theme::Dark });
-        store.save(Settings { download_dir: Some("/tmp".into()), theme: Theme::System }).unwrap();
+        assert_eq!(store.get(), Settings { download_dir: None, ask_download: None, theme: Theme::Dark });
+        store.save(Settings { download_dir: Some("/tmp".into()), ask_download: Some(false), theme: Theme::System }).unwrap();
         assert_eq!(SettingsStore::load(path.clone()).get().theme, Theme::System);
         // Unknown or missing fields fall back to defaults.
         fs::write(&path, r#"{"theme":"light","extra":1}"#).unwrap();
-        assert_eq!(SettingsStore::load(path.clone()).get(), Settings { download_dir: None, theme: Theme::Light });
+        assert_eq!(SettingsStore::load(path.clone()).get(), Settings { download_dir: None, ask_download: None, theme: Theme::Light });
         fs::remove_file(path).ok();
     }
 }

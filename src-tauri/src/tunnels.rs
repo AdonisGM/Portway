@@ -27,7 +27,7 @@ use tokio::sync::watch;
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
 use crate::servers::ServerStore;
-use crate::ssh::{open_for_tunnel, ssh_target_args, Client, Forward, Sessions};
+use crate::ssh::{open_for_tunnel, ssh_target_args, Client, Conn, Forward, Sessions};
 use crate::trace;
 
 /// Seconds between reconnect attempts; the last one repeats.
@@ -294,7 +294,7 @@ impl Tunnels {
                 }
             },
         };
-        let handle_slot: Arc<Mutex<Option<Arc<russh::client::Handle<Client>>>>> = Arc::new(Mutex::new(None));
+        let handle_slot: Arc<Mutex<Option<Arc<Conn>>>> = Arc::new(Mutex::new(None));
         let accept = listener.map(|l| {
             let slot = handle_slot.clone();
             let stats = stats.clone();
@@ -454,7 +454,7 @@ async fn sleep_or_stop(stop: &mut watch::Receiver<bool>, secs: u64) -> bool {
     }
 }
 
-async fn accept_loop(listener: TcpListener, spec: Spec, slot: Arc<Mutex<Option<Arc<russh::client::Handle<Client>>>>>, stats: Arc<Stats>) {
+async fn accept_loop(listener: TcpListener, spec: Spec, slot: Arc<Mutex<Option<Arc<Conn>>>>, stats: Arc<Stats>) {
     loop {
         let (sock, peer) = match listener.accept().await {
             Ok(x) => x,

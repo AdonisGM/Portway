@@ -8,7 +8,7 @@ import { Button, Chip, cx, TONES } from '../../components/ui/primitives'
 import { MODULE_LABELS } from '../../layout/meta'
 import { isAppError, api, type Server } from '../../lib/api'
 import { copyText } from '../../lib/clipboard'
-import { hostPort, sshCommand } from '../servers/format'
+import { hostPort, jumpSpec, sshCommand } from '../servers/format'
 import { ConnectPrompt } from './connect-prompt'
 import { connectError, formatUptime } from './format'
 import { DockerScreen } from '../docker/docker-screen'
@@ -91,10 +91,10 @@ export function ServerScreen({ serverId, user, module }: { serverId: string; use
 }
 
 function ServerHeader({ server, user, conn }: { server: Server; user: string; conn: Connection | undefined }) {
-  const { setPinned } = useServers()
+  const { setPinned, byId } = useServers()
   const toast = useToast()
   const account = server.accounts.find((a) => a.user === user)
-  const command = sshCommand(server.host, server.port, account)
+  const command = sshCommand(server.host, server.port, account, jumpSpec(server, byId))
   const status =
     conn?.status === 'connected'
       ? { label: 'Đã kết nối', tone: TONES.success }
@@ -110,6 +110,7 @@ function ServerHeader({ server, user, conn }: { server: Server; user: string; co
 
   const line = [
     `${user}@${hostPort(server.host, server.port)}`,
+    server.jump && `qua ${byId(server.jump.serverId)?.name ?? '?'}`,
     server.os ?? 'chưa rõ hệ điều hành',
     conn?.status === 'connected' && `chạy ${formatUptime(conn.info.uptimeSecs + (Date.now() - conn.since) / 1000)}`,
   ]

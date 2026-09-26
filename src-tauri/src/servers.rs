@@ -28,6 +28,14 @@ pub struct Account {
     pub auth: Auth,
 }
 
+/// Another saved server (and account) to go through, like OpenSSH ProxyJump.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JumpRef {
+    pub server_id: String,
+    pub user: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Server {
@@ -43,6 +51,9 @@ pub struct Server {
     pub note: String,
     /// The first account is the default one.
     pub accounts: Vec<Account>,
+    /// Reach this server through another one (a bastion); None connects directly.
+    #[serde(default)]
+    pub jump: Option<JumpRef>,
     /// Detected on connect, e.g. "Ubuntu 24.04"; None until then.
     #[serde(default)]
     pub os: Option<String>,
@@ -74,6 +85,8 @@ pub struct ServerInput {
     #[serde(default)]
     pub note: String,
     pub accounts: Vec<Account>,
+    #[serde(default)]
+    pub jump: Option<JumpRef>,
     #[serde(default)]
     pub pinned: Option<bool>,
 }
@@ -134,6 +147,7 @@ impl ServerStore {
                 existing.tags = input.tags;
                 existing.note = input.note;
                 existing.accounts = input.accounts;
+                existing.jump = input.jump;
                 if let Some(p) = input.pinned {
                     existing.pinned = p;
                 }
@@ -152,6 +166,7 @@ impl ServerStore {
                     tags: input.tags,
                     note: input.note,
                     accounts: input.accounts,
+                    jump: input.jump,
                     os: None,
                     pinned: input.pinned.unwrap_or(false),
                     created_at: now,
@@ -237,17 +252,23 @@ impl ServerStore {
         let found = file.servers.len();
         let (mut added, mut skipped) = (Vec::new(), Vec::new());
         let now = now_ms();
+        // Jumps point at ids from the other machine; follow them to the new ids.
+        let mut ids = std::collections::HashMap::new();
         for mut s in file.servers {
             if s.accounts.is_empty() || s.host.trim().is_empty() || servers.iter().any(|x| x.name.eq_ignore_ascii_case(&s.name)) {
                 skipped.push(s.name);
                 continue;
             }
-            s.id = uuid::Uuid::new_v4().to_string();
+            let new_id = uuid::Uuid::new_v4().to_string();
+            ids.insert(std::mem::replace(&mut s.id, new_id), s.id.clone());
             s.created_at = now;
             s.updated_at = now;
-            servers.push(s.clone());
             added.push(s);
         }
+        for s in &mut added {
+            s.jump = s.jump.take().and_then(|j| ids.get(&j.server_id).map(|id| JumpRef { server_id: id.clone(), user: j.user }));
+        }
+        servers.extend(added.iter().cloned());
         if !added.is_empty() {
             self.persist(&servers)?;
         }
@@ -263,6 +284,7 @@ impl ServerStore {
         let fallback_user = std::env::var("USER").unwrap_or_else(|_| "root".into());
         let (mut added, mut skipped) = (Vec::new(), Vec::new());
         let now = now_ms();
+        let mut jumps = Vec::new();
 
         for h in hosts {
             let user = h.user.clone().unwrap_or_else(|| fallback_user.clone());
@@ -289,13 +311,34 @@ impl ServerStore {
                 tags: Vec::new(),
                 note: String::new(),
                 accounts: vec![Account { user, auth }],
+                jump: None,
                 os: None,
                 pinned: false,
                 created_at: now,
                 updated_at: now,
             };
+            if let Some(j) = h.proxy_jump {
+                jumps.push((server.id.clone(), j));
+            }
             servers.push(server.clone());
             added.push(server);
+        }
+        // ProxyJump names another Host: link it once every host is in.
+        for (id, spec) in jumps {
+            let (user, rest) = spec.split_once('@').map(|(u, r)| (Some(u.to_string()), r)).unwrap_or((None, spec.as_str()));
+            let (host, port) = match rest.rsplit_once(':') {
+                Some((h, p)) if p.parse::<u16>().is_ok() => (h, p.parse::<u16>().ok()),
+                _ => (rest, None),
+            };
+            let via = servers.iter().find(|s| {
+                s.id != id && (s.name.eq_ignore_ascii_case(host) || (s.host.eq_ignore_ascii_case(host) && port.is_none_or(|p| p == s.port)))
+            });
+            let Some(via) = via else { continue };
+            let Some(account) = via.accounts.iter().find(|a| user.as_deref().is_none_or(|u| a.user == u)) else { continue };
+            let jump = JumpRef { server_id: via.id.clone(), user: account.user.clone() };
+            for s in servers.iter_mut().chain(added.iter_mut()).filter(|s| s.id == id) {
+                s.jump = Some(jump.clone());
+            }
         }
         if !added.is_empty() {
             self.persist(&servers)?;
@@ -352,6 +395,25 @@ fn validate(input: &ServerInput, servers: &[Server]) -> AppResult<()> {
     }
     if input.accounts.is_empty() {
         return Err(AppError::field("no_account", "accounts"));
+    }
+    if let Some(j) = &input.jump {
+        let via = servers.iter().find(|s| s.id == j.server_id).ok_or_else(|| AppError::field("jump_missing", "jump"))?;
+        if !via.accounts.iter().any(|a| a.user == j.user) {
+            return Err(AppError::field("jump_missing", "jump"));
+        }
+        // A chain that comes back to this server would never connect.
+        let mut seen = vec![j.server_id.clone()];
+        let mut next = via.jump.clone();
+        while let Some(n) = next {
+            if seen.contains(&n.server_id) {
+                break;
+            }
+            seen.push(n.server_id.clone());
+            next = servers.iter().find(|s| s.id == n.server_id).and_then(|s| s.jump.clone());
+        }
+        if input.id.as_ref().is_some_and(|id| seen.contains(id)) {
+            return Err(AppError::field("jump_loop", "jump"));
+        }
     }
     for (i, a) in input.accounts.iter().enumerate() {
         if input.accounts[..i].iter().any(|b| b.user == a.user) {
@@ -444,6 +506,7 @@ mod tests {
             tags: vec![" docker ".into(), "Docker".into(), "".into()],
             note: String::new(),
             accounts: vec![Account { user: " root ".into(), auth: Auth::Key { path: "~/.ssh/id_ed25519".into() } }],
+            jump: None,
             pinned: None,
         }
     }
@@ -484,6 +547,7 @@ mod tests {
             port: 22,
             user: Some("root".into()),
             identity_file: Some("~/.ssh/id_ed25519".into()),
+            proxy_jump: None,
         };
         let report = store
             .import(vec![host("web-01", "1.1.1.1"), host("web-alias", "10.0.0.1"), host("new", "10.0.0.9")])
@@ -492,6 +556,19 @@ mod tests {
         assert_eq!(report.skipped, ["web-01", "web-alias"]);
         assert_eq!(report.added.len(), 1);
         assert_eq!(store.list().len(), 2);
+        fs::remove_file(&store.path).ok();
+    }
+
+    #[test]
+    fn import_links_proxy_jump() {
+        let store = temp_store("import-jump");
+        let bastion = store.save(input("bastion", "1.1.1.1")).unwrap();
+        let app = ConfigHost { alias: "app".into(), host_name: "10.0.0.5".into(), port: 22, user: Some("dev".into()), identity_file: None, proxy_jump: Some("root@bastion".into()) };
+        let lost = ConfigHost { proxy_jump: Some("nowhere".into()), alias: "lost".into(), host_name: "10.0.0.6".into(), ..app.clone() };
+        let r = store.import(vec![app, lost]).unwrap();
+        assert_eq!(r.added[0].jump, Some(JumpRef { server_id: bastion.id.clone(), user: "root".into() }));
+        assert_eq!(r.added[1].jump, None);
+        assert_eq!(store.list()[1].jump, r.added[0].jump);
         fs::remove_file(&store.path).ok();
     }
 
@@ -510,6 +587,32 @@ mod tests {
         assert_eq!(b.list().len(), 2);
         assert_eq!(b.import_file(&a.path.with_extension("missing")).err().map(|e| e.code), Some("io"));
         for p in [&a.path, &b.path, &file] {
+            fs::remove_file(p).ok();
+        }
+    }
+
+    #[test]
+    fn jump_must_exist_and_not_loop() {
+        let store = temp_store("jump");
+        let a = store.save(input("bastion", "1.1.1.1")).unwrap();
+        let mut b = input("app", "10.0.0.5");
+        b.jump = Some(JumpRef { server_id: a.id.clone(), user: "nobody".into() });
+        assert_eq!(store.save(b.clone()).unwrap_err().code, "jump_missing");
+        b.jump = Some(JumpRef { server_id: a.id.clone(), user: "root".into() });
+        let b = store.save(b).unwrap();
+        // bastion through app would come back to bastion.
+        let mut back = input("bastion", "1.1.1.1");
+        back.id = Some(a.id.clone());
+        back.jump = Some(JumpRef { server_id: b.id.clone(), user: "root".into() });
+        assert_eq!(store.save(back).unwrap_err().code, "jump_loop");
+        // Export and import keep the link, pointing at the new ids.
+        let file = store.path.with_extension("jump.json");
+        store.export(&file).unwrap();
+        let other = temp_store("jump-b");
+        let r = other.import_file(&file).unwrap();
+        let (na, nb) = (&r.added[0], &r.added[1]);
+        assert_eq!(nb.jump.as_ref().map(|j| j.server_id.clone()), Some(na.id.clone()));
+        for p in [&store.path, &other.path, &file] {
             fs::remove_file(p).ok();
         }
     }

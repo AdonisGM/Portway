@@ -20,7 +20,12 @@ type Form = {
   accounts: FormAccount[]
   tagText: string
   note: string
+  /** `serverId|user` of the jump host, '' for a direct connection. */
+  jump: string
 }
+
+/** Select value for "no jump host" (the select treats '' as nothing chosen). */
+const DIRECT = 'direct'
 
 const encodeAuth = (a: Auth) => (a.kind === 'password' ? 'password' : `key:${a.path}`)
 const decodeAuth = (v: string): Auth => (v === 'password' ? { kind: 'password' } : { kind: 'key', path: v.slice(4) })
@@ -34,6 +39,7 @@ function toForm(s: Server): Form {
     accounts: s.accounts.map((a) => ({ user: a.user, auth: encodeAuth(a.auth) })),
     tagText: s.tags.join(', '),
     note: s.note,
+    jump: s.jump ? `${s.jump.serverId}|${s.jump.user}` : '',
   }
 }
 
@@ -47,10 +53,11 @@ function toInput(f: Form, id?: string): ServerInput {
     accounts: f.accounts.map((a): Account => ({ user: a.user, auth: decodeAuth(a.auth) })),
     tags: parseTags(f.tagText),
     note: f.note,
+    jump: f.jump ? { serverId: f.jump.slice(0, f.jump.indexOf('|')), user: f.jump.slice(f.jump.indexOf('|') + 1) } : null,
   }
 }
 
-type Errors = Partial<Record<'name' | 'host' | 'port' | 'accounts' | 'form', string>>
+type Errors = Partial<Record<'name' | 'host' | 'port' | 'accounts' | 'jump' | 'form', string>>
 
 /** Add or edit a server. `server` null means adding. Only changes the local list;
  *  nothing runs on the server. */
@@ -63,7 +70,7 @@ export function ServerEditor({
   onClose: () => void
   onConnect: (server: Server, user: string) => void
 }) {
-  const { keys, save, remove } = useServers()
+  const { servers, keys, save, remove, byId } = useServers()
   const nav = useNav()
   const toast = useToast()
   const defaultAuth = keys[0] ? `key:${keys[0].path}` : 'password'
@@ -71,7 +78,7 @@ export function ServerEditor({
   const [initial] = useState<Form>(() =>
     server
       ? toForm(server)
-      : { name: '', group: '', host: '', port: '22', accounts: [{ user: 'root', auth: defaultAuth }], tagText: '', note: '' },
+      : { name: '', group: '', host: '', port: '22', accounts: [{ user: 'root', auth: defaultAuth }], tagText: '', note: '', jump: '' },
   )
   const [form, setForm] = useState<Form>(initial)
   const [errors, setErrors] = useState<Errors>({})
@@ -120,7 +127,7 @@ export function ServerEditor({
       return saved
     } catch (e) {
       if (isAppError(e)) {
-        const field = (['name', 'host', 'port', 'accounts'] as const).find((f) => f === e.field) ?? 'form'
+        const field = (['name', 'host', 'port', 'accounts', 'jump'] as const).find((f) => f === e.field) ?? 'form'
         setErrors({ [field]: errorMessage(e) })
       } else {
         setErrors({ form: String(e) })
@@ -160,6 +167,16 @@ export function ServerEditor({
   }
 
   const firstAccount = form.accounts.find((a) => a.user.trim())
+
+  // Any other saved server and account can be the jump host.
+  const jumpOptions: Option[] = [
+    { value: DIRECT, label: 'Không, kết nối thẳng' },
+    ...servers
+      .filter((s) => s.id !== server?.id)
+      .flatMap((s) => s.accounts.map((a) => ({ value: `${s.id}|${a.user}`, label: `${a.user}@${s.name}` }))),
+  ]
+  const jumpServer = form.jump ? byId(form.jump.slice(0, form.jump.indexOf('|'))) : undefined
+  const jumpSpec = jumpServer && `${form.jump.slice(form.jump.indexOf('|') + 1)}@${jumpServer.host}${jumpServer.port !== 22 ? `:${jumpServer.port}` : ''}`
 
   return (
     <>
@@ -211,6 +228,18 @@ export function ServerEditor({
             <TextInput value={form.port} onChange={(v) => set('port', v.replace(/\D/g, '').slice(0, 5))} numeric invalid={!!errors.port} />
           </Field>
         </div>
+
+        <Field
+          label="Kết nối qua (jump host)"
+          error={errors.jump}
+          help={
+            form.jump
+              ? `Portway mở SSH tới ${jumpServer?.name ?? '?'} trước rồi đi tiếp tới host ở trên, như ssh -J. Host có thể là IP nội bộ chỉ jump host thấy được.`
+              : 'Dùng khi server nằm sau bastion, không mở SSH ra ngoài.'
+          }
+        >
+          <SelectField value={form.jump || DIRECT} onChange={(v) => set('jump', v === DIRECT ? '' : v)} options={jumpOptions} />
+        </Field>
 
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline">
@@ -266,7 +295,7 @@ export function ServerEditor({
         <div className="flex flex-col gap-1">
           <span className="text-[11px] text-muted">Lệnh SSH tương ứng</span>
           <span className="rounded-md bg-sunken px-2 py-1.5 font-mono text-[11.5px] leading-normal break-all text-ink2 select-text">
-            {sshCommand(form.host.trim(), Number(form.port), firstAccount && { user: firstAccount.user.trim(), auth: decodeAuth(firstAccount.auth) })}
+            {sshCommand(form.host.trim(), Number(form.port), firstAccount && { user: firstAccount.user.trim(), auth: decodeAuth(firstAccount.auth) }, jumpSpec)}
           </span>
         </div>
 

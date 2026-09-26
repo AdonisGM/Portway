@@ -1,4 +1,4 @@
-import type { Account, AppError, Auth } from '../../lib/api'
+import type { Account, AppError, Auth, Server } from '../../lib/api'
 
 /** Group shown for servers that were saved without one. */
 export const NO_GROUP = 'Chưa phân nhóm'
@@ -11,13 +11,21 @@ export const authLabel = (auth: Auth) => (auth.kind === 'password' ? 'Mật kh�
 
 export const hostPort = (host: string, port: number) => (port !== 22 ? `${host}:${port}` : host)
 
-/** The equivalent `ssh` command line for an account, shown in the editor. */
-export function sshCommand(host: string, port: number, account: Account | undefined) {
+/** The equivalent `ssh` command line for an account, shown in the editor.
+ *  `jump` is the jump host as `user@host[:port]`. */
+export function sshCommand(host: string, port: number, account: Account | undefined, jump?: string) {
   const parts = ['ssh']
   if (port && port !== 22) parts.push(`-p ${port}`)
   if (account?.auth.kind === 'key') parts.push(`-i ${account.auth.path}`)
+  if (jump) parts.push(`-J ${jump}`)
   parts.push(`${account?.user || '…'}@${host}`)
   return parts.join(' ')
+}
+
+/** `user@host[:port]` of a server's jump host, as `ssh -J` takes it. */
+export function jumpSpec(server: Server, byId: (id: string) => Server | undefined) {
+  const via = server.jump ? byId(server.jump.serverId) : undefined
+  return via && `${server.jump!.user}@${hostPort(via.host, via.port)}`
 }
 
 export const parseTags = (text: string) =>
@@ -47,6 +55,10 @@ export function errorMessage(e: AppError): string {
       return 'Server này không còn trong danh sách'
     case 'no_ssh_config':
       return 'Không tìm thấy ~/.ssh/config'
+    case 'jump_missing':
+      return 'Jump host này không còn trong danh sách hoặc không có user đó'
+    case 'jump_loop':
+      return 'Chuỗi jump host vòng lại chính server này'
     default:
       return e.detail ? `Lỗi: ${e.detail}` : 'Có lỗi xảy ra'
   }

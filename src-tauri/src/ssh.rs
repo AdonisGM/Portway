@@ -138,6 +138,8 @@ enum SudoMode {
 
 pub(crate) struct Session {
     pub(crate) handle: Handle<Client>,
+    /// Connection(s) through the jump host; dropping them drops this one.
+    _via: Option<Box<Conn>>,
     pub(crate) server_id: String,
     pub(crate) user: String,
     /// Limits channels open at once. OpenSSH allows 10 per connection
@@ -163,9 +165,10 @@ impl Session {
         self.sudo.lock().unwrap().is_some()
     }
 
-    fn new(handle: Handle<Client>, server_id: &str, user: &str) -> Self {
+    fn new(conn: Conn, server_id: &str, user: &str) -> Self {
         Self {
-            handle,
+            handle: conn.handle,
+            _via: conn.via,
             server_id: server_id.to_string(),
             user: user.to_string(),
             channels: tokio::sync::Semaphore::new(CHANNELS_PER_SESSION),
@@ -236,7 +239,35 @@ pub struct Target {
     pub port: u16,
     pub user: String,
     pub known_hosts: PathBuf,
+    /// Reach the host through this connection first (ProxyJump).
+    pub via: Option<Box<Hop>>,
 }
+
+/// A jump host on the way: where it is and how to log in, resolved up front
+/// so the whole path can be reopened after a drop.
+#[derive(Clone)]
+pub struct Hop {
+    pub target: Target,
+    pub credential: Credential,
+    /// "deploy@bastion", for messages.
+    pub name: String,
+}
+
+/// An open connection, with the jump connections it runs through.
+pub(crate) struct Conn {
+    pub(crate) handle: Handle<Client>,
+    via: Option<Box<Conn>>,
+}
+
+impl std::ops::Deref for Conn {
+    type Target = Handle<Client>;
+    fn deref(&self) -> &Handle<Client> {
+        &self.handle
+    }
+}
+
+/// Jumps deeper than this are a mistake, not a network.
+const MAX_HOPS: u8 = 3;
 
 #[derive(Clone)]
 pub enum Credential {
@@ -245,7 +276,7 @@ pub enum Credential {
 }
 
 enum Opened {
-    Ready(Handle<Client>),
+    Ready(Conn),
     HostKey(HostKeyIssue),
     /// The server refused the credential.
     Rejected,
@@ -273,7 +304,24 @@ async fn open_with(target: &Target, credential: Credential, trust: Option<String
         ..Default::default()
     });
 
-    let connecting = client::connect(config, (target.host.as_str(), target.port), handler);
+    // Through a jump host: open it (and its own jumps) first, then run SSH
+    // over a direct-tcpip channel to the target, like `ssh -J`.
+    let via = match &target.via {
+        None => None,
+        Some(hop) => Some(Box::new(open_hop(hop, target).await?)),
+    };
+    let connecting = async {
+        match &via {
+            None => client::connect(config, (target.host.as_str(), target.port), handler).await,
+            Some(jump) => {
+                let channel = jump
+                    .handle
+                    .channel_open_direct_tcpip(target.host.as_str(), target.port as u32, "127.0.0.1", 0)
+                    .await?;
+                client::connect_stream(config, channel.into_stream(), handler).await
+            }
+        }
+    };
     let mut handle = match tokio::time::timeout(CONNECT_TIMEOUT, connecting).await {
         Err(_) => {
             return Err(AppError::detail(
@@ -284,6 +332,12 @@ async fn open_with(target: &Target, credential: Credential, trust: Option<String
         Ok(Err(e)) => {
             if let Some(issue) = issue.lock().unwrap().take() {
                 return Ok(Opened::HostKey(issue));
+            }
+            if let (Some(hop), russh::Error::ChannelOpenFailure(reason)) = (&target.via, &e) {
+                return Err(AppError::detail(
+                    "jump_forward",
+                    format!("{} không mở được kết nối tới {}:{} ({reason:?})", hop.name, target.host, target.port),
+                ));
             }
             return Err(map_connect_error(e, &target.host, target.port));
         }
@@ -307,57 +361,94 @@ async fn open_with(target: &Target, credential: Credential, trust: Option<String
         let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
         return Ok(Opened::Rejected);
     }
-    Ok(Opened::Ready(handle))
+    Ok(Opened::Ready(Conn { handle, via }))
 }
 
-/// A connection of its own for a tunnel, without asking anything: it reuses
-/// the credential of a session opened in this run, else the key (with a
-/// passphrase from the Keychain) or the password saved in the Keychain. The
-/// host key must already be trusted.
+/// Open a jump host quietly. Anything it would need to ask (a host key, a
+/// password) is an error naming it: connect to it directly once to settle that.
+async fn open_hop(hop: &Hop, target: &Target) -> AppResult<Conn> {
+    let opened = Box::pin(open_with(&hop.target, hop.credential.clone(), None, None)).await;
+    match opened {
+        Ok(Opened::Ready(c)) => Ok(c),
+        Ok(Opened::HostKey(_)) => Err(AppError::detail("jump_host_key", &hop.name)),
+        Ok(Opened::Rejected) => Err(AppError::detail("jump_failed", format!("{}: Permission denied", hop.name))),
+        // A jump deeper in the chain already named itself.
+        Err(e) if e.code.starts_with("jump_") => Err(e),
+        Err(e) => Err(AppError::detail(
+            "jump_failed",
+            format!("{} (trên đường tới {}): {}", hop.name, target.host, error_text(&e)),
+        )),
+    }
+}
+
+/// Where a saved account is and how to log in, without asking anything: the
+/// credential of a session opened in this run, else the key (with a
+/// passphrase from the Keychain) or the password saved in the Keychain.
+fn quiet_login(store: &ServerStore, sessions: &Sessions, server_id: &str, user: &str, depth: u8) -> AppResult<(Target, Credential)> {
+    if let Some(s) = sessions.saved.lock().unwrap().get(&session_key(server_id, user)).cloned() {
+        return Ok((s.target, s.credential));
+    }
+    let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
+    let account = server.accounts.iter().find(|a| a.user == user).cloned().ok_or_else(|| AppError::new("no_account"))?;
+    let credential = match &account.auth {
+        Auth::Key { path } => {
+            let file = expand_tilde(path);
+            if !file.is_file() {
+                return Err(AppError::detail("key_missing", path));
+            }
+            let stored = keychain(&passphrase_account(path)).and_then(|e| e.get_password().ok());
+            match keys::load_secret_key(&file, stored.as_deref()) {
+                Ok(k) => Credential::Key(Arc::new(k)),
+                Err(keys::Error::KeyIsEncrypted) => return Err(AppError::detail("needs_secret", "passphrase")),
+                Err(e) => return Err(AppError::detail("key_unreadable", e)),
+            }
+        }
+        Auth::Password => match keychain(&password_account(server_id, user)).and_then(|e| e.get_password().ok()) {
+            Some(p) => Credential::Password(p),
+            None => return Err(AppError::detail("needs_secret", "password")),
+        },
+    };
+    let via = jump_hop(store, sessions, &server, depth)?;
+    Ok((Target { host: server.host.clone(), port: server.port, user: user.to_string(), known_hosts: ssh_dir().join("known_hosts"), via }, credential))
+}
+
+/// The jump host a server is reached through, with its login resolved.
+fn jump_hop(store: &ServerStore, sessions: &Sessions, server: &crate::servers::Server, depth: u8) -> AppResult<Option<Box<Hop>>> {
+    let Some(j) = &server.jump else { return Ok(None) };
+    if depth >= MAX_HOPS {
+        return Err(AppError::detail("jump_loop", &server.name));
+    }
+    let via_name = store.list().into_iter().find(|s| s.id == j.server_id).map(|s| s.name).unwrap_or_else(|| j.server_id.clone());
+    let name = format!("{}@{via_name}", j.user);
+    match quiet_login(store, sessions, &j.server_id, &j.user, depth + 1) {
+        Ok((target, credential)) => Ok(Some(Box::new(Hop { target, credential, name }))),
+        Err(e) if e.code.starts_with("jump_") => Err(e),
+        Err(e) if e.code == "needs_secret" => Err(AppError::detail("jump_needs_secret", name)),
+        Err(e) => Err(AppError::detail("jump_failed", format!("{name}: {}", error_text(&e)))),
+    }
+}
+
+/// A connection of its own for a tunnel, without asking anything (see
+/// `quiet_login`). The host keys must already be trusted.
 pub(crate) async fn open_for_tunnel(
     store: &ServerStore,
     sessions: &Sessions,
     server_id: &str,
     user: &str,
     forward: Option<Forward>,
-) -> AppResult<Handle<Client>> {
-    let saved = sessions.saved.lock().unwrap().get(&session_key(server_id, user)).cloned();
-    let (target, credential) = match saved {
-        Some(s) => (s.target, s.credential),
-        None => {
-            let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
-            let account = server.accounts.iter().find(|a| a.user == user).cloned().ok_or_else(|| AppError::new("no_account"))?;
-            let credential = match &account.auth {
-                Auth::Key { path } => {
-                    let file = expand_tilde(path);
-                    if !file.is_file() {
-                        return Err(AppError::detail("key_missing", path));
-                    }
-                    let stored = keychain(&passphrase_account(path)).and_then(|e| e.get_password().ok());
-                    match keys::load_secret_key(&file, stored.as_deref()) {
-                        Ok(k) => Credential::Key(Arc::new(k)),
-                        Err(keys::Error::KeyIsEncrypted) => return Err(AppError::detail("needs_secret", "passphrase")),
-                        Err(e) => return Err(AppError::detail("key_unreadable", e)),
-                    }
-                }
-                Auth::Password => match keychain(&password_account(server_id, user)).and_then(|e| e.get_password().ok()) {
-                    Some(p) => Credential::Password(p),
-                    None => return Err(AppError::detail("needs_secret", "password")),
-                },
-            };
-            (Target { host: server.host.clone(), port: server.port, user: user.to_string(), known_hosts: ssh_dir().join("known_hosts") }, credential)
-        }
-    };
+) -> AppResult<Conn> {
+    let (target, credential) = quiet_login(store, sessions, server_id, user, 0)?;
     match open_with(&target, credential, None, forward).await? {
-        Opened::Ready(h) => Ok(h),
+        Opened::Ready(c) => Ok(c),
         Opened::HostKey(_) => Err(AppError::new("host_key_unknown")),
         Opened::Rejected => Err(AppError::detail("auth_failed", format!("{user}@{}: Permission denied", target.host))),
     }
 }
 
-/// `ssh` options for an account, as shown in tunnel commands: port and key.
+/// `ssh` options for an account, as shown in tunnel commands: port, key, jump.
 pub(crate) fn ssh_target_args(store: &ServerStore, server_id: &str, user: &str) -> Option<String> {
-    let server = store.list().into_iter().find(|s| s.id == server_id)?;
+    let servers = store.list();
+    let server = servers.iter().find(|s| s.id == server_id)?;
     let account = server.accounts.iter().find(|a| a.user == user)?;
     let mut parts = Vec::new();
     if server.port != 22 {
@@ -366,8 +457,39 @@ pub(crate) fn ssh_target_args(store: &ServerStore, server_id: &str, user: &str) 
     if let Auth::Key { path } = &account.auth {
         parts.push(format!("-i {path}"));
     }
+    if let Some(j) = &server.jump {
+        if let Some(via) = servers.iter().find(|s| s.id == j.server_id) {
+            parts.push(format!("-J {}@{}{}", j.user, via.host, if via.port == 22 { String::new() } else { format!(":{}", via.port) }));
+        }
+    }
     parts.push(format!("{user}@{}", server.host));
     Some(parts.join(" "))
+}
+
+/// Arguments after `ssh` that reach an account from Terminal, shell-quoted.
+/// A jump host becomes a ProxyCommand running ssh with that account's own key
+/// (`-J` would not pass it on).
+fn terminal_args(store: &ServerStore, server_id: &str, user: &str, depth: u8) -> AppResult<Vec<String>> {
+    let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
+    let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
+    let mut args = Vec::new();
+    if server.port != 22 {
+        args.push(format!("-p {}", server.port));
+    }
+    if let Auth::Key { path } = &account.auth {
+        args.push(format!("-i {}", shell_quote(&expand_tilde(path).to_string_lossy())));
+    }
+    if let Some(j) = &server.jump {
+        if depth >= MAX_HOPS {
+            return Err(AppError::detail("jump_loop", &server.name));
+        }
+        let mut inner = vec!["ssh".to_string()];
+        inner.extend(terminal_args(store, &j.server_id, &j.user, depth + 1)?);
+        inner.insert(1, "-W %h:%p".into());
+        args.push(format!("-o {}", shell_quote(&format!("ProxyCommand={}", inner.join(" ")))));
+    }
+    args.push(shell_quote(&format!("{}@{}", account.user, server.host)));
+    Ok(args)
 }
 
 /// The ssh command line for an account, as shown to the user (not shell-quoted).
@@ -378,6 +500,17 @@ fn display_ssh_command(target: &Target, key_path: Option<&str>) -> String {
     }
     if let Some(k) = key_path {
         parts.push(format!("-i {k}"));
+    }
+    // Outermost jump first, as `ssh -J a,b` expects.
+    let mut hops = Vec::new();
+    let mut next = target.via.as_deref();
+    while let Some(h) = next {
+        let t = &h.target;
+        hops.insert(0, if t.port == 22 { format!("{}@{}", t.user, t.host) } else { format!("{}@{}:{}", t.user, t.host, t.port) });
+        next = t.via.as_deref();
+    }
+    if !hops.is_empty() {
+        parts.push(format!("-J {}", hops.join(",")));
     }
     parts.push(format!("{}@{}", target.user, target.host));
     parts.join(" ")
@@ -461,7 +594,8 @@ pub async fn ssh_connect(
         (None, Some(p)) => Credential::Password(p.clone()),
         (None, None) => unreachable!("either a key or a password is set above"),
     };
-    let target = Target { host: server.host.clone(), port: server.port, user: user.clone(), known_hosts: ssh_dir().join("known_hosts") };
+    let via = jump_hop(&store, &sessions, &server, 0)?;
+    let target = Target { host: server.host.clone(), port: server.port, user: user.clone(), known_hosts: ssh_dir().join("known_hosts"), via };
     let command = display_ssh_command(&target, key_path.as_deref());
     let trusted = trust_fingerprint.clone();
     let span = trace::start(&server_id, &user, trace::Kind::Connect, Some("Kết nối SSH".into()), &command, false);
@@ -1456,19 +1590,11 @@ pub fn open_terminal(
         (Some("unitLog"), _, Some(unit)) => Some(format!("{sudo}journalctl -u {} -n 200 -f", shell_quote(&unit))),
         (Some(_), _, _) => return Err(AppError::new("unknown_tool")),
     };
-    let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
-    let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
     let mut args = vec!["ssh".to_string()];
     if remote.is_some() {
         args.push("-t".into());
     }
-    if server.port != 22 {
-        args.push(format!("-p {}", server.port));
-    }
-    if let Auth::Key { path } = &account.auth {
-        args.push(format!("-i {}", shell_quote(&expand_tilde(path).to_string_lossy())));
-    }
-    args.push(shell_quote(&format!("{}@{}", account.user, server.host)));
+    args.extend(terminal_args(&store, &server_id, &user, 0)?);
     if let Some(cmd) = remote {
         args.push(shell_quote(&cmd));
     }
@@ -1504,7 +1630,7 @@ mod tests {
         let known_hosts = std::env::temp_dir().join(format!("portway-known-hosts-{}", std::process::id()));
         let _ = std::fs::remove_file(&known_hosts);
         let key = Arc::new(keys::load_secret_key(expand_tilde("~/.ssh/id_ed25519"), None).expect("~/.ssh/id_ed25519"));
-        let target = |port: u16, user: &str| Target { host: "127.0.0.1".into(), port, user: user.into(), known_hosts: known_hosts.clone() };
+        let target = |port: u16, user: &str| Target { host: "127.0.0.1".into(), port, user: user.into(), known_hosts: known_hosts.clone(), via: None };
 
         // Unknown host key: refused and reported with its fingerprint.
         let fp = match open(&target(2201, "root"), Credential::Key(key.clone()), None).await.unwrap() {

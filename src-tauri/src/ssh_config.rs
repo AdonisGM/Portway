@@ -1,5 +1,5 @@
 //! Minimal reader for OpenSSH client config (~/.ssh/config), enough to import hosts:
-//! `Host` blocks with HostName, User, Port and IdentityFile, `Include`, and the
+//! `Host` blocks with HostName, User, Port, IdentityFile and ProxyJump, `Include`, and the
 //! values of a `Host *` block as defaults. Wildcard hosts and `Match` blocks are
 //! not imported since they do not name a single server.
 
@@ -17,6 +17,8 @@ pub struct ConfigHost {
     pub user: Option<String>,
     /// As written in the config, e.g. `~/.ssh/id_ed25519`.
     pub identity_file: Option<String>,
+    /// First hop of ProxyJump as written, e.g. `deploy@bastion`; `none` is dropped.
+    pub proxy_jump: Option<String>,
 }
 
 #[derive(Default, Clone)]
@@ -26,6 +28,7 @@ struct Block {
     port: Option<u16>,
     user: Option<String>,
     identity_file: Option<String>,
+    proxy_jump: Option<String>,
 }
 
 impl Block {
@@ -40,6 +43,7 @@ impl Block {
                 }
             }
             "identityfile" => { self.identity_file.get_or_insert_with(|| value.to_string()); }
+            "proxyjump" => { self.proxy_jump.get_or_insert_with(|| value.split(',').next().unwrap_or("").trim().to_string()); }
             _ => {}
         }
     }
@@ -67,6 +71,7 @@ pub fn parse(text: &str, base: &Path) -> Vec<ConfigHost> {
         if let Some(v) = &b.user { acc.set("user", v) }
         if let Some(v) = b.port { acc.set("port", &v.to_string()) }
         if let Some(v) = &b.identity_file { acc.set("identityfile", v) }
+        if let Some(v) = &b.proxy_jump { acc.set("proxyjump", v) }
         acc
     });
 
@@ -82,6 +87,7 @@ pub fn parse(text: &str, base: &Path) -> Vec<ConfigHost> {
                 port: block.port.or(defaults.port).unwrap_or(22),
                 user: block.user.clone().or_else(|| defaults.user.clone()),
                 identity_file: block.identity_file.clone().or_else(|| defaults.identity_file.clone()),
+                proxy_jump: block.proxy_jump.clone().or_else(|| defaults.proxy_jump.clone()).filter(|j| !j.is_empty() && j != "none"),
             });
         }
     }
@@ -251,5 +257,12 @@ Host *
         assert!(glob_match("*.conf", "a.conf"));
         assert!(glob_match("h?st", "host"));
         assert!(!glob_match("*.conf", "a.txt"));
+    }
+
+    #[test]
+    fn reads_first_proxy_jump() {
+        let hosts = parse("Host app\n  HostName 10.0.0.5\n  ProxyJump deploy@bastion:2222,other\nHost direct\n  ProxyJump none\n", Path::new("/nonexistent"));
+        assert_eq!(hosts[0].proxy_jump.as_deref(), Some("deploy@bastion:2222"));
+        assert_eq!(hosts[1].proxy_jump, None);
     }
 }

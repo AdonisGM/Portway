@@ -15,6 +15,8 @@ export type Server = {
   note: string
   /** The first account is the default one. */
   accounts: Account[]
+  /** Reach this server through another saved one (ProxyJump); null connects directly. */
+  jump?: JumpRef | null
   /** Detected on connect, e.g. "Ubuntu 24.04"; null until then. */
   os: string | null
   pinned: boolean
@@ -26,6 +28,8 @@ export type Server = {
   updatedAt: number
 }
 
+export type JumpRef = { serverId: string; user: string }
+
 export type ServerInput = {
   id?: string
   name: string
@@ -35,6 +39,7 @@ export type ServerInput = {
   tags: string[]
   note: string
   accounts: Account[]
+  jump?: JumpRef | null
   pinned?: boolean
 }
 

@@ -16,7 +16,7 @@ const ROW_COLS = 'minmax(80px,1fr) minmax(100px,1.2fr) 90px minmax(90px,1.3fr) 1
 /** "Server của bạn": every saved connection, searchable and filterable by group.
  *  A row opens the editor; the user button lists the accounts to connect with. */
 export function ServerListScreen() {
-  const { servers, loading, loadError, importSshConfig } = useServers()
+  const { servers, loading, loadError, importSshConfig, byId } = useServers()
   const nav = useNav()
   const toast = useToast()
   const [q, setQ] = useState('')
@@ -119,7 +119,14 @@ export function ServerListScreen() {
                     <OsBadge os={s.os} />
                     <span className="truncate font-semibold">{s.name}</span>
                   </span>
-                  <span className="truncate font-mono text-[11.5px] text-ink2">{hostPort(s.host, s.port)}</span>
+                  <span className="flex min-w-0 items-baseline gap-1.5">
+                    <span className="truncate font-mono text-[11.5px] text-ink2">{hostPort(s.host, s.port)}</span>
+                    {s.jump && (
+                      <span title={`Kết nối qua ${s.jump.user}@${byId(s.jump.serverId)?.name ?? '?'}`} className="flex-none truncate text-[11px] text-muted">
+                        qua {byId(s.jump.serverId)?.name ?? '?'}
+                      </span>
+                    )}
+                  </span>
                   <span className="min-w-0">
                     <button
                       type="button"

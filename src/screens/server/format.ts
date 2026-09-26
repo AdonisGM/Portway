@@ -56,6 +56,22 @@ export function connectError(e: AppError, host: string, port: number): { title: 
       return { title: 'Mất kết nối', message: 'Phiên SSH tới server đã đóng.' }
     case 'cancelled':
       return { title: 'Chưa kết nối', message: 'Bạn đã huỷ lúc đang kết nối.' }
+    case 'jump_needs_secret':
+      return {
+        title: `Chưa có mật khẩu cho jump host ${e.detail ?? ''}`,
+        message: 'Kết nối thẳng tới jump host một lần và chọn lưu mật khẩu (hoặc passphrase) vào Keychain, rồi thử lại.',
+      }
+    case 'jump_host_key':
+      return {
+        title: `Chưa tin khoá máy chủ của jump host ${e.detail ?? ''}`,
+        message: 'Kết nối thẳng tới jump host một lần để xác nhận khoá máy chủ, rồi thử lại.',
+      }
+    case 'jump_forward':
+      return { title, message: `${e.detail ?? ''}. Kiểm tra host, cổng có đúng như jump host nhìn thấy không, và sshd trên jump host có cho AllowTcpForwarding không.` }
+    case 'jump_failed':
+      return { title: 'Không vào được jump host', message: e.detail ?? 'Lỗi khi kết nối tới jump host.' }
+    case 'jump_loop':
+      return { title: 'Chuỗi jump host quá dài hoặc vòng lại', message: `Kiểm tra mục "Kết nối qua" của ${e.detail ?? 'các server'}.` }
     case 'needs_app':
       return { title: 'Chỉ chạy trong app Portway', message: 'Kết nối SSH cần phần Rust của app, không chạy khi mở giao diện bằng trình duyệt.' }
     default:

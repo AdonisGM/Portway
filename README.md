@@ -178,8 +178,6 @@ Trên Windows, bộ cài NSIS (cài cho người dùng hiện tại, không cầ
 .\scripts\build-windows.ps1
 ```
 
-Workflow `.github/workflows/windows.yml` chạy kiểm tra kiểu, kiểm tra i18n, test Rust và đóng gói trên máy Windows của GitHub Actions, rồi lưu bộ cài thành artifact. Workflow cần secret `ADONISGM_NPM_TOKEN` chứa token đọc của registry `npm.nmtung.dev`.
-
 ### Kiểm tra bản Windows từ macOS
 
 Phần Rust có thể được biên dịch cho Windows ngay trên máy Mac để phát hiện lỗi sớm:

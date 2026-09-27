@@ -52,6 +52,11 @@ export const auditActions = (): Record<string, string> => ({
   fwDisable: t('Tắt firewall'),
   tunnelStart: t('Bật tunnel'),
   logTail: t('Theo dõi log'),
+  editUpload: t('Lưu tệp sửa trên máy'),
+  nginxTest: t('Kiểm tra cấu hình nginx'),
+  nginxReload: t('Reload nginx'),
+  nginxEnable: t('Bật site nginx'),
+  nginxDisable: t('Tắt site nginx'),
   tunnelStop: t('Tắt tunnel'),
 })
 

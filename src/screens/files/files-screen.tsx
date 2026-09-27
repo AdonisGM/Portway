@@ -376,7 +376,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                 {selNames.length > 0 && <span className="text-ink2">{t('Đã chọn {n}/{total}', { n: selNames.length, total: order.length })}</span>}
               </span>
               <span className="flex justify-end">
-                <SortButton label={t('Kích thước')} k="size" sort={sort} setSort={setSort} />
+                <SortButton label={t('Kích thước')} k="size" sort={sort} setSort={setSort} end />
               </span>
               <SortButton label={t('Sửa lần cuối')} k="mtime" sort={sort} setSort={setSort} />
               <span>{t('Quyền')}</span>
@@ -782,19 +782,25 @@ function Tag({ text, colors, large }: { text: string; colors: [string, string]; 
   )
 }
 
-function SortButton({ label, k, sort, setSort }: { label: string; k: SortKey; sort: Sort; setSort: (s: Sort) => void }) {
+/** `end`: the column is right-aligned, so the arrow goes first and the label
+ *  lines up with the values under it. */
+function SortButton({ label, k, sort, setSort, end }: { label: string; k: SortKey; sort: Sort; setSort: (s: Sort) => void; end?: boolean }) {
   const on = sort.key === k
   const Icon = on && sort.dir === -1 ? ArrowDown : ArrowUp
+  const arrow = (
+    <span className="flex" style={{ opacity: on ? 1 : 0 }}>
+      <Icon size={11} strokeWidth={1.8} />
+    </span>
+  )
   return (
     <button
       type="button"
       onClick={() => setSort({ key: k, dir: on ? (sort.dir === 1 ? -1 : 1) : k === 'name' ? 1 : -1 })}
       className={cx('inline-flex cursor-pointer items-center gap-[3px] text-[11px]', on ? 'text-ink' : 'text-muted')}
     >
+      {end && arrow}
       {label}
-      <span className="flex" style={{ opacity: on ? 1 : 0 }}>
-        <Icon size={11} strokeWidth={1.8} />
-      </span>
+      {!end && arrow}
     </button>
   )
 }

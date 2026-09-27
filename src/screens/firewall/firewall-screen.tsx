@@ -551,9 +551,13 @@ function Line({ cols, children }: { cols: string; children: ReactNode }) {
   )
 }
 
+/** One template for every group of listening ports, with a fixed last column
+ *  (a chip, two buttons or nothing), so the columns line up across groups. */
+const LISTEN_COLS = '70px 44px minmax(0,1fr) minmax(0,1fr) 200px'
+
 function ListenLine({ l, children, complete }: { l: Listen; children?: ReactNode; complete: boolean }) {
   return (
-    <Line cols="70px 44px minmax(0,1fr) minmax(0,1fr) auto">
+    <Line cols={LISTEN_COLS}>
       <span className="num font-semibold">{l.port}</span>
       <span className="text-[11.5px] text-muted">{l.proto}</span>
       <span className="truncate">{l.container ? `docker · ${l.container}` : (l.process ?? (complete ? t('— (không thuộc tiến trình nào trong server)') : t('— (cần root để biết tiến trình)')))}</span>

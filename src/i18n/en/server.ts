@@ -1,6 +1,11 @@
 import { plural, type Dict } from '..'
 
 const en: Dict = {
+  'Lưu tệp sửa trên máy': 'Save a file edited on this Mac',
+  'Kiểm tra cấu hình nginx': 'Test nginx configuration',
+  'Bật site nginx': 'Enable nginx site',
+  'Tắt site nginx': 'Disable nginx site',
+  'Reload nginx': 'Reload nginx',
   // format.ts (server)
   '{n} ngày': (v) => plural(v.n, 'day'),
   '{n} giờ': (v) => plural(v.n, 'hour'),

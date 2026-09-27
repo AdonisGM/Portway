@@ -641,7 +641,7 @@ function Timing({ res }: { res: HttpResponse }) {
         const left = (offset / total) * 100
         offset += v
         return (
-          <div key={label} className="grid items-center gap-3" style={{ gridTemplateColumns: '220px minmax(0,1fr) 72px' }}>
+          <div key={label} className="grid items-center gap-3" style={{ gridTemplateColumns: '260px minmax(0,1fr) 72px' }}>
             <span className="text-[12px] text-ink2">{label}</span>
             <span className="relative h-2.5 rounded-sm bg-sunken">
               <span className="absolute top-0 h-full rounded-sm" style={{ left: `${left}%`, width: `${Math.max((v / total) * 100, v > 0 ? 0.6 : 0)}%`, background: color }} />
@@ -650,7 +650,7 @@ function Timing({ res }: { res: HttpResponse }) {
           </div>
         )
       })}
-      <div className="grid gap-3 border-t border-line pt-2" style={{ gridTemplateColumns: '220px minmax(0,1fr) 72px' }}>
+      <div className="grid gap-3 border-t border-line pt-2" style={{ gridTemplateColumns: '260px minmax(0,1fr) 72px' }}>
         <span className="text-[12px] font-semibold">{t('Tổng')}</span>
         <span />
         <span className="num text-right text-[12px] font-semibold">{ms(tm.total)}</span>

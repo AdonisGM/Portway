@@ -2,11 +2,12 @@
 
 # Portway
 
-**Ứng dụng quản lý server Linux qua SSH dành cho macOS**
+**Ứng dụng quản lý server Linux qua SSH dành cho macOS và Windows**
 
 Kết nối, duyệt tệp, truyền dữ liệu, mở tunnel và quản trị dịch vụ trên nhiều server trong một cửa sổ duy nhất.
 
 ![macOS](https://img.shields.io/badge/macOS-11%2B-111315?logo=apple&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-10%2B-0078D4?logo=windows&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Rust](https://img.shields.io/badge/Rust-stable-B7410E?logo=rust&logoColor=white)
@@ -32,7 +33,7 @@ Kết nối, duyệt tệp, truyền dữ liệu, mở tunnel và quản trị d
 
 Portway là ứng dụng desktop giúp quản trị các server Linux thông qua SSH mà không cần cài thêm agent nào trên server. Mọi thao tác đều được thực hiện bằng các lệnh chuẩn (`sftp`, `systemctl`, `docker`, `nginx`, `ufw`, `firewall-cmd`, `curl`…), và mỗi lệnh được ghi lại trong nhật ký để người dùng có thể kiểm tra lại Portway đã làm gì trên server.
 
-Ứng dụng được xây dựng bằng Tauri 2: phần giao diện viết bằng React, phần kết nối SSH, SFTP và tunnel viết bằng Rust (thư viện `russh`). Hiện tại Portway chỉ hỗ trợ macOS. Giao diện có hai ngôn ngữ, tiếng Việt và tiếng Anh.
+Ứng dụng được xây dựng bằng Tauri 2: phần giao diện viết bằng React, phần kết nối SSH, SFTP và tunnel viết bằng Rust (thư viện `russh`). Portway chạy trên macOS và Windows. Giao diện có hai ngôn ngữ, tiếng Việt và tiếng Anh.
 
 ## Tính năng
 
@@ -93,9 +94,9 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 
 ## Bảo mật và dữ liệu
 
-- Mật khẩu đăng nhập, passphrase của khoá, mật khẩu SOCKS và bí mật trong request HTTP đều được lưu trong **Keychain của macOS**.
+- Mật khẩu đăng nhập, passphrase của khoá, mật khẩu SOCKS và bí mật trong request HTTP đều được lưu trong kho bí mật của hệ điều hành: **Keychain** trên macOS, **Credential Manager** trên Windows. Credential Manager giới hạn mỗi mục khoảng 1.280 ký tự, nên giá trị dài hơn được Portway tự chia thành nhiều mục.
 - Mật khẩu `sudo` được truyền qua stdin (`sudo -S`), không xuất hiện trong dòng lệnh hay trong nhật ký.
-- Cấu hình được lưu tại `~/Library/Application Support/com.portway.app/`:
+- Cấu hình được lưu tại `~/Library/Application Support/com.portway.app/` trên macOS và `%APPDATA%\com.portway.app\` trên Windows:
 
   | Tệp | Nội dung |
   |---|---|
@@ -110,6 +111,7 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 ## Yêu cầu hệ thống
 
 - macOS 11 (Big Sur) trở lên, chạy trên Apple Silicon hoặc Intel.
+- Windows 10 (bản 1809 trở lên) hoặc Windows 11, 64-bit. Cần WebView2 (có sẵn trên Windows 11; bộ cài tự tải về nếu máy chưa có). Tính năng mở Terminal dùng OpenSSH Client có sẵn của Windows.
 - Server đích: Linux có OpenSSH. Các tính năng quản trị dựa trên công cụ sẵn có của server như `systemd`, `docker`, `nginx`, `ufw` hoặc `firewalld`.
 
 ## Phát triển
@@ -118,7 +120,8 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 
 - Node.js 24 trở lên và pnpm
 - Rust stable (cài bằng `rustup`)
-- Xcode Command Line Tools: `xcode-select --install`
+- macOS: Xcode Command Line Tools (`xcode-select --install`)
+- Windows: Visual Studio Build Tools với gói "Desktop development with C++", và [NASM](https://www.nasm.us) (thư viện mã hoá của `russh` cần khi biên dịch)
 - Quyền truy cập registry riêng `https://npm.nmtung.dev` cho gói `@adonisgm/logo` (đã khai báo trong `.npmrc`)
 
 ### Chạy ứng dụng
@@ -127,7 +130,7 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 ./scripts/dev.sh
 ```
 
-Script tự nạp Rust vào `PATH`, cài lại dependency khi lockfile thay đổi, báo lỗi nếu cổng 1420 đang bị chiếm, sau đó chạy `pnpm tauri dev`.
+Script tự nạp Rust vào `PATH`, cài lại dependency khi lockfile thay đổi, báo lỗi nếu cổng 1420 đang bị chiếm, sau đó chạy `pnpm tauri dev`. Trên Windows, chạy trực tiếp `pnpm install` rồi `pnpm tauri dev`.
 
 ### Kiểm tra
 
@@ -168,6 +171,37 @@ Tệp `dev/test-servers/ssh_config` có sẵn các khối `Host` tương ứng �
 ```
 
 Kết quả (`Portway.app` và tệp `.dmg`) được đặt trong `release/<version>/`, với version lấy từ `src-tauri/tauri.conf.json`. Thư mục `release/` không được đưa vào git.
+
+Trên Windows, bộ cài NSIS (cài cho người dùng hiện tại, không cần quyền quản trị) được tạo bằng:
+
+```powershell
+.\scripts\build-windows.ps1
+```
+
+Workflow `.github/workflows/windows.yml` chạy kiểm tra kiểu, kiểm tra i18n, test Rust và đóng gói trên máy Windows của GitHub Actions, rồi lưu bộ cài thành artifact. Workflow cần secret `ADONISGM_NPM_TOKEN` chứa token đọc của registry `npm.nmtung.dev`.
+
+### Kiểm tra bản Windows từ macOS
+
+Phần Rust có thể được biên dịch cho Windows ngay trên máy Mac để phát hiện lỗi sớm:
+
+```sh
+brew install mingw-w64 nasm
+rustup target add x86_64-pc-windows-gnu
+cd src-tauri && cargo check --target x86_64-pc-windows-gnu --lib --tests
+```
+
+## Khác biệt giữa macOS và Windows
+
+| | macOS | Windows |
+|---|---|---|
+| Lưu bí mật | Keychain | Credential Manager |
+| Thanh tiêu đề | Vẽ bằng HTML, giữ ba nút của macOS | Thanh tiêu đề gốc của Windows |
+| Mở Terminal | Terminal.app | Cửa sổ console (Windows Terminal trên Windows 11) chạy `ssh.exe` hoặc PowerShell |
+| Ứng dụng sửa tệp mặc định | Trình soạn văn bản mặc định của macOS | Notepad; có thể chọn VS Code, Notepad++… hoặc bất kỳ tệp `.exe` nào |
+| Đường dẫn trong khung "Máy này" | `/Users/…` | `/c/Users/…`, thư mục gốc `/` liệt kê các ổ đĩa |
+| Tìm ứng dụng tạo kết nối qua tunnel | `lsof` | Bảng kết nối TCP của Windows |
+
+Khi tải tệp từ server về Windows, những tên Linux cho phép nhưng Windows không cho (chứa `\ : * ? " < > |`, kết thúc bằng dấu chấm, hoặc trùng tên thiết bị như `CON`) được bỏ qua và tính vào số mục bị bỏ qua.
 
 ## Quy ước của dự án
 

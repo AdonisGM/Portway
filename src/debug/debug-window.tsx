@@ -7,6 +7,7 @@ import { SearchInput } from '../components/ui/search-input'
 import type { TraceEntry, TraceKind } from '../lib/api'
 import { locale, t } from '../i18n'
 import { useLang } from '../i18n/use-lang'
+import { isWindows } from '../lib/platform'
 
 /** The separate "Nhật ký gỡ lỗi" window (opened from the rail). */
 export function DebugWindow() {
@@ -16,15 +17,18 @@ export function DebugWindow() {
     <ServersProvider>
       <TraceProvider>
         <div className="flex h-full flex-col overflow-hidden bg-bg text-[12.5px] text-ink">
-          <header data-tauri-drag-region className="flex h-[38px] flex-none items-center gap-3.5 border-b border-line bg-rail pr-3.5 pl-[84px]">
-            <span data-tauri-drag-region className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em]">
-              AdonisGM <span data-tauri-drag-region className="font-normal text-muted">|</span> Portway
-            </span>
-            <span data-tauri-drag-region className="truncate text-[12px] text-muted">
-              {t('Nhật ký gỡ lỗi')}
-            </span>
-            <span data-tauri-drag-region className="flex-1 self-stretch" />
-          </header>
+          {/* Windows keeps its native title bar, which already says this. */}
+          {!isWindows && (
+            <header data-tauri-drag-region className="flex h-[38px] flex-none items-center gap-3.5 border-b border-line bg-rail pr-3.5 pl-[84px]">
+              <span data-tauri-drag-region className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em]">
+                AdonisGM <span data-tauri-drag-region className="font-normal text-muted">|</span> Portway
+              </span>
+              <span data-tauri-drag-region className="truncate text-[12px] text-muted">
+                {t('Nhật ký gỡ lỗi')}
+              </span>
+              <span data-tauri-drag-region className="flex-1 self-stretch" />
+            </header>
+          )}
           <div className="flex min-h-0 flex-1">
             <Filters />
             <div className="relative min-w-0 flex-1">

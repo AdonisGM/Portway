@@ -1,0 +1,56 @@
+# Builds and tests Portway on Windows: type check, i18n check, Rust tests,
+# then the NSIS installer, kept as an artifact of the run.
+#
+# Needs the repository secret ADONISGM_NPM_TOKEN: a read token for the private
+# registry npm.nmtung.dev (the @adonisgm/logo package).
+name: Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # aws-lc-sys (russh's crypto) assembles with NASM on Windows.
+      - uses: ilammy/setup-nasm@v1
+
+      - name: Registry token
+        shell: bash
+        run: echo "//npm.nmtung.dev/:_authToken=${{ secrets.ADONISGM_NPM_TOKEN }}" >> .npmrc
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec tsc --noEmit -p .
+
+      - run: pnpm i18n:check
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Installer
+        run: pnpm tauri build --bundles nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portway-windows
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

@@ -14,13 +14,15 @@ import { SegmentedControl } from '../../components/ui/segmented'
 import { api, isAppError, type Theme } from '../../lib/api'
 import { pickApp } from '../../lib/pick-app'
 import { t } from '../../i18n'
+import { isWindows } from '../../lib/platform'
 
 /** Select value for "no app chosen" (the select treats '' as nothing chosen). */
 const DEFAULT_EDITOR = 'default'
 const PICK = 'pick'
 
 /** "~/Downloads" for a folder under the home folder. */
-const shownDir = (dir: string, home: string) => (home && dir.startsWith(home + '/') ? '~' + dir.slice(home.length) : dir)
+/** "~/Downloads" for a folder under the home folder ("~\\Downloads" on Windows). */
+const shownDir = (dir: string, home: string) => (home && (dir.startsWith(home + '/') || (isWindows && dir.startsWith(home + '\\'))) ? '~' + dir.slice(home.length) : dir)
 
 const errText = (e: unknown) =>
   isAppError(e)
@@ -49,8 +51,8 @@ export function SettingsScreen() {
     if (!isTauri()) return
     void api.appDataPath().then(setDataPath).catch(() => {})
     void getVersion().then(setVersion)
-    void downloadDir().then((d) => setSystemDownloads(d.replace(/\/+$/, '')))
-    void homeDir().then((d) => setHome(d.replace(/\/+$/, '')))
+    void downloadDir().then((d) => setSystemDownloads(d.replace(/[\\/]+$/, '')))
+    void homeDir().then((d) => setHome(d.replace(/[\\/]+$/, '')))
   }, [])
 
   const run = async (what: () => Promise<unknown>, fail: string) => {

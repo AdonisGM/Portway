@@ -86,22 +86,22 @@ fn socks_account(id: &str) -> String {
 
 /// The SOCKS password of a tunnel, from the Keychain.
 fn socks_password(id: &str) -> Option<String> {
-    crate::ssh::keychain(&socks_account(id))?.get_password().ok()
+    crate::secrets::get(&socks_account(id))
 }
 
 /// Make sure a LAN SOCKS tunnel has a password (random, kept in the
 /// Keychain), and that a loopback one has none left over.
 fn settle_socks_password(spec: &Spec) -> AppResult<()> {
-    let entry = crate::ssh::keychain(&socks_account(&spec.id)).ok_or_else(|| AppError::new("keychain"))?;
+    let account = socks_account(&spec.id);
     if !needs_login(spec) {
-        let _ = entry.delete_credential();
+        crate::secrets::delete(&account);
         return Ok(());
     }
-    if entry.get_password().is_ok() {
+    if crate::secrets::get(&account).is_some() {
         return Ok(());
     }
     let password: String = uuid::Uuid::new_v4().simple().to_string().chars().take(24).collect();
-    entry.set_password(&password).map_err(|e| AppError::detail("keychain", e))
+    crate::secrets::set(&account, &password)
 }
 
 fn loopback() -> String {
@@ -498,9 +498,7 @@ impl Tunnels {
 
     pub fn delete(&self, id: &str) -> AppResult<()> {
         self.stop(id);
-        if let Some(entry) = crate::ssh::keychain(&socks_account(id)) {
-            let _ = entry.delete_credential();
-        }
+        crate::secrets::delete(&socks_account(id));
         let mut specs = self.specs.lock().unwrap();
         specs.retain(|s| s.id != id);
         self.persist(&specs)

@@ -19,7 +19,6 @@ use crate::error::{AppError, AppResult};
 use crate::i18n::tr;
 use crate::trace;
 use crate::files::{join, sftp, sftp_err};
-use crate::paths::home_dir;
 use crate::ssh::{shell_quote, Session, Sessions};
 
 const CHUNK: usize = 256 * 1024;
@@ -154,6 +153,43 @@ pub(crate) fn safe_component(name: &str) -> bool {
     !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\0'])
 }
 
+/// A name that is safe to create on this computer's disk. On Windows that
+/// also rules out what Linux allows but Windows reads differently: `\` (a
+/// separator there), `:` (an NTFS stream: "a:b" writes into a hidden part of
+/// "a"), the other reserved characters, a trailing dot or space (dropped), and
+/// device names such as CON or NUL.
+pub(crate) fn safe_local_name(name: &str) -> bool {
+    safe_component(name) && (!cfg!(windows) || windows_name_ok(name))
+}
+
+fn windows_name_ok(name: &str) -> bool {
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    if name.chars().any(|c| c < ' ' || "<>:\"\\|?*".contains(c)) || name.ends_with(['.', ' ']) {
+        return false;
+    }
+    let stem = name.split('.').next().unwrap_or("").trim_end();
+    !RESERVED.iter().any(|r| r.eq_ignore_ascii_case(stem))
+}
+
+/// Whether a path relative to a download's root (empty: the root itself)
+/// can be created here, component by component.
+fn fits_here(rel: &str) -> bool {
+    rel.is_empty() || rel.split('/').all(safe_local_name)
+}
+
+/// Permission bits of a local file, to give the uploaded copy; Windows has none.
+#[cfg(unix)]
+fn local_mode(m: &std::fs::Metadata) -> Option<u32> {
+    Some(std::os::unix::fs::PermissionsExt::mode(&m.permissions()))
+}
+
+#[cfg(not(unix))]
+fn local_mode(_m: &std::fs::Metadata) -> Option<u32> {
+    None
+}
+
 /// Walk a remote path. The path itself is followed if it is a link (the user
 /// picked it); links below it are skipped.
 async fn walk_remote(s: &SftpSession, root: &str) -> Result<Walk<String>, russh_sftp::client::error::Error> {
@@ -199,7 +235,7 @@ fn walk_local(root: &Path) -> std::io::Result<Walk<PathBuf>> {
     let mut w = Walk::default();
     let top = std::fs::metadata(root)?;
     if !top.is_dir() {
-        w.files.push((root.to_path_buf(), String::new(), top.len(), Some(std::os::unix::fs::PermissionsExt::mode(&top.permissions()))));
+        w.files.push((root.to_path_buf(), String::new(), top.len(), local_mode(&top)));
         return Ok(w);
     }
     w.dirs.push(String::new());
@@ -222,7 +258,7 @@ fn walk_local(root: &Path) -> std::io::Result<Walk<PathBuf>> {
                 w.dirs.push(child_rel.clone());
                 stack.push((e.path(), child_rel, depth + 1));
             } else if meta.is_file() {
-                w.files.push((e.path(), child_rel, meta.len(), Some(std::os::unix::fs::PermissionsExt::mode(&meta.permissions()))));
+                w.files.push((e.path(), child_rel, meta.len(), local_mode(&meta)));
             } else {
                 w.skipped += 1;
             }
@@ -272,13 +308,19 @@ async fn run(t: &Transfers, session: &Session, dest: Option<&Session>, id: &str,
     let mut buf = vec![0u8; CHUNK];
     match job {
         Job::Download { remote, local_dir, name, overwrite } => {
-            let w = match walk_remote(&s, remote).await {
+            let mut w = match walk_remote(&s, remote).await {
                 Ok(w) => w,
                 Err(e) => return Err(sftp_err(e, session, remote).await),
             };
+            // Names the server allows but this disk does not are left out.
+            // Every component is checked, so a file under a left-out folder goes too.
+            let before = w.files.len() + w.dirs.len();
+            w.dirs.retain(|d| fits_here(d));
+            w.files.retain(|f| fits_here(&f.1));
+            w.skipped += (before - w.files.len() - w.dirs.len()) as u32;
             let size: u64 = w.files.iter().map(|f| f.2).sum();
             let name = name.clone().unwrap_or_else(|| base_name(remote));
-            if !safe_component(&name) {
+            if !safe_local_name(&name) {
                 return Err(AppError::detail("invalid_name", &name));
             }
             let root = if *overwrite { local_dir.join(&name) } else { unique_local(local_dir, &name) };
@@ -569,15 +611,6 @@ fn enqueue(state: &Arc<Transfers>, session: Arc<Session>, audit: AuditLog, n: Ne
     t
 }
 
-/// "~/Downloads/x" for a path under the home directory, as shown in the queue.
-fn tilde(path: &Path) -> String {
-    match path.strip_prefix(home_dir()) {
-        Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
-        Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => path.display().to_string(),
-    }
-}
-
 /// Download remote paths into `dest`, a local folder the user picked. Names
 /// that exist there get " (1)", " (2)"…
 #[allow(clippy::too_many_arguments)]
@@ -650,7 +683,8 @@ pub fn transfer_copy(
             items
                 .into_iter()
                 .map(|item| {
-                    let local = PathBuf::from(&item.path);
+                    // From a pane ("/c/Users/x" on Windows) or dropped from the file manager.
+                    let local = crate::paths::expand_tilde(&item.path);
                     if !local.exists() {
                         return Err(AppError::detail("not_found", &item.path));
                     }
@@ -679,7 +713,7 @@ pub fn transfer_copy(
             if !local_dir.is_dir() {
                 return Err(AppError::detail("not_a_dir", &dir));
             }
-            let shown = tilde(&local_dir);
+            let shown = crate::paths::contract_tilde(&local_dir);
             Ok(items
                 .into_iter()
                 .map(|item| {
@@ -797,12 +831,25 @@ mod tests {
     }
 
     #[test]
-    fn walks_skip_links_and_unsafe_names() {
+    fn unsafe_names() {
         for bad in ["", ".", "..", "a/b", "../x", "/etc/passwd", "a\0b"] {
             assert!(!safe_component(bad), "{bad:?}");
         }
         assert!(safe_component("report (1).pdf") && safe_component(".env"));
+        // Fine on Linux, not on a Windows disk.
+        for bad in ["a:b", "..\\x", "a\\b", "what?", "x*", "<a>", "a|b", "q\"", "trail.", "trail ", "CON", "con.txt", "Nul", "LPT1.log", "tab\t"] {
+            assert!(!windows_name_ok(bad), "{bad:?}");
+        }
+        for good in ["report (1).pdf", ".env", "CONSOLE", "console.log", "a.b.c", "Tiếng Việt.txt", "COM10"] {
+            assert!(windows_name_ok(good), "{good:?}");
+        }
+        assert!(fits_here("") && fits_here("sub/a.txt"));
+        assert_eq!(fits_here("sub:x/a.txt"), !cfg!(windows));
+    }
 
+    #[cfg(unix)]
+    #[test]
+    fn walks_skip_links() {
         // A link back up would loop forever; it is skipped, not followed.
         let dir = std::env::temp_dir().join(format!("portway-walk-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("sub")).unwrap();

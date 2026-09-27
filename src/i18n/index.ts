@@ -9,6 +9,7 @@
  * (format helpers, error messages). The root component re-renders the whole
  * tree when the language changes; see `src/App.tsx`.
  */
+import { platformWords } from '../lib/platform'
 import en from './en'
 
 export type Lang = 'vi' | 'en'
@@ -54,15 +55,17 @@ export function onLangChange(l: () => void) {
 
 const fill = (text: string, v?: Vars) => (v ? text.replace(/\{(\w+)\}/g, (m, k: string) => (k in v ? String(v[k]) : m)) : text)
 
-/** The text for `vi` in the current language, with `{name}` slots filled from `v`. */
+/** The text for `vi` in the current language, with `{name}` slots filled from
+ *  `v`. The words that differ on Windows (Keychain, Finder, ⌘…) are swapped in
+ *  the text itself, never in the slot values. */
 export function t(vi: string, v?: Vars): string {
   if (current === 'en') {
     const e = (en as Dict)[vi]
-    if (e !== undefined) return typeof e === 'function' ? e(v ?? {}) : fill(e, v)
+    if (e !== undefined) return typeof e === 'function' ? platformWords(e(v ?? {})) : fill(platformWords(e), v)
     if (import.meta.env.DEV) console.warn('[i18n] missing English for:', vi)
   }
   const hash = vi.indexOf('#')
-  return fill(hash > 0 ? vi.slice(0, hash) : vi, v)
+  return fill(platformWords(hash > 0 ? vi.slice(0, hash) : vi), v)
 }
 
 /** Locale for numbers, dates and times. */

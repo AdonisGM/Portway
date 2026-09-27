@@ -86,6 +86,7 @@ const en: Dict = {
   'Không tạo được thư mục': "Couldn't create the folder",
   'ten-thu-muc': 'folder-name',
   'Phiên này đang thao tác tệp bằng quyền root qua sudo (bật ở màn Tệp)': 'This session works on files as root through sudo (turned on in Files)',
+  'Tài khoản Windows của bạn không được phép mở thư mục này.': "Your Windows account isn't allowed to open this folder.",
 }
 
 export default en

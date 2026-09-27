@@ -111,6 +111,29 @@ pub(crate) fn local_dir(root: &Path, server_id: &str, server_name: &str, host: &
     root.join(format!("{}_{}_{:012x}", tidy(server_name), tidy(user), h.finish() & 0xffff_ffff_ffff))
 }
 
+/// The local copy's file name: the remote one, made valid for this disk
+/// (on Windows "a:b.conf" would write into a hidden stream of "a"). The
+/// extension stays, so the editor still picks the right syntax.
+fn local_name(remote: &str) -> String {
+    if crate::transfers::safe_local_name(remote) {
+        return remote.to_string();
+    }
+    if remote.is_empty() || remote == "." || remote == ".." {
+        return "file".into();
+    }
+    let mut name: String = remote.chars().map(|c| if c < ' ' || "<>:\"/\\|?*".contains(c) { '_' } else { c }).collect();
+    // Windows drops a trailing dot or space; keep the name as seen instead.
+    if name.ends_with(['.', ' ']) {
+        name.pop();
+        name.push('_');
+    }
+    if !crate::transfers::safe_local_name(&name) {
+        // A device name such as CON or NUL.
+        name.insert(0, '_');
+    }
+    name
+}
+
 fn local_state(path: &Path) -> (Option<SystemTime>, u64) {
     std::fs::metadata(path).map(|m| (m.modified().ok(), m.len())).unwrap_or((None, 0))
 }
@@ -244,7 +267,19 @@ pub(crate) fn finish_script(tmp: &str, path: &str, size: usize) -> String {
     )
 }
 
-/// Open the local copy in `app` (a .app path) or the default text editor.
+/// Whether `path` is an app that can open files: a .app bundle on macOS, an
+/// .exe on Windows.
+pub(crate) fn is_app(path: &Path) -> bool {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
+    if cfg!(windows) {
+        path.is_file() && ext.as_deref() == Some("exe")
+    } else {
+        path.is_dir() && ext.as_deref() == Some("app")
+    }
+}
+
+/// Open the local copy in `app` or the default text editor.
+#[cfg(target_os = "macos")]
 fn open_in(app: Option<&str>, file: &Path) -> AppResult<()> {
     let mut cmd = std::process::Command::new("open");
     match app {
@@ -258,8 +293,33 @@ fn open_in(app: Option<&str>, file: &Path) -> AppResult<()> {
     Ok(())
 }
 
+/// Open the local copy in `app` (an .exe) or Notepad. Not "the app for this
+/// extension": server files often have none (sites-available/shop), and
+/// Windows would only ask which app to use.
+#[cfg(windows)]
+fn open_in(app: Option<&str>, file: &Path) -> AppResult<()> {
+    let exe = app.map(PathBuf::from).unwrap_or_else(notepad);
+    std::process::Command::new(&exe)
+        .arg(file)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| AppError::detail("open_failed", format!("{}: {e}", exe.display())))
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn open_in(app: Option<&str>, file: &Path) -> AppResult<()> {
+    let mut cmd = std::process::Command::new(app.unwrap_or("xdg-open"));
+    cmd.arg(file).spawn().map(|_| ()).map_err(|e| AppError::detail("open_failed", e))
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn notepad() -> PathBuf {
+    let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    root.join("notepad.exe")
+}
+
 fn app_label(app: Option<&str>) -> Option<String> {
-    app.map(|a| Path::new(a).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| a.to_string()))
+    app.map(|a| known_name(Path::new(a)).unwrap_or_else(|| Path::new(a).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| a.to_string())))
 }
 
 /// One upload attempt of the local copy, if it changed.
@@ -432,8 +492,7 @@ pub async fn edit_open(
 
     let dir = local_dir(&edits.root(), &server_id, &server.name, &server.host, server.port, &user, &path);
     std::fs::create_dir_all(&dir)?;
-    let name = path.rsplit('/').next().filter(|n| !n.is_empty()).unwrap_or("file");
-    let local = dir.join(name);
+    let local = dir.join(local_name(path.rsplit('/').next().unwrap_or("")));
     std::fs::write(&local, &data)?;
 
     let (stop_tx, stop_rx) = watch::channel(false);
@@ -532,6 +591,7 @@ pub struct EditorApp {
 
 /// Well-known editors, in the order they are offered. Anything else macOS
 /// reports comes after them, alphabetically.
+#[cfg(not(windows))]
 const KNOWN: &[&str] = &[
     "Visual Studio Code",
     "Cursor",
@@ -557,6 +617,7 @@ const KNOWN: &[&str] = &[
 
 /// Apps macOS lists for text files that are not editors: browsers run or
 /// show the file, terminals run scripts.
+#[cfg(not(windows))]
 fn not_an_editor(name: &str) -> bool {
     const NOT: &[&str] = &[
         "Safari", "Google Chrome", "Chromium", "Firefox", "Microsoft Edge", "Arc", "Brave Browser", "Opera", "Vivaldi", "Orion",
@@ -603,15 +664,82 @@ fn registered_text_apps() -> (Vec<PathBuf>, Option<PathBuf>) {
     (apps, default)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 fn registered_text_apps() -> (Vec<PathBuf>, Option<PathBuf>) {
     (Vec::new(), None)
 }
 
-/// Code and text editors on this Mac: what macOS registers for text files,
-/// plus well-known editors found installed, plus the one chosen in Cài đặt.
+/// Where well-known editors install on Windows, per user or for everyone.
+#[cfg(windows)]
+fn windows_editors() -> Vec<(&'static str, PathBuf)> {
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    let local = env("LOCALAPPDATA");
+    let pf = env("ProgramFiles");
+    let pf86 = env("ProgramFiles(x86)");
+    let under = |root: &Option<PathBuf>, rel: &str| root.as_ref().map(|r| r.join(rel));
+    let candidates: Vec<(&'static str, Option<PathBuf>)> = vec![
+        ("Visual Studio Code", under(&local, r"Programs\Microsoft VS Code\Code.exe")),
+        ("Visual Studio Code", under(&pf, r"Microsoft VS Code\Code.exe")),
+        ("Cursor", under(&local, r"Programs\cursor\Cursor.exe")),
+        ("Zed", under(&local, r"Programs\Zed\Zed.exe")),
+        ("Sublime Text", under(&pf, r"Sublime Text\sublime_text.exe")),
+        ("Sublime Text", under(&pf, r"Sublime Text 3\sublime_text.exe")),
+        ("Notepad++", under(&pf, r"Notepad++\notepad++.exe")),
+        ("Notepad++", under(&pf86, r"Notepad++\notepad++.exe")),
+        ("Windsurf", under(&local, r"Programs\Windsurf\Windsurf.exe")),
+        ("VSCodium", under(&local, r"Programs\VSCodium\VSCodium.exe")),
+        ("VSCodium", under(&pf, r"VSCodium\VSCodium.exe")),
+    ];
+    let mut out: Vec<(&'static str, PathBuf)> = Vec::new();
+    for (name, path) in candidates {
+        if let Some(p) = path.filter(|p| p.is_file()) {
+            if !out.iter().any(|(n, _)| *n == name) {
+                out.push((name, p));
+            }
+        }
+    }
+    out
+}
+
+/// The display name of a well-known editor at `path` (Windows exe names
+/// like Code.exe say little).
+#[cfg(windows)]
+fn known_name(path: &Path) -> Option<String> {
+    if path == notepad() {
+        return Some("Notepad".into());
+    }
+    windows_editors().into_iter().find(|(_, p)| p == path).map(|(n, _)| n.to_string())
+}
+
+#[cfg(not(windows))]
+fn known_name(_path: &Path) -> Option<String> {
+    None
+}
+
+/// Code and text editors on this computer: on macOS what LaunchServices
+/// registers for text files plus well-known editors found installed; on
+/// Windows well-known editors and Notepad (the default). The one chosen in
+/// Cài đặt is always on the list.
 #[tauri::command]
 pub fn editor_apps(settings: tauri::State<'_, crate::settings::SettingsStore>) -> Vec<EditorApp> {
+    list_editors(settings.get().editor.map(PathBuf::from).filter(|p| is_app(p)))
+}
+
+#[cfg(windows)]
+fn list_editors(chosen: Option<PathBuf>) -> Vec<EditorApp> {
+    let mut out: Vec<EditorApp> = windows_editors().into_iter().map(|(name, p)| EditorApp { name: name.into(), path: p.to_string_lossy().into_owned(), default: false }).collect();
+    out.push(EditorApp { name: "Notepad".into(), path: notepad().to_string_lossy().into_owned(), default: true });
+    if let Some(c) = chosen {
+        let path = c.to_string_lossy().into_owned();
+        if !out.iter().any(|a| a.path.eq_ignore_ascii_case(&path)) {
+            out.push(EditorApp { name: app_name(&c), path, default: false });
+        }
+    }
+    out
+}
+
+#[cfg(not(windows))]
+fn list_editors(chosen: Option<PathBuf>) -> Vec<EditorApp> {
     let (registered, default) = registered_text_apps();
     let home = crate::paths::home_dir();
     let roots = [PathBuf::from("/Applications"), home.join("Applications"), PathBuf::from("/System/Applications")];
@@ -624,9 +752,9 @@ pub fn editor_apps(settings: tauri::State<'_, crate::settings::SettingsStore>) -
         }
     }
     // An app picked by hand stays on the list even if macOS does not list it.
-    if let Some(chosen) = settings.get().editor.map(PathBuf::from).filter(|p| p.is_dir()) {
-        if !found.contains(&chosen) {
-            found.push(chosen);
+    if let Some(c) = chosen {
+        if !found.contains(&c) {
+            found.push(c);
         }
     }
     let rank = |p: &PathBuf| KNOWN.iter().position(|k| *k == app_name(p)).unwrap_or(KNOWN.len() - 1);
@@ -655,7 +783,23 @@ mod tests {
         assert_eq!(tidy("Máy chủ / A"), "M_y_ch____A");
     }
 
+    #[test]
+    fn local_copy_names() {
+        assert_eq!(local_name("nginx.conf"), "nginx.conf");
+        assert_eq!(local_name(""), "file");
+        assert_eq!(local_name(".."), "file");
+        if cfg!(windows) {
+            assert_eq!(local_name("a:b.conf"), "a_b.conf");
+            assert_eq!(local_name("notes."), "notes_");
+            assert_eq!(local_name("con.txt"), "_con.txt");
+            assert_eq!(local_name("what?.log"), "what_.log");
+        } else {
+            assert_eq!(local_name("a:b.conf"), "a:b.conf");
+        }
+    }
+
     /// Prints what LaunchServices reports on this Mac: `cargo test -- --ignored --nocapture lists_text_apps`
+    #[cfg(not(windows))]
     #[test]
     #[ignore]
     fn lists_text_apps() {

@@ -1,6 +1,7 @@
 import type { PaneSource } from '../../app/nav'
 import { t } from '../../i18n'
 import type { FileEntry, Server, TransferEnd } from '../../lib/api'
+import { segmentLabel } from '../../lib/platform'
 
 export const LOCAL_KEY = 'local'
 
@@ -40,14 +41,16 @@ export function uniqueName(name: string, taken: Set<string>) {
   }
 }
 
-/** Breadcrumbs; a local path under the home folder starts at "~". */
+/** Breadcrumbs; a local path under the home folder starts at "~". `home` is
+ *  set for local panes only, where a Windows drive shows as "C:". */
 export function crumbsOf(path: string, home: string | null) {
   if (home && (path === home || path.startsWith(home + '/'))) {
     const parts = path.slice(home.length).split('/').filter(Boolean)
     return [{ label: '~', path: home }, ...parts.map((p, i) => ({ label: p, path: `${home}/${parts.slice(0, i + 1).join('/')}` }))]
   }
   const parts = path.split('/').filter(Boolean)
-  return [{ label: '/', path: '/' }, ...parts.map((p, i) => ({ label: p, path: '/' + parts.slice(0, i + 1).join('/') }))]
+  const label = (p: string, i: number) => (home !== null ? segmentLabel(p, i) : p)
+  return [{ label: '/', path: '/' }, ...parts.map((p, i) => ({ label: label(p, i), path: '/' + parts.slice(0, i + 1).join('/') }))]
 }
 
 /** "~/Downloads" for a local path under the home folder. */

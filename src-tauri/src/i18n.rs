@@ -15,10 +15,16 @@ pub fn en() -> bool {
     EN.load(Ordering::Relaxed)
 }
 
-/// The Vietnamese or English text, whichever the UI is in.
+/// The Vietnamese or English text, whichever the UI is in. English text is
+/// written for macOS ("this Mac"); on Windows it says "this PC".
 pub fn tr(vi: impl Into<String>, en: impl Into<String>) -> String {
     if self::en() {
-        en.into()
+        let en = en.into();
+        if cfg!(windows) {
+            en.replace("this Mac", "this PC").replace("your Mac", "your PC")
+        } else {
+            en
+        }
     } else {
         vi.into()
     }

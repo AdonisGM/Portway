@@ -158,7 +158,7 @@ fn is_pattern(alias: &str) -> bool {
 
 /// Include paths are relative to ~/.ssh and may use `*` or `?` in the file name.
 fn resolve_include(pattern: &str, base: &Path) -> Vec<PathBuf> {
-    let path = if pattern.starts_with('~') || pattern.starts_with('/') { expand_tilde(pattern) } else { base.join(pattern) };
+    let path = if pattern.starts_with('~') || pattern.starts_with('/') || Path::new(pattern).is_absolute() { expand_tilde(pattern) } else { base.join(pattern) };
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return vec![] };
     if !is_pattern(name) {
         return vec![path];

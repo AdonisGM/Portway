@@ -9,6 +9,7 @@ import { formatBytes, connectError } from '../server/format'
 import { fileError, fullTime, isDirLike, joinPath, octal, parentOf, shortTime, tagOf } from '../files/format'
 import { crumbsOf, sourceName } from './format'
 import { canWriteHere, type Pane as PaneState, type Sort, type SortKey } from './use-pane'
+import { isWindows, panePath } from '../../lib/platform'
 
 const GRID = '18px minmax(0,1fr) 64px 78px'
 
@@ -108,11 +109,17 @@ export function Pane({
   } else if (listing.denied) {
     body =
       p.src.kind === 'local' ? (
-        <Blank icon={Lock} title={t('macOS chưa cho Portway đọc thư mục này')}>
-          <span className="max-w-[360px] leading-normal text-muted">
-            {t('Mở Cài đặt hệ thống › Quyền riêng tư & Bảo mật › Tệp và thư mục, bật quyền cho Portway rồi bấm làm mới.')}
-          </span>
-        </Blank>
+        isWindows ? (
+          <Blank icon={Lock} title={t('Không có quyền đọc thư mục này')}>
+            <span className="max-w-[360px] leading-normal text-muted">{t('Tài khoản Windows của bạn không được phép mở thư mục này.')}</span>
+          </Blank>
+        ) : (
+          <Blank icon={Lock} title={t('macOS chưa cho Portway đọc thư mục này')}>
+            <span className="max-w-[360px] leading-normal text-muted">
+              {t('Mở Cài đặt hệ thống › Quyền riêng tư & Bảo mật › Tệp và thư mục, bật quyền cho Portway rồi bấm làm mới.')}
+            </span>
+          </Blank>
+        )
       ) : (
         <Blank icon={Lock} title={t('Không có quyền đọc thư mục này')}>
           <span className="max-w-[360px] leading-normal text-muted">
@@ -286,7 +293,8 @@ function PathBar({ path, home, disabled, go }: { path: string; home: string | nu
   }, [path, editing])
 
   const submit = async () => {
-    const raw = (draft ?? '').trim()
+    // A local path may be typed the Windows way ("C:\Users", "sub\dir").
+    const raw = home !== null ? panePath((draft ?? '').trim()) : (draft ?? '').trim()
     // "~" is the home folder on either side ('' asks the server for it).
     const target = raw === '' || raw === '~' ? (home ?? '') : raw.startsWith('~/') && home ? home + raw.slice(1) : raw.startsWith('/') ? raw : joinPath(path, raw)
     if (await go(target)) {

@@ -17,6 +17,7 @@ use crate::error::{AppError, AppResult};
 use crate::i18n::tr;
 use crate::trace;
 use crate::paths::{expand_tilde, ssh_dir};
+use crate::secrets;
 use crate::audit::AuditLog;
 use crate::servers::{Auth, ServerStore};
 
@@ -24,7 +25,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const EXEC_TIMEOUT: Duration = Duration::from_secs(20);
 /// Leaves room under OpenSSH's default MaxSessions (10) for a terminal or SFTP.
 const CHANNELS_PER_SESSION: usize = 6;
-const KEYCHAIN_SERVICE: &str = "com.portway.app";
 
 /// What the host key check saw, kept so a refused connection can be explained.
 #[derive(Debug, Clone, Serialize)]
@@ -231,9 +231,6 @@ impl Sessions {
     }
 }
 
-pub(crate) fn keychain(account: &str) -> Option<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, account).ok()
-}
 fn password_account(server_id: &str, user: &str) -> String {
     format!("password:{server_id}:{user}")
 }
@@ -419,14 +416,14 @@ fn quiet_login(store: &ServerStore, sessions: &Sessions, server_id: &str, user: 
             if !file.is_file() {
                 return Err(AppError::detail("key_missing", path));
             }
-            let stored = keychain(&passphrase_account(path)).and_then(|e| e.get_password().ok());
+            let stored = secrets::get(&passphrase_account(path));
             match keys::load_secret_key(&file, stored.as_deref()) {
                 Ok(k) => Credential::Key(Arc::new(k)),
                 Err(keys::Error::KeyIsEncrypted) => return Err(AppError::detail("needs_secret", "passphrase")),
                 Err(e) => return Err(AppError::detail("key_unreadable", e)),
             }
         }
-        Auth::Password => match keychain(&password_account(server_id, user)).and_then(|e| e.get_password().ok()) {
+        Auth::Password => match secrets::get(&password_account(server_id, user)) {
             Some(p) => Credential::Password(p),
             None => return Err(AppError::detail("needs_secret", "password")),
         },
@@ -489,10 +486,10 @@ pub(crate) fn ssh_target_args(store: &ServerStore, server_id: &str, user: &str) 
     Some(parts.join(" "))
 }
 
-/// Arguments after `ssh` that reach an account from Terminal, shell-quoted.
-/// A jump host becomes a ProxyCommand running ssh with that account's own key
-/// (`-J` would not pass it on).
-fn terminal_args(store: &ServerStore, server_id: &str, user: &str, depth: u8) -> AppResult<Vec<String>> {
+/// Arguments after `ssh` that reach an account from a terminal, one item per
+/// argument (not quoted). A jump host becomes a ProxyCommand running ssh with
+/// that account's own key (`-J` would not pass it on).
+fn ssh_argv(store: &ServerStore, server_id: &str, user: &str, depth: u8) -> AppResult<Vec<String>> {
     let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
     let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
     // Checked again here for lists saved before these checks existed.
@@ -501,24 +498,74 @@ fn terminal_args(store: &ServerStore, server_id: &str, user: &str, depth: u8) ->
     }
     let mut args = Vec::new();
     if server.port != 22 {
-        args.push(format!("-p {}", server.port));
+        args.push("-p".into());
+        args.push(server.port.to_string());
     }
     if let Auth::Key { path } = &account.auth {
-        args.push(format!("-i {}", shell_quote(&expand_tilde(path).to_string_lossy())));
+        args.push("-i".into());
+        args.push(expand_tilde(path).to_string_lossy().into_owned());
     }
     if let Some(j) = &server.jump {
         if depth >= MAX_HOPS {
             return Err(AppError::detail("jump_loop", &server.name));
         }
-        let mut inner = vec!["ssh".to_string()];
-        inner.extend(terminal_args(store, &j.server_id, &j.user, depth + 1)?);
-        inner.insert(1, "-W %h:%p".into());
-        args.push(format!("-o {}", shell_quote(&format!("ProxyCommand={}", inner.join(" ")))));
+        let mut inner = vec![proxy_ssh(), "-W".into(), "%h:%p".into()];
+        inner.extend(ssh_argv(store, &j.server_id, &j.user, depth + 1)?);
+        args.push("-o".into());
+        args.push(format!("ProxyCommand={}", inner.iter().map(|a| proxy_quote(a)).collect::<Vec<_>>().join(" ")));
     }
     // `--` ends ssh's options: the destination can never be read as one.
     args.push("--".into());
-    args.push(shell_quote(&format!("{}@{}", account.user, server.host)));
+    args.push(format!("{}@{}", account.user, server.host));
     Ok(args)
+}
+
+/// The ssh a ProxyCommand runs. On Windows the full path, since the command
+/// line is not run by a Unix shell with a familiar PATH.
+fn proxy_ssh() -> String {
+    #[cfg(windows)]
+    if let Ok(p) = crate::winterm::ssh_exe() {
+        return p.to_string_lossy().into_owned();
+    }
+    "ssh".into()
+}
+
+/// Quote one argument of a ProxyCommand: ssh runs it with /bin/sh on Unix,
+/// and as a Windows command line on Windows (double quotes; paths there
+/// cannot contain one).
+fn proxy_quote(s: &str) -> String {
+    if cfg!(windows) {
+        win_quote(s)
+    } else {
+        shell_quote(s)
+    }
+}
+
+/// A Windows command-line argument, quoted the way programs built with MSVC
+/// split their command line: as is when plain, else in double quotes, with
+/// backslashes doubled where they come before a quote.
+pub(crate) fn win_quote(s: &str) -> String {
+    if !s.is_empty() && !s.contains([' ', '\t', '"']) {
+        return s.to_string();
+    }
+    let mut out = String::from("\"");
+    let mut slashes = 0;
+    for c in s.chars() {
+        if c == '\\' {
+            slashes += 1;
+            continue;
+        }
+        if c == '"' {
+            out.push_str(&"\\".repeat(slashes * 2 + 1));
+        } else {
+            out.push_str(&"\\".repeat(slashes));
+        }
+        slashes = 0;
+        out.push(c);
+    }
+    out.push_str(&"\\".repeat(slashes * 2));
+    out.push('"');
+    out
 }
 
 /// The ssh command line for an account, as shown to the user (not shell-quoted).
@@ -578,14 +625,14 @@ pub async fn ssh_connect(
             if !file.is_file() {
                 return Err(AppError::detail("key_missing", path));
             }
-            let stored = keychain(&passphrase_account(path)).and_then(|e| e.get_password().ok());
+            let stored = secrets::get(&passphrase_account(path));
             let given = passphrase.clone().filter(|p| !p.is_empty());
             let attempt = given.clone().or(stored.clone());
             match keys::load_secret_key(&file, attempt.as_deref()) {
                 Ok(k) => {
                     if remember {
-                        if let (Some(p), Some(entry)) = (given, keychain(&passphrase_account(path))) {
-                            let _ = entry.set_password(&p);
+                        if let Some(p) = given {
+                            let _ = secrets::set(&passphrase_account(path), &p);
                         }
                     }
                     Some(Arc::new(k))
@@ -596,9 +643,7 @@ pub async fn ssh_connect(
                 Err(_) if attempt.is_some() => {
                     // Wrong passphrase: forget a stored one so it is not retried forever.
                     if passphrase.is_none() {
-                        if let Some(entry) = keychain(&passphrase_account(path)) {
-                            let _ = entry.delete_credential();
-                        }
+                        secrets::delete(&passphrase_account(path));
                     }
                     return Ok(ConnectResult::NeedPassphrase { key_path: path.clone(), retry: true });
                 }
@@ -608,7 +653,7 @@ pub async fn ssh_connect(
         Auth::Password => None,
     };
 
-    let stored_password = || keychain(&password_account(&server_id, &user)).and_then(|e| e.get_password().ok());
+    let stored_password = || secrets::get(&password_account(&server_id, &user));
     let pw = if key.is_none() {
         match password.clone().filter(|p| !p.is_empty()).or_else(stored_password) {
             Some(p) => Some(p),
@@ -642,9 +687,7 @@ pub async fn ssh_connect(
             if key.is_none() {
                 // Drop a stored password the server no longer accepts.
                 if password.is_none() {
-                    if let Some(entry) = keychain(&password_account(&server_id, &user)) {
-                        let _ = entry.delete_credential();
-                    }
+                    secrets::delete(&password_account(&server_id, &user));
                 }
                 return Ok(ConnectResult::NeedPassword { retry: true });
             }
@@ -652,8 +695,8 @@ pub async fn ssh_connect(
         }
     };
     if remember {
-        if let (Some(p), Some(entry)) = (password.filter(|p| !p.is_empty()), keychain(&password_account(&server_id, &user))) {
-            let _ = entry.set_password(&p);
+        if let Some(p) = password.filter(|p| !p.is_empty()) {
+            let _ = secrets::set(&password_account(&server_id, &user), &p);
         }
     }
     if let Some(fp) = trusted {
@@ -764,9 +807,7 @@ pub fn ssh_forget_secret(server_id: String, user: String, key_path: Option<Strin
         Some(p) => passphrase_account(&p),
         None => password_account(&server_id, &user),
     };
-    if let Some(e) = keychain(&account) {
-        let _ = e.delete_credential();
-    }
+    secrets::delete(&account);
 }
 
 #[derive(Debug, Serialize)]
@@ -1642,32 +1683,60 @@ pub fn open_terminal(
         (Some("unitLog"), _, Some(unit)) => Some(format!("{sudo}journalctl -u {} -n 200 -f", shell_quote(&unit))),
         (Some(_), _, _) => return Err(AppError::new("unknown_tool")),
     };
-    let mut args = vec!["ssh".to_string()];
+    let mut argv = Vec::new();
     if remote.is_some() {
-        args.push("-t".into());
+        argv.push("-t".to_string());
     }
-    args.extend(terminal_args(&store, &server_id, &user, 0)?);
-    if let Some(cmd) = remote {
-        args.push(shell_quote(&cmd));
+    argv.extend(ssh_argv(&store, &server_id, &user, 0)?);
+    // One argument: the server's shell reads it, never this computer's.
+    argv.extend(remote);
+    let (line, launched) = launch_ssh(&argv);
+    match launched {
+        Ok(()) => {
+            audit.record(&server_id, &user, "openTerminal", line, true, None);
+            Ok(())
+        }
+        Err(e) => {
+            audit.record(&server_id, &user, "openTerminal", &line, false, Some(error_text(&e)));
+            Err(e)
+        }
     }
+}
 
-    let dir = std::env::temp_dir().join("portway");
-    std::fs::create_dir_all(&dir)?;
-    let file = dir.join(format!("ssh-{}.command", uuid::Uuid::new_v4()));
-    std::fs::write(&file, format!("#!/bin/sh\nrm -f \"$0\"\nexec {}\n", args.join(" ")))?;
-    #[cfg(unix)]
-    {
+/// Terminal.app running `ssh argv`, through a temporary .command file so no
+/// Automation permission is needed. Returns the command line as logged.
+#[cfg(target_os = "macos")]
+fn launch_ssh(argv: &[String]) -> (String, AppResult<()>) {
+    let line = std::iter::once("ssh".to_string()).chain(argv.iter().map(|a| shell_quote(a))).collect::<Vec<_>>().join(" ");
+    let run = || -> AppResult<()> {
+        let dir = std::env::temp_dir().join("portway");
+        std::fs::create_dir_all(&dir)?;
+        let file = dir.join(format!("ssh-{}.command", uuid::Uuid::new_v4()));
+        std::fs::write(&file, format!("#!/bin/sh\nrm -f \"$0\"\nexec {line}\n"))?;
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o700))?;
-    }
-    let status = std::process::Command::new("open").arg("-a").arg("Terminal").arg(&file).status()?;
-    let line = args.join(" ");
-    if !status.success() {
-        audit.record(&server_id, &user, "openTerminal", &line, false, Some(format!("open exited with {status}")));
-        return Err(AppError::detail("terminal", format!("open exited with {status}")));
-    }
-    audit.record(&server_id, &user, "openTerminal", line, true, None);
-    Ok(())
+        let status = std::process::Command::new("open").arg("-a").arg("Terminal").arg(&file).status()?;
+        if !status.success() {
+            return Err(AppError::detail("terminal", format!("open exited with {status}")));
+        }
+        Ok(())
+    };
+    let r = run();
+    (line, r)
+}
+
+/// ssh.exe in its own console window (Windows Terminal on Windows 11).
+#[cfg(windows)]
+fn launch_ssh(argv: &[String]) -> (String, AppResult<()>) {
+    let line = std::iter::once("ssh".to_string()).chain(argv.iter().map(|a| win_quote(a))).collect::<Vec<_>>().join(" ");
+    let r = crate::winterm::ssh_exe().and_then(|exe| crate::winterm::spawn(&exe, argv, &crate::paths::home_dir()));
+    (line, r)
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn launch_ssh(argv: &[String]) -> (String, AppResult<()>) {
+    let line = std::iter::once("ssh".to_string()).chain(argv.iter().map(|a| shell_quote(a))).collect::<Vec<_>>().join(" ");
+    (line, Err(AppError::detail("terminal", "no terminal on this system")))
 }
 
 #[cfg(test)]

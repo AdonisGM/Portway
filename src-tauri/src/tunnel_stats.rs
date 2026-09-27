@@ -6,7 +6,6 @@ use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::process::Command;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -241,7 +240,7 @@ impl Stats {
             .iter()
             .filter(|l| {
                 let mut m = l.meta.lock().unwrap();
-                let todo = !m.looked && l.local.is_some() && l.peer.is_some_and(|p| is_this_mac(p.ip()));
+                let todo = !m.looked && l.local.is_some() && l.peer.is_some_and(|p| lookup::is_this_computer(p.ip()));
                 m.looked |= todo;
                 todo
             })
@@ -250,67 +249,211 @@ impl Stats {
     }
 }
 
-fn is_this_mac(ip: std::net::IpAddr) -> bool {
-    ip.is_loopback() || local_ips().contains(&ip)
-}
-
-/// Addresses of this Mac's interfaces, so a LAN tunnel used from this Mac
-/// through its own LAN address is still looked up.
-fn local_ips() -> Vec<std::net::IpAddr> {
-    let mut out = Vec::new();
-    unsafe {
-        let mut ifs: *mut libc::ifaddrs = std::ptr::null_mut();
-        if libc::getifaddrs(&mut ifs) != 0 {
-            return out;
-        }
-        let mut cur = ifs;
-        while !cur.is_null() {
-            let a = (*cur).ifa_addr;
-            if !a.is_null() {
-                match (*a).sa_family as i32 {
-                    libc::AF_INET => {
-                        let sin = &*(a as *const libc::sockaddr_in);
-                        out.push(std::net::IpAddr::from(u32::from_be(sin.sin_addr.s_addr).to_be_bytes()));
-                    }
-                    libc::AF_INET6 => {
-                        let sin6 = &*(a as *const libc::sockaddr_in6);
-                        out.push(std::net::IpAddr::from(sin6.sin6_addr.s6_addr));
-                    }
-                    _ => {}
-                }
-            }
-            cur = (*cur).ifa_next;
-        }
-        libc::freeifaddrs(ifs);
-    }
-    out
-}
-
-/// Find the process on the client end of each connection: one lsof over the
-/// tunnels' ports, matching "client->listener" socket pairs. Blocking.
+/// Find the process on the client end of each connection (set on the link).
+/// Blocking.
 pub(crate) fn resolve(links: &[Arc<Link>]) {
-    let mut ports: Vec<u16> = links.iter().filter_map(|l| l.local.map(|a| a.port())).collect();
-    ports.sort_unstable();
-    ports.dedup();
-    if ports.is_empty() {
-        return;
+    lookup::resolve(links)
+}
+
+fn set_process(link: &Link, p: Process) {
+    link.meta.lock().unwrap().process = Some(p);
+}
+
+/// macOS: interface addresses from getifaddrs, owners from one lsof over the
+/// tunnels' ports, executable paths from proc_pidpath.
+#[cfg(target_os = "macos")]
+mod lookup {
+    use super::{names_of, parse_lsof, set_process, Link, Process};
+    use std::process::Command;
+    use std::sync::Arc;
+
+    pub fn is_this_computer(ip: std::net::IpAddr) -> bool {
+        ip.is_loopback() || local_ips().contains(&ip)
     }
-    let mut cmd = Command::new("/usr/sbin/lsof");
-    cmd.args(["-nP", "-sTCP:ESTABLISHED", "-Fpn"]);
-    for p in &ports {
-        cmd.arg(format!("-iTCP:{p}"));
+
+    /// Addresses of this Mac's interfaces, so a LAN tunnel used from this Mac
+    /// through its own LAN address is still looked up.
+    fn local_ips() -> Vec<std::net::IpAddr> {
+        let mut out = Vec::new();
+        unsafe {
+            let mut ifs: *mut libc::ifaddrs = std::ptr::null_mut();
+            if libc::getifaddrs(&mut ifs) != 0 {
+                return out;
+            }
+            let mut cur = ifs;
+            while !cur.is_null() {
+                let a = (*cur).ifa_addr;
+                if !a.is_null() {
+                    match (*a).sa_family as i32 {
+                        libc::AF_INET => {
+                            let sin = &*(a as *const libc::sockaddr_in);
+                            out.push(std::net::IpAddr::from(u32::from_be(sin.sin_addr.s_addr).to_be_bytes()));
+                        }
+                        libc::AF_INET6 => {
+                            let sin6 = &*(a as *const libc::sockaddr_in6);
+                            out.push(std::net::IpAddr::from(sin6.sin6_addr.s6_addr));
+                        }
+                        _ => {}
+                    }
+                }
+                cur = (*cur).ifa_next;
+            }
+            libc::freeifaddrs(ifs);
+        }
+        out
     }
-    let Ok(out) = cmd.output() else { return };
-    let owners = parse_lsof(&String::from_utf8_lossy(&out.stdout), std::process::id());
-    for l in links {
-        let (Some(peer), Some(local)) = (l.peer, l.local) else { continue };
-        if let Some(&pid) = owners.get(&format!("{peer}->{local}")) {
-            l.meta.lock().unwrap().process = Some(process_of(pid));
+
+    /// One lsof over the tunnels' ports, matching "client->listener" socket pairs.
+    pub fn resolve(links: &[Arc<Link>]) {
+        let mut ports: Vec<u16> = links.iter().filter_map(|l| l.local.map(|a| a.port())).collect();
+        ports.sort_unstable();
+        ports.dedup();
+        if ports.is_empty() {
+            return;
+        }
+        let mut cmd = Command::new("/usr/sbin/lsof");
+        cmd.args(["-nP", "-sTCP:ESTABLISHED", "-Fpn"]);
+        for p in &ports {
+            cmd.arg(format!("-iTCP:{p}"));
+        }
+        let Ok(out) = cmd.output() else { return };
+        let owners = parse_lsof(&String::from_utf8_lossy(&out.stdout), std::process::id());
+        for l in links {
+            let (Some(peer), Some(local)) = (l.peer, l.local) else { continue };
+            if let Some(&pid) = owners.get(&format!("{peer}->{local}")) {
+                set_process(l, process_of(pid));
+            }
         }
     }
+
+    fn process_of(pid: u32) -> Process {
+        let mut buf = vec![0u8; 4096];
+        let n = unsafe { libc::proc_pidpath(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
+        let path = if n > 0 { String::from_utf8_lossy(&buf[..n as usize]).into_owned() } else { String::new() };
+        let (name, app) = names_of(&path);
+        Process { pid, name: if name.is_empty() { format!("pid {pid}") } else { name }, app }
+    }
+}
+
+/// Windows: the TCP table with owning pids (GetExtendedTcpTable), and the
+/// executable path of each pid.
+#[cfg(windows)]
+mod lookup {
+    use super::{exe_names_of, set_process, Link, Process};
+    use std::collections::HashMap;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::sync::Arc;
+    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_INSUFFICIENT_BUFFER, NO_ERROR};
+    use windows_sys::Win32::NetworkManagement::IpHelper::{GetExtendedTcpTable, MIB_TCP6ROW_OWNER_PID, MIB_TCPROW_OWNER_PID, TCP_TABLE_OWNER_PID_ALL};
+    use windows_sys::Win32::Networking::WinSock::{AF_INET, AF_INET6};
+    use windows_sys::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    /// No cheap interface list here: every peer is tried, and one that is not
+    /// on this computer simply is not in the table.
+    pub fn is_this_computer(_ip: IpAddr) -> bool {
+        true
+    }
+
+    type Key = (IpAddr, u16, IpAddr, u16);
+
+    /// The raw table for one address family, as whole u32 words so the rows
+    /// (u32 fields, 4-byte aligned) can be read in place.
+    fn table(af: u16) -> Vec<u32> {
+        let mut size: u32 = 0;
+        unsafe { GetExtendedTcpTable(std::ptr::null_mut(), &mut size, 0, af as u32, TCP_TABLE_OWNER_PID_ALL, 0) };
+        for _ in 0..4 {
+            let mut buf = vec![0u32; (size as usize).div_ceil(4) + 1];
+            let mut bytes = (buf.len() * 4) as u32;
+            let r = unsafe { GetExtendedTcpTable(buf.as_mut_ptr().cast(), &mut bytes, 0, af as u32, TCP_TABLE_OWNER_PID_ALL, 0) };
+            if r == NO_ERROR {
+                return buf;
+            }
+            if r != ERROR_INSUFFICIENT_BUFFER {
+                return Vec::new();
+            }
+            // Connections came and went between the calls: ask again.
+            size = bytes;
+        }
+        Vec::new()
+    }
+
+    /// Rows of type `R` after the leading entry count, bounds-checked.
+    fn rows<R: Copy>(buf: &[u32]) -> Vec<R> {
+        let Some(&n) = buf.first() else { return Vec::new() };
+        let room = (buf.len() * 4).saturating_sub(4) / std::mem::size_of::<R>();
+        let n = (n as usize).min(room);
+        let base = unsafe { buf.as_ptr().cast::<u8>().add(4) };
+        (0..n).map(|i| unsafe { std::ptr::read_unaligned(base.add(i * std::mem::size_of::<R>()).cast::<R>()) }).collect()
+    }
+
+    /// The port fields hold a network-order u16 in their low bytes.
+    fn port(p: u32) -> u16 {
+        u16::from_be(p as u16)
+    }
+
+    /// (local ip, local port, remote ip, remote port) → owning pid.
+    fn owners() -> HashMap<Key, u32> {
+        let mut map = HashMap::new();
+        for r in rows::<MIB_TCPROW_OWNER_PID>(&table(AF_INET)) {
+            let local = IpAddr::V4(Ipv4Addr::from(r.dwLocalAddr.to_ne_bytes()));
+            let remote = IpAddr::V4(Ipv4Addr::from(r.dwRemoteAddr.to_ne_bytes()));
+            map.insert((local, port(r.dwLocalPort), remote, port(r.dwRemotePort)), r.dwOwningPid);
+        }
+        for r in rows::<MIB_TCP6ROW_OWNER_PID>(&table(AF_INET6)) {
+            // Dual-stack sockets show IPv4 peers as ::ffff:a.b.c.d.
+            let local = IpAddr::V6(Ipv6Addr::from(r.ucLocalAddr)).to_canonical();
+            let remote = IpAddr::V6(Ipv6Addr::from(r.ucRemoteAddr)).to_canonical();
+            map.insert((local, port(r.dwLocalPort), remote, port(r.dwRemotePort)), r.dwOwningPid);
+        }
+        map
+    }
+
+    pub fn resolve(links: &[Arc<Link>]) {
+        let owners = owners();
+        let own = std::process::id();
+        for l in links {
+            let (Some(peer), Some(local)) = (l.peer, l.local) else { continue };
+            // The client's socket: its local end is our peer, its remote end our listener.
+            let key = (peer.ip().to_canonical(), peer.port(), local.ip().to_canonical(), local.port());
+            if let Some(&pid) = owners.get(&key).filter(|&&p| p != own && p != 0) {
+                set_process(l, process_of(pid));
+            }
+        }
+    }
+
+    fn process_of(pid: u32) -> Process {
+        let mut path = String::new();
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if !h.is_null() {
+                let mut buf = vec![0u16; 32768];
+                let mut len = buf.len() as u32;
+                if QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len) != 0 {
+                    path = String::from_utf16_lossy(&buf[..len as usize]);
+                }
+                CloseHandle(h);
+            }
+        }
+        let (name, app) = exe_names_of(&path);
+        Process { pid, name: if name.is_empty() { format!("pid {pid}") } else { name }, app }
+    }
+}
+
+/// Elsewhere (Linux): connections are counted but not traced to a process.
+#[cfg(not(any(target_os = "macos", windows)))]
+mod lookup {
+    use super::Link;
+    use std::sync::Arc;
+
+    pub fn is_this_computer(_ip: std::net::IpAddr) -> bool {
+        false
+    }
+
+    pub fn resolve(_links: &[Arc<Link>]) {}
 }
 
 /// "local->remote" of each socket → pid, leaving out our own process.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn parse_lsof(text: &str, own: u32) -> HashMap<String, u32> {
     let mut map = HashMap::new();
     let mut pid = 0u32;
@@ -326,20 +469,39 @@ fn parse_lsof(text: &str, own: u32) -> HashMap<String, u32> {
     map
 }
 
-fn process_of(pid: u32) -> Process {
-    let mut buf = vec![0u8; 4096];
-    let n = unsafe { libc::proc_pidpath(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
-    let path = if n > 0 { String::from_utf8_lossy(&buf[..n as usize]).into_owned() } else { String::new() };
-    let (name, app) = names_of(&path);
-    Process { pid, name: if name.is_empty() { format!("pid {pid}") } else { name }, app }
-}
-
-/// Executable name and outermost app bundle of a path:
+/// Executable name and outermost app bundle of a macOS path:
 /// ".../Google Chrome.app/.../Google Chrome Helper.app/.../Google Chrome Helper"
 /// → ("Google Chrome Helper", Some("Google Chrome")).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn names_of(path: &str) -> (String, Option<String>) {
     let name = path.rsplit('/').next().unwrap_or("").to_string();
     let app = path.split('/').find_map(|c| c.strip_suffix(".app")).map(str::to_string);
+    (name, app)
+}
+
+/// Executable name and app of a Windows path: "…\chrome.exe" → ("chrome",
+/// Some("Google Chrome")). Only well-known programs get an app name.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn exe_names_of(path: &str) -> (String, Option<String>) {
+    let file = path.rsplit(['\\', '/']).next().unwrap_or("");
+    let name = file.strip_suffix(".exe").or_else(|| file.strip_suffix(".EXE")).unwrap_or(file).to_string();
+    const APPS: &[(&str, &str)] = &[
+        ("chrome", "Google Chrome"),
+        ("msedge", "Microsoft Edge"),
+        ("firefox", "Firefox"),
+        ("brave", "Brave"),
+        ("opera", "Opera"),
+        ("code", "Visual Studio Code"),
+        ("cursor", "Cursor"),
+        ("dbeaver", "DBeaver"),
+        ("datagrip64", "DataGrip"),
+        ("ssms", "SQL Server Management Studio"),
+        ("heidisql", "HeidiSQL"),
+        ("tableplus", "TablePlus"),
+        ("postman", "Postman"),
+        ("insomnia", "Insomnia"),
+    ];
+    let app = APPS.iter().find(|(exe, _)| exe.eq_ignore_ascii_case(&name)).map(|(_, a)| a.to_string());
     (name, app)
 }
 
@@ -438,6 +600,13 @@ mod tests {
     }
 
     #[test]
+    fn reads_windows_exe_names() {
+        assert_eq!(exe_names_of(r"C:\Program Files\Google\Chrome\Application\chrome.exe"), ("chrome".to_string(), Some("Google Chrome".to_string())));
+        assert_eq!(exe_names_of(r"C:\Windows\System32\curl.exe"), ("curl".to_string(), None));
+        assert_eq!(exe_names_of(""), (String::new(), None));
+    }
+
+    #[test]
     fn reads_lsof_and_app_names() {
         let text = "p100\nn127.0.0.1:50001->127.0.0.1:15001\np200\nn127.0.0.1:15001->127.0.0.1:50001\np300\nn[::1]:50002->[::1]:15001\n";
         let map = parse_lsof(text, 200);
@@ -455,8 +624,10 @@ mod tests {
         assert_eq!(names_of("/usr/bin/curl"), ("curl".to_string(), None));
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn finds_the_client_process() {
+        use std::process::Command;
         // This test process connects to itself; the lookup skips our own pid,
         // so a child `nc` stands in for a client app.
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

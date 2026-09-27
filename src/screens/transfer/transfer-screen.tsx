@@ -20,6 +20,7 @@ import { ConflictDialog, mixedKinds, type Choice, type Clash } from './conflict'
 import { baseName, endOf, hostName, LOCAL_KEY, sameSource, shortPath, sourceName, sourceOf, uniqueName } from './format'
 import { Pane, type DropHint } from './pane'
 import { canWriteHere, listFor, usePane, type Pane as PaneState } from './use-pane'
+import { localBaseName, panePath } from '../../lib/platform'
 
 type CopyItem = { name: string; path: string; entry?: FileEntry }
 type Job = { from: PaneSource; fromSide: PaneSide | null; to: PaneSide; dir: string; items: CopyItem[]; taken: Set<string> }
@@ -53,7 +54,8 @@ export function TransferScreen() {
   const [newFolder, setNewFolder] = useState<PaneSide | null>(null)
 
   useEffect(() => {
-    if (isTauri()) void homeDir().then((h) => setHome(h.replace(/\/+$/, '')))
+    // In the panes' form: "/c/Users/x" on Windows.
+    if (isTauri()) void homeDir().then((h) => setHome(panePath(h.replace(/[\\/]+$/, ''))))
   }, [])
 
   const name = (s: PaneSource) => sourceName(s, byId)
@@ -211,7 +213,7 @@ export function TransferScreen() {
       const to = latest.current.panes[h.over]
       if (to.src.kind === 'local') return toast({ title: t('Đã ở trên máy này'), detail: t('Thả vào pane của một server để tải lên.') })
       if (!to.ready || !to.listing) return toast({ title: t('Chưa tải lên được'), detail: t('{name} chưa sẵn sàng', { name: sourceName(to.src, byId) }) })
-      void latest.current.copy({ kind: 'local' }, null, h.over, p.paths.map((path) => ({ name: baseName(path), path })), h.dir ?? to.path)
+      void latest.current.copy({ kind: 'local' }, null, h.over, p.paths.map((path) => ({ name: localBaseName(path), path })), h.dir ?? to.path)
     })
     return () => {
       void off.then((f) => f())

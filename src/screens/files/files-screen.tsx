@@ -45,6 +45,7 @@ import { crumbs, fileError, fullTime, isDirLike, joinPath, matcher, modeString, 
 import { LogTail } from './log-tail'
 import { TransferQueue } from './queue'
 import { locale, t } from '../../i18n'
+import { localBaseName } from '../../lib/platform'
 
 const GRID = '28px minmax(160px,1fr) 72px 104px 92px'
 const SKELETON = ['60%', '45%', '70%', '40%', '55%', '65%']
@@ -56,7 +57,6 @@ type Selection = { path: string; names: string[]; anchor: string | null }
 type Cached = { path: string; listing: Listing | null }
 
 const asError = (e: unknown): AppError => (isAppError(e) ? e : { code: 'unknown', detail: String(e) })
-const baseName = (p: string) => p.replace(/\/+$/, '').split('/').pop() ?? p
 const ownerOf = (e: FileEntry) => e.owner ?? String(e.uid ?? '?')
 const groupOf = (e: FileEntry) => e.group ?? String(e.gid ?? '?')
 
@@ -209,7 +209,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   const startUpload = (paths: string[]) => {
     if (!paths.length || !listing) return
     const names = new Set(all.map((e) => e.name))
-    const clashes = paths.map(baseName).filter((n) => names.has(n))
+    const clashes = paths.map(localBaseName).filter((n) => names.has(n))
     if (clashes.length) setConflict({ paths, clashes })
     else void sendUpload(paths, false)
   }
@@ -635,7 +635,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                   onClick={() => {
                     const skip = new Set(conflict.clashes)
                     setConflict(null)
-                    void sendUpload(conflict.paths.filter((p) => !skip.has(baseName(p))), false)
+                    void sendUpload(conflict.paths.filter((p) => !skip.has(localBaseName(p))), false)
                   }}
                 >
                   {t('Bỏ qua mục trùng')}
@@ -927,7 +927,7 @@ function Details({
 }) {
   const { settings } = useSettings()
   const { apps } = useEdits()
-  const editorName = settings.editor ? (apps.find((a) => a.path === settings.editor)?.name ?? settings.editor.split('/').pop()!.replace(/\.app$/, '')) : null
+  const editorName = settings.editor ? (apps.find((a) => a.path === settings.editor)?.name ?? localBaseName(settings.editor).replace(/\.(app|exe)$/i, '')) : null
   const isRoot = user === 'root'
   const dir = listing.dir
   const path = listing.path

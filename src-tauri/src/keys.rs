@@ -172,14 +172,17 @@ fn generate(input: GenerateInput, dir: &Path) -> AppResult<SshKey> {
 }
 
 fn default_comment() -> String {
-    let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
-    let host = std::process::Command::new("hostname")
-        .arg("-s")
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|h| !h.is_empty())
-        .unwrap_or_else(|| "localhost".into());
+    // Windows names them differently, and a program run from a GUI app there
+    // would flash a console window, so the host name comes from the environment.
+    #[cfg(windows)]
+    let (user, host) = (std::env::var("USERNAME").ok(), std::env::var("COMPUTERNAME").ok());
+    #[cfg(not(windows))]
+    let (user, host) = (
+        std::env::var("USER").ok(),
+        std::process::Command::new("hostname").arg("-s").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()),
+    );
+    let user = user.filter(|u| !u.is_empty()).unwrap_or_else(|| "user".into());
+    let host = host.filter(|h| !h.is_empty()).unwrap_or_else(|| "localhost".into());
     format!("{user}@{host}")
 }
 

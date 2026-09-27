@@ -482,18 +482,17 @@ fn secrets_account(saved_id: &str) -> String {
 }
 
 fn load_secrets(saved_id: &str) -> Option<Secrets> {
-    let text = crate::ssh::keychain(&secrets_account(saved_id))?.get_password().ok()?;
+    let text = crate::secrets::get(&secrets_account(saved_id))?;
     serde_json::from_str(&text).ok()
 }
 
 /// Store (or, when there are none, remove) a saved request's secrets.
 fn store_secrets(saved_id: &str, s: &Secrets) -> AppResult<()> {
-    let entry = crate::ssh::keychain(&secrets_account(saved_id)).ok_or_else(|| AppError::new("keychain"))?;
     if s.is_empty() {
-        let _ = entry.delete_credential();
+        crate::secrets::delete(&secrets_account(saved_id));
         return Ok(());
     }
-    entry.set_password(&serde_json::to_string(s)?).map_err(|e| AppError::detail("keychain", e))
+    crate::secrets::set(&secrets_account(saved_id), &serde_json::to_string(s)?)
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -639,9 +638,7 @@ pub fn http_save(store: tauri::State<'_, HttpStore>, saved: Saved) -> AppResult<
 pub fn http_delete(store: tauri::State<'_, HttpStore>, id: String) -> AppResult<()> {
     let mut data = store.data.lock().unwrap();
     data.saved.retain(|s| s.id != id);
-    if let Some(entry) = crate::ssh::keychain(&secrets_account(&id)) {
-        let _ = entry.delete_credential();
-    }
+    crate::secrets::delete(&secrets_account(&id));
     store.persist(&data)
 }
 

@@ -14,6 +14,7 @@ mod logtail;
 mod nginx;
 mod paths;
 mod ports;
+mod secrets;
 mod servers;
 mod services;
 mod settings;
@@ -23,6 +24,8 @@ mod trace;
 mod transfers;
 mod tunnel_stats;
 mod tunnels;
+#[cfg(windows)]
+mod winterm;
 
 use tauri::Manager;
 

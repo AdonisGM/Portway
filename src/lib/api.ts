@@ -594,6 +594,8 @@ type Api = {
   disconnect(serverId: string, user: string): Promise<void>
   sudo(serverId: string, user: string, password?: string): Promise<SudoResult>
   sudoOff(serverId: string, user: string): Promise<void>
+  /** File operations as root through sudo (a second SFTP channel); needs sudo on. */
+  sftpAsRoot(serverId: string, user: string, on: boolean): Promise<void>
   auditList(serverId: string | null, limit: number): Promise<AuditEntry[]>
   disconnectAll(): Promise<void>
   stats(serverId: string, user: string): Promise<Stats>
@@ -703,6 +705,7 @@ const tauriApi: Api = {
   disconnect: (serverId, user) => invoke('ssh_disconnect', { serverId, user }),
   sudo: (serverId, user, password) => invoke('ssh_sudo', { serverId, user, password }),
   sudoOff: (serverId, user) => invoke('ssh_sudo_off', { serverId, user }),
+  sftpAsRoot: (serverId, user, on) => invoke('sftp_as_root', { serverId, user, on }),
   auditList: (serverId, limit) => invoke('audit_list', { serverId, limit }),
   disconnectAll: () => invoke('ssh_disconnect_all'),
   stats: (serverId, user) => invoke('server_stats', { serverId, user }),
@@ -889,6 +892,7 @@ function browserApi(): Api {
       return fail('needs_app')
     },
     async sudoOff() {},
+    sftpAsRoot: async () => fail('needs_app'),
     async auditList() {
       return []
     },

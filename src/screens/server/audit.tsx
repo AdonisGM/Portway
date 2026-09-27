@@ -15,6 +15,8 @@ export const auditActions = (): Record<string, string> => ({
   openTerminal: t('Mở Terminal'),
   sudoOn: t('Bật sudo'),
   sudoOff: t('Tắt sudo'),
+  filesRoot: t('Thao tác tệp bằng root'),
+  filesRootOff: t('Thôi thao tác tệp bằng root'),
   mkdir: t('Tạo thư mục'),
   touch: t('Tạo tệp'),
   rename: t('Đổi tên'),

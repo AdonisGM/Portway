@@ -151,6 +151,9 @@ pub(crate) struct Session {
     sudo: Mutex<Option<SudoMode>>,
     /// SFTP over its own long-lived channel, opened on first use.
     pub(crate) sftp: tokio::sync::Mutex<Option<Arc<russh_sftp::client::SftpSession>>>,
+    /// Files as root: SFTP goes through `sudo sftp-server` (needs sudo on).
+    pub(crate) files_root: std::sync::atomic::AtomicBool,
+    pub(crate) sftp_root: tokio::sync::Mutex<Option<Arc<russh_sftp::client::SftpSession>>>,
     /// uid, groups and name maps of the session's user, read on first use.
     pub(crate) ident: tokio::sync::Mutex<Option<Arc<crate::files::Identity>>>,
     /// Previous counters, to turn totals into CPU % and network rates.
@@ -168,6 +171,21 @@ impl Session {
         self.sudo.lock().unwrap().is_some()
     }
 
+    /// Whether file operations run as root through sudo.
+    pub(crate) fn files_root(&self) -> bool {
+        !self.is_root() && self.files_root.load(std::sync::atomic::Ordering::Relaxed) && self.sudo_on()
+    }
+
+    /// `command` run as is through the session's sudo, and what to feed on
+    /// stdin first (the password). -k makes sudo always read the password, so
+    /// it never leaks into the command's own input. None when sudo is off.
+    pub(crate) fn sudo_raw(&self, command: &str) -> Option<(String, Option<String>)> {
+        match self.sudo.lock().unwrap().clone()? {
+            SudoMode::NoPassword => Some((format!("sudo -n {command}"), None)),
+            SudoMode::Password(p) => Some((format!("sudo -S -k -p '' {command}"), Some(format!("{p}\n")))),
+        }
+    }
+
     fn new(conn: Conn, server_id: &str, user: &str) -> Self {
         Self {
             handle: conn.handle,
@@ -177,6 +195,8 @@ impl Session {
             channels: tokio::sync::Semaphore::new(CHANNELS_PER_SESSION),
             sudo: Mutex::new(None),
             sftp: tokio::sync::Mutex::new(None),
+            files_root: std::sync::atomic::AtomicBool::new(false),
+            sftp_root: tokio::sync::Mutex::new(None),
             ident: tokio::sync::Mutex::new(None),
             last: Mutex::new(None),
             last_procs: Mutex::new(None),
@@ -676,6 +696,7 @@ pub async fn ssh_reconnect(
     let key = session_key(&server_id, &user);
     let saved = sessions.saved.lock().unwrap().get(&key).cloned().ok_or_else(|| AppError::new("not_connected"))?;
     let sudo = sessions.map.lock().unwrap().get(&key).and_then(|s| s.sudo.lock().unwrap().clone());
+    let files_root = sessions.map.lock().unwrap().get(&key).is_some_and(|s| s.files_root.load(std::sync::atomic::Ordering::Relaxed));
     let command = display_ssh_command(&saved.target, None);
     let span = trace::start(&server_id, &user, trace::Kind::Connect, Some(tr("Kết nối lại SSH", "SSH reconnect")), &command, false);
     let opened = open(&saved.target, saved.credential.clone(), None).await;
@@ -697,6 +718,7 @@ pub async fn ssh_reconnect(
     };
     let session = Arc::new(Session::new(handle, &server_id, &user));
     *session.sudo.lock().unwrap() = sudo;
+    session.files_root.store(files_root, std::sync::atomic::Ordering::Relaxed);
     let info = trace::labelled(tr("Đọc thông tin máy", "Read host info"), read_host_info(&session)).await?;
     if let Some(os) = &info.os {
         store.set_os(&server_id, os)?;
@@ -821,10 +843,15 @@ pub async fn ssh_sudo(
 }
 
 #[tauri::command]
-pub fn ssh_sudo_off(sessions: tauri::State<'_, Sessions>, audit: tauri::State<'_, AuditLog>, server_id: String, user: String) -> AppResult<()> {
+pub async fn ssh_sudo_off(sessions: tauri::State<'_, Sessions>, audit: tauri::State<'_, AuditLog>, server_id: String, user: String) -> AppResult<()> {
     let session = sessions.get(&server_id, &user)?;
-    if session.sudo.lock().unwrap().take().is_some() {
+    let was_on = session.sudo.lock().unwrap().take().is_some();
+    if was_on {
         audit.record(&server_id, &user, "sudoOff", "sudo -k", true, None);
+    }
+    // Files as root needs sudo: it ends with it.
+    if session.files_root.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        *session.sftp_root.lock().await = None;
     }
     Ok(())
 }
@@ -1702,6 +1729,50 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(exec(&session, &alive(pid)).await.unwrap().stdout.trim(), "gone");
         exec(&session, &format!("rm -f {path}")).await.unwrap();
+        let _ = std::fs::remove_file(&known_hosts);
+    }
+
+    /// Files as root on every test distribution: `deploy` (sudo with a
+    /// password) gets an SFTP channel that reads and writes /root.
+    #[tokio::test]
+    #[ignore]
+    async fn live_files_as_root() {
+        use russh_sftp::protocol::OpenFlags;
+        use std::sync::atomic::Ordering;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let known_hosts = std::env::temp_dir().join(format!("portway-known-hosts-root-{}", std::process::id()));
+        let key = Arc::new(keys::load_secret_key(expand_tilde("~/.ssh/id_ed25519"), None).unwrap());
+        for port in [2201u16, 2202, 2203, 2204, 2205] {
+            let t = Target { host: "127.0.0.1".into(), port, user: "deploy".into(), known_hosts: known_hosts.clone(), via: None };
+            let fp = match open(&t, Credential::Key(key.clone()), None).await.unwrap() {
+                Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) => Some(fingerprint),
+                _ => None,
+            };
+            let Opened::Ready(h) = open(&t, Credential::Key(key.clone()), fp).await.unwrap() else { panic!("{port}: deploy connects") };
+            let session = Session::new(h, "test", "deploy");
+
+            let user = crate::files::sftp(&session).await.unwrap();
+            assert!(user.read_dir("/root").await.is_err(), "{port}: deploy alone can't read /root");
+            *session.sudo.lock().unwrap() = Some(SudoMode::Password("portway".into()));
+            session.files_root.store(true, Ordering::Relaxed);
+            assert_eq!(crate::files::identity(&session).await.unwrap().uid, 0);
+
+            let root = crate::files::sftp(&session).await.unwrap_or_else(|e| panic!("{port}: {e:?}"));
+            assert!(root.read_dir("/root").await.is_ok(), "{port}: root reads /root");
+            let path = "/root/portway-root-test.txt";
+            let mut f = root.open_with_flags(path, OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE).await.unwrap();
+            f.write_all(b"as root").await.unwrap();
+            f.shutdown().await.unwrap();
+            assert_eq!(root.metadata(path).await.unwrap().uid, Some(0), "{port}: written as root");
+            let mut back = String::new();
+            root.open(path).await.unwrap().read_to_string(&mut back).await.unwrap();
+            assert_eq!(back, "as root");
+            root.remove_file(path).await.unwrap();
+
+            session.files_root.store(false, Ordering::Relaxed);
+            assert!(crate::files::sftp(&session).await.unwrap().read_dir("/root").await.is_err(), "{port}: back to deploy");
+            println!("{port}: ok");
+        }
         let _ = std::fs::remove_file(&known_hosts);
     }
 

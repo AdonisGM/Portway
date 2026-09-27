@@ -54,6 +54,7 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 ### Tệp (SFTP)
 
 - Duyệt thư mục, sắp xếp, lọc, chọn nhiều tệp; đổi tên, phân quyền, đổi chủ sở hữu.
+- **Thao tác bằng quyền root qua sudo** khi đăng nhập bằng user thường: Portway mở thêm một kênh SFTP chạy `sudo sftp-server`, nhờ đó mọi thao tác duyệt, tải lên, tải xuống, sửa và xoá đều được thực hiện với quyền root.
 - Tải lên và tải xuống cả tệp lẫn thư mục; hỗ trợ kéo thả trực tiếp từ Finder.
 - **Sửa tệp bằng ứng dụng trên máy** (VS Code, Sublime Text, TextEdit…): tệp được tải về một thư mục tạm riêng cho từng server và tài khoản, và được tự động tải lại lên server mỗi khi lưu. Portway phát hiện xung đột khi tệp trên server bị thay đổi trong lúc đang sửa.
 - Theo dõi log theo thời gian thực, tương tự `tail -f`.

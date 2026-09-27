@@ -79,6 +79,8 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   const sudo = live && conn.sudo
   const isRoot = user === 'root'
   const canChown = isRoot || sudo
+  // File operations as root through sudo, turned on per session ("Quyền root").
+  const asRoot = !isRoot && live && conn.filesRoot
 
   const [initial] = useState(() => readCache<Cached>(id, user, 'files')?.data)
   const [listing, setListing] = useState<Listing | null>(initial?.listing ?? null)
@@ -273,6 +275,40 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
     nav.go({ kind: 'server', serverId: id, user: 'root', module: 'files' })
   }
 
+  // "Quyền root": turn sudo on first when it is off, then open the root SFTP channel.
+  const [wantRoot, setWantRoot] = useState(false)
+  const setRoot = useCallback(
+    async (on: boolean) => {
+      try {
+        await api.sftpAsRoot(id, user, on)
+        conns.setFilesRoot(id, user, on)
+        toast(
+          on
+            ? { title: t('Đang thao tác tệp bằng quyền root'), detail: t('Qua sudo, cho phiên {user}@{server}', { user, server: server.name }) }
+            : { title: t('Đã quay về quyền của {user}', { user }), detail: `${user}@${server.name}` },
+        )
+        void reload()
+      } catch (e) {
+        toast({ title: on ? t('Không dùng được quyền root') : t('Không tắt được quyền root'), detail: fileError(asError(e)) })
+      }
+    },
+    [id, user, server.name, conns, toast, reload],
+  )
+  const sudoAsked = conns.sudoAsked(id, user)
+  useEffect(() => {
+    if (!wantRoot) return
+    if (sudo) {
+      setWantRoot(false)
+      void setRoot(true)
+    } else if (!sudoAsked) setWantRoot(false)
+  }, [wantRoot, sudo, sudoAsked, setRoot])
+  const toggleRoot = () => {
+    if (asRoot) return void setRoot(false)
+    if (sudo) return void setRoot(true)
+    setWantRoot(true)
+    conns.askSudo(id, user, true)
+  }
+
   const onDone = (message: string, detail: string, name?: string) => {
     setAction(null)
     toast({ title: message, detail })
@@ -330,7 +366,31 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
         >
           <Terminal size={15} strokeWidth={1.8} />
         </button>
+        {!isRoot && (
+          <Button
+            size="sm"
+            variant={asRoot ? 'primary' : 'secondary'}
+            disabled={!live}
+            title={asRoot ? t('Bấm để quay về quyền của {user}', { user }) : t('Duyệt, tải lên, sửa và xoá tệp bằng quyền root qua sudo')}
+            onClick={toggleRoot}
+          >
+            <ShieldCheck size={14} strokeWidth={1.8} />
+            {asRoot ? t('Đang dùng root') : t('Quyền root')}
+          </Button>
+        )}
       </div>
+
+      {asRoot && (
+        <div className="flex items-center gap-2.5 rounded-[10px] px-3 py-[7px]" style={{ background: 'var(--warn-soft)' }}>
+          <ShieldCheck size={15} strokeWidth={1.9} className="flex-none text-warn" />
+          <span className="flex-1 leading-snug text-ink2">
+            {t('Đang thao tác tệp bằng quyền root qua sudo. Tệp tải lên, tệp và thư mục tạo mới sẽ thuộc root.')}
+          </span>
+          <Button variant="ghost" size="xs" onClick={() => void setRoot(false)}>
+            {t('Quay về {user}', { user })}
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <SearchInput value={filter} onChange={setFilter} placeholder={t('Lọc trong thư mục (hỗ trợ *.log)')} className="w-60 min-w-0" />
@@ -398,11 +458,18 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
               <span className="max-w-[420px] leading-normal text-muted">
                 {t('{path} thuộc {owner}:{group}, quyền {mode}. User {user} không có quyền đọc và mở thư mục này.', { path, owner: ownerOf(listing.dir), group: groupOf(listing.dir), mode: octal(listing.dir.mode), user })}
               </span>
-              {rootAccount && (
-                <Button size="xs" onClick={openAsRoot}>
-                  {t('Mở bằng kết nối root')}
-                </Button>
-              )}
+              <div className="flex flex-wrap justify-center gap-1.5">
+                {!isRoot && (
+                  <Button size="xs" variant="primary" onClick={toggleRoot}>
+                    {t('Dùng quyền root (sudo)')}
+                  </Button>
+                )}
+                {rootAccount && (
+                  <Button size="xs" onClick={openAsRoot}>
+                    {t('Mở bằng kết nối root')}
+                  </Button>
+                )}
+              </div>
             </Blank>
           ) : all.length === 0 ? (
             <Blank icon={Folder} title={t('Thư mục trống')}>
@@ -480,6 +547,8 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
             sel={sel}
             one={one}
             sudo={sudo}
+            asRoot={asRoot}
+            toggleRoot={toggleRoot}
             canWrite={canWrite}
             canChown={canChown}
             rootAccount={rootAccount}
@@ -499,7 +568,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                 void run(() => copyText(text).then(() => toast({ title: t('Đã sao chép'), detail: text })), t('Không sao chép được'))
               },
               terminal: () => one && void terminalAt(isDirLike(one) ? one.path : path),
-              follow: () => one && setTailing({ path: one.path, sudo: !isRoot && !one.readable && sudo }),
+              follow: () => one && setTailing({ path: one.path, sudo: !isRoot && (asRoot || !one.readable) && sudo }),
               edit: () => one && void edits.open(id, user, one.path),
               editWith: () => one && setChooseApp(one),
             }}
@@ -826,6 +895,8 @@ function Details({
   sel,
   one,
   sudo,
+  asRoot,
+  toggleRoot,
   canWrite,
   canChown,
   rootAccount,
@@ -842,6 +913,8 @@ function Details({
   sel: FileEntry[]
   one: FileEntry | null
   sudo: boolean
+  asRoot: boolean
+  toggleRoot: () => void
   canWrite: boolean
   canChown: boolean
   rootAccount: boolean
@@ -858,7 +931,7 @@ function Details({
   const isRoot = user === 'root'
   const dir = listing.dir
   const path = listing.path
-  const sudoNote = sudo && !isRoot ? t(' Sudo đang bật nhưng thao tác tệp vẫn chạy bằng quyền của {user}; chỉ Đổi owner dùng sudo.', { user }) : ''
+  const sudoNote = sudo && !isRoot && !asRoot ? t(' Sudo đang bật nhưng thao tác tệp vẫn chạy bằng quyền của {user}; bấm "Quyền root" để thao tác bằng root.', { user }) : ''
 
   // "Quyền của bạn": which bits apply and what they allow.
   let access: { text: string; why: string; bad: boolean; soft: boolean }
@@ -867,7 +940,7 @@ function Details({
     const write = canWrite
     access = {
       text: t('Thư mục này: ') + [read ? t('Xem nội dung') : t('Không xem được'), write ? t('Tạo, xoá bên trong') : t('Không tạo, xoá được')].join(' · '),
-      why: isRoot ? t('Đang dùng root, không bị giới hạn quyền.') : t('{path} thuộc {owner}:{group} · {mode}.', { path, owner: ownerOf(dir), group: groupOf(dir), mode: octal(dir.mode) }) + sudoNote,
+      why: isRoot || asRoot ? t('Đang dùng root, không bị giới hạn quyền.') : t('{path} thuộc {owner}:{group} · {mode}.', { path, owner: ownerOf(dir), group: groupOf(dir), mode: octal(dir.mode) }) + sudoNote,
       bad: !read || !write,
       soft: false,
     }
@@ -899,7 +972,7 @@ function Details({
       soft: nw > 0,
     }
   }
-  const escalate = !isRoot && rootAccount && (access.bad || access.soft || (!sel.length && !canWrite))
+  const escalate = !isRoot && !asRoot && (access.bad || access.soft || (!sel.length && !canWrite))
 
   const head = one
     ? { tag: tagOf(one), colors: tagColors(one), title: one.name, sub: path }
@@ -1003,8 +1076,8 @@ function Details({
 
       <div className="flex flex-col gap-1.5 rounded-[9px] px-3 py-2.5" style={{ background: access.bad ? 'var(--warn-soft)' : 'var(--raised)' }}>
         <div className="flex items-center gap-1.5">
-          <span className="flex-1 text-[11px] text-muted">{t('Quyền của bạn ({user})', { user })}</span>
-          {sudo && !isRoot && <span className="rounded px-[5px] text-[10px] text-warn" style={{ background: 'var(--warn-soft)' }}>sudo</span>}
+          <span className="flex-1 text-[11px] text-muted">{asRoot ? t('Quyền của bạn (root qua sudo)') : t('Quyền của bạn ({user})', { user })}</span>
+          {sudo && !isRoot && <span className="rounded px-[5px] text-[10px] text-warn" style={{ background: 'var(--warn-soft)' }}>{asRoot ? 'root' : 'sudo'}</span>}
         </div>
         <span className="text-[13px] font-semibold" style={{ color: access.bad ? 'var(--warn)' : access.soft ? 'var(--ink2)' : 'var(--ink)' }}>
           {access.text}
@@ -1012,9 +1085,14 @@ function Details({
         <span className="text-[11.5px] leading-[1.45] text-ink2">{access.why}</span>
         {escalate && (
           <div className="flex flex-wrap gap-1.5">
-            <Button size="xs" onClick={openAsRoot}>
-              {t('Mở bằng kết nối root')}
+            <Button size="xs" onClick={toggleRoot}>
+              {t('Dùng quyền root (sudo)')}
             </Button>
+            {rootAccount && (
+              <Button size="xs" onClick={openAsRoot}>
+                {t('Mở bằng kết nối root')}
+              </Button>
+            )}
           </div>
         )}
       </div>

@@ -1,6 +1,8 @@
 //! Remote files over SFTP: listing with what the session's user may do with
-//! each entry, and the usual file operations. SFTP runs as the session's user;
-//! only chown goes through a shell (root or sudo), since SFTP cannot map names.
+//! each entry, and the usual file operations. SFTP runs as the session's user,
+//! or as root when the user turns that on (a second SFTP channel running
+//! `sudo sftp-server`); chown always goes through a shell (root or sudo),
+//! since SFTP cannot map names.
 
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::SftpSession;
@@ -15,6 +17,8 @@ use crate::error::{AppError, AppResult};
 use crate::i18n::tr;
 use crate::trace;
 use crate::ssh::{exec, exec_priv, shell_quote, Session, Sessions, MARK};
+use tokio::io::AsyncWriteExt;
+use std::sync::atomic::Ordering;
 
 /// Who the session's user is on the server, and the uid/gid names.
 #[derive(Debug)]
@@ -44,7 +48,17 @@ fn parse_identity(text: &str) -> Option<Identity> {
     })
 }
 
+/// Who file operations run as: the session's user, or root when files run
+/// as root (same name maps).
 pub(crate) async fn identity(session: &Session) -> AppResult<Arc<Identity>> {
+    let me = user_identity(session).await?;
+    if !session.files_root() {
+        return Ok(me);
+    }
+    Ok(Arc::new(Identity { uid: 0, gids: vec![0], users: me.users.clone(), groups: me.groups.clone() }))
+}
+
+async fn user_identity(session: &Session) -> AppResult<Arc<Identity>> {
     let mut slot = session.ident.lock().await;
     if let Some(i) = slot.as_ref() {
         return Ok(i.clone());
@@ -57,19 +71,25 @@ pub(crate) async fn identity(session: &Session) -> AppResult<Arc<Identity>> {
     Ok(ident)
 }
 
-/// The session's SFTP channel, opened on first use and reopened after it broke.
+/// Where distributions put the SFTP server binary (Debian/Ubuntu, RHEL,
+/// Alpine/Arch, others). The first executable one is used.
+const SFTP_SERVERS: &str = "for p in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server /usr/libexec/sftp-server /usr/lib/sftp-server /usr/sbin/sftp-server; do [ -x \"$p\" ] && { echo \"$p\"; exit 0; }; done; command -v sftp-server || exit 1";
+
+/// The session's SFTP channel (as root when files run as root), opened on
+/// first use and reopened after it broke.
 pub(crate) async fn sftp(session: &Session) -> AppResult<Arc<SftpSession>> {
-    let mut slot = session.sftp.lock().await;
+    let root = session.files_root();
+    let mut slot = if root { session.sftp_root.lock().await } else { session.sftp.lock().await };
     if let Some(s) = slot.as_ref() {
         return Ok(s.clone());
     }
-    let span = trace::start(&session.server_id, &session.user, trace::Kind::Sftp, Some(tr("Mở kênh SFTP", "Open SFTP channel")), "sftp (subsystem)", false);
-    let opened = async {
-        let channel = session.handle.channel_open_session().await.map_err(|e| lost_or(e, session))?;
-        channel.request_subsystem(true, "sftp").await.map_err(|e| lost_or(e, session))?;
-        SftpSession::new(channel.into_stream()).await.map_err(|e| AppError::detail("sftp_unavailable", e))
-    }
-    .await;
+    let (label, shown) = if root {
+        (tr("Mở kênh SFTP bằng quyền root", "Open SFTP channel as root"), "sudo sftp-server")
+    } else {
+        (tr("Mở kênh SFTP", "Open SFTP channel"), "sftp (subsystem)")
+    };
+    let span = trace::start(&session.server_id, &session.user, trace::Kind::Sftp, Some(label), shown, false);
+    let opened = if root { open_root(session).await } else { open_user(session).await };
     let s = match opened {
         Ok(s) => {
             span.ok(|_| {});
@@ -84,6 +104,63 @@ pub(crate) async fn sftp(session: &Session) -> AppResult<Arc<SftpSession>> {
     let s = Arc::new(s);
     *slot = Some(s.clone());
     Ok(s)
+}
+
+async fn open_user(session: &Session) -> AppResult<SftpSession> {
+    let channel = session.handle.channel_open_session().await.map_err(|e| lost_or(e, session))?;
+    channel.request_subsystem(true, "sftp").await.map_err(|e| lost_or(e, session))?;
+    SftpSession::new(channel.into_stream()).await.map_err(|e| AppError::detail("sftp_unavailable", e))
+}
+
+/// SFTP as root: the server's sftp-server binary started through sudo, the
+/// way WinSCP does it. The sudo password goes first on stdin; sudo reads it
+/// byte by byte up to the newline, so everything after is the SFTP stream.
+async fn open_root(session: &Session) -> AppResult<SftpSession> {
+    let found = exec(session, SFTP_SERVERS).await?;
+    let binary = found.stdout.trim().to_string();
+    if found.code != Some(0) || !binary.starts_with('/') {
+        return Err(AppError::new("sftp_server_missing"));
+    }
+    let (line, stdin) = session.sudo_raw(&shell_quote(&binary)).ok_or_else(|| AppError::new("sudo_off"))?;
+    let channel = session.handle.channel_open_session().await.map_err(|e| lost_or(e, session))?;
+    channel.exec(true, line).await.map_err(|e| lost_or(e, session))?;
+    let mut stream = channel.into_stream();
+    if let Some(pw) = stdin {
+        stream.write_all(pw.as_bytes()).await.map_err(|e| AppError::detail("ssh", e))?;
+    }
+    SftpSession::new(stream).await.map_err(|e| AppError::detail("sftp_root_failed", e))
+}
+
+/// Turn files as root on or off for a session. Turning it on needs sudo and
+/// opens the root channel at once, so a failure shows here, not later.
+#[tauri::command]
+pub async fn sftp_as_root(sessions: tauri::State<'_, Sessions>, audit: tauri::State<'_, AuditLog>, server_id: String, user: String, on: bool) -> AppResult<()> {
+    let session = sessions.get(&server_id, &user)?;
+    if !on {
+        if session.files_root.swap(false, Ordering::Relaxed) {
+            *session.sftp_root.lock().await = None;
+            audit.record(&server_id, &user, "filesRootOff", "sudo sftp-server", true, None);
+        }
+        return Ok(());
+    }
+    if session.is_root() {
+        return Ok(());
+    }
+    if !session.sudo_on() {
+        return Err(AppError::new("sudo_off"));
+    }
+    session.files_root.store(true, Ordering::Relaxed);
+    match sftp(&session).await {
+        Ok(_) => {
+            audit.record(&server_id, &user, "filesRoot", "sudo sftp-server", true, None);
+            Ok(())
+        }
+        Err(e) => {
+            session.files_root.store(false, Ordering::Relaxed);
+            audit.record(&server_id, &user, "filesRoot", "sudo sftp-server", false, Some(e.detail.clone().unwrap_or_else(|| e.code.to_string())));
+            Err(e)
+        }
+    }
 }
 
 fn lost_or(e: russh::Error, session: &Session) -> AppError {
@@ -103,7 +180,11 @@ pub(crate) async fn sftp_err(e: SftpError, session: &Session, path: &str) -> App
             _ => AppError::detail("sftp_failure", if s.error_message.is_empty() { format!("{}", s.status_code) } else { s.error_message.clone() }),
         },
         _ => {
-            *session.sftp.lock().await = None;
+            if session.files_root() {
+                *session.sftp_root.lock().await = None;
+            } else {
+                *session.sftp.lock().await = None;
+            }
             if session.handle.is_closed() {
                 AppError::detail("connection_lost", e)
             } else {

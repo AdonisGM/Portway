@@ -190,6 +190,11 @@ export function Pane({
     >
       <div className="flex flex-none items-center gap-1.5 border-b border-line px-2.5 py-2">
         <SelectField value={p.key} onChange={onPickSource} options={sources} className="h-8 min-w-0 flex-1" />
+        {p.src.kind === 'remote' && (p.conn?.status === 'connected' || p.conn?.status === 'reconnecting') && p.conn.filesRoot && (
+          <span title={t('Phiên này đang thao tác tệp bằng quyền root qua sudo (bật ở màn Tệp)')} className="flex-none rounded px-1.5 py-px text-[10.5px] text-warn" style={{ background: 'var(--warn-soft)' }}>
+            root
+          </span>
+        )}
         <IconButton title={t('Làm mới')} disabled={!p.ready} onClick={() => void p.reload()}>
           <RotateCw size={14} strokeWidth={1.8} className={cx(p.loading && 'animate-spin')} />
         </IconButton>

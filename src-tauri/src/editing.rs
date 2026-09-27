@@ -418,7 +418,9 @@ pub async fn edit_open(
         };
     // A file the user may read but not write (root's /etc configs) is edited
     // through sudo too, or saving would fail every time.
-    let sudo = !(readable && writable);
+    // With files as root, SFTP says yes to everything but the final copy runs
+    // in a shell, so it has to go through sudo as well.
+    let sudo = !(readable && writable) || session.files_root();
     if sudo && !session.sudo_on() {
         return Err(AppError::detail(if readable { "read_only" } else { "permission_denied" }, &path));
     }

@@ -64,8 +64,26 @@ const en: Dict = {
   'Bấm vào khoảng trống để nhập đường dẫn': 'Click an empty spot to type a path',
 
   // Files screen: details panel
-  ' Sudo đang bật nhưng thao tác tệp vẫn chạy bằng quyền của {user}; chỉ Đổi owner dùng sudo.':
-    ' Sudo is on, but file operations still run as {user}; only Change owner uses sudo.',
+  ' Sudo đang bật nhưng thao tác tệp vẫn chạy bằng quyền của {user}; bấm "Quyền root" để thao tác bằng root.':
+    ' Sudo is on, but file operations still run as {user}; click "Root access" to work as root.',
+  'Quyền của bạn (root qua sudo)': 'Your access (root through sudo)',
+  // Files as root
+  'Đang thao tác tệp bằng quyền root': 'Working on files as root',
+  'Qua sudo, cho phiên {user}@{server}': 'Through sudo, for the {user}@{server} session',
+  'Đã quay về quyền của {user}': 'Back to {user}',
+  'Không dùng được quyền root': "Couldn't switch to root",
+  'Không tắt được quyền root': "Couldn't turn off root access",
+  'Bấm để quay về quyền của {user}': 'Click to go back to {user}',
+  'Duyệt, tải lên, sửa và xoá tệp bằng quyền root qua sudo': 'Browse, upload, edit and delete files as root through sudo',
+  'Đang dùng root': 'Working as root',
+  'Quyền root': 'Root access',
+  'Đang thao tác tệp bằng quyền root qua sudo. Tệp tải lên, tệp và thư mục tạo mới sẽ thuộc root.':
+    'Working on files as root through sudo. Uploaded files and new files or folders will belong to root.',
+  'Quay về {user}': 'Back to {user}',
+  'Dùng quyền root (sudo)': 'Use root (sudo)',
+  'Server không có sftp-server để chạy bằng sudo (SFTP được cấu hình internal-sftp?)': 'No sftp-server binary to run through sudo (is SFTP set to internal-sftp?)',
+  'Không mở được SFTP bằng sudo: {detail}': "Couldn't start SFTP through sudo: {detail}",
+  'Cần bật sudo cho phiên này trước': 'Turn on sudo for this session first',
   'Thư mục này: ': 'This folder: ',
   'Xem nội dung': 'Can list contents',
   'Không xem được': "Can't list contents",

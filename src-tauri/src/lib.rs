@@ -110,6 +110,7 @@ pub fn run() {
             ssh::ssh_sudo_off,
             audit::audit_list,
             files::sftp_list,
+            files::sftp_as_root,
             files::sftp_mkdir,
             files::sftp_touch,
             files::sftp_rename,

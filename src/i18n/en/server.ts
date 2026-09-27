@@ -118,6 +118,8 @@ const en: Dict = {
   'Mở Terminal': 'Open Terminal',
   'Bật sudo': 'Turn on sudo',
   'Tắt sudo': 'Turn off sudo',
+  'Thao tác tệp bằng root': 'Files as root',
+  'Thôi thao tác tệp bằng root': 'Files back to the user',
   'Tạo thư mục': 'New folder',
   'Tạo tệp': 'New file',
   'Chép giữa server': 'Copy between servers',
@@ -296,13 +298,13 @@ const en: Dict = {
   'Đã bật sudo cho {user}@{server}': 'sudo is on for {user}@{server}',
   'Mật khẩu chỉ giữ trong bộ nhớ, hết khi ngắt kết nối': 'The password is kept in memory only and is gone when you disconnect',
   'Dùng sudo cho {user}@{server}': 'Use sudo for {user}@{server}',
-  'Để đọc firewall, Docker và tiến trình của user khác': "To read the firewall, Docker and other users' processes",
+  'Để đọc firewall, Docker, tiến trình của user khác và thao tác tệp bằng root': "To read the firewall, Docker and other users' processes, and to work on files as root",
   'Đang kiểm tra…': 'Checking…',
   'User {user} không dùng được sudo trên server này.': "User {user} can't use sudo on this server.",
   'Mật khẩu sudo của {user}': 'sudo password for {user}',
   'Để trống nếu sudo không cần mật khẩu (NOPASSWD).': "Leave empty if sudo doesn't need a password (NOPASSWD).",
-  'Mật khẩu chỉ giữ trong bộ nhớ của Portway cho phiên này, không lưu xuống máy. Portway chỉ dùng sudo để đọc, chưa chạy lệnh nào thay đổi server.':
-    "The password is kept in Portway's memory for this session only and never saved to disk. Portway only uses sudo to read; it doesn't run anything that changes the server.",
+  'Mật khẩu chỉ giữ trong bộ nhớ của Portway cho phiên này, không lưu xuống máy. Lệnh thay đổi server chỉ chạy bằng sudo khi bạn chọn làm thao tác đó.':
+    "The password stays in Portway's memory for this session only and is never saved. Commands that change the server run through sudo only when you choose that action.",
   'Đã tắt sudo': 'sudo is off',
   'Phiên {user}@{server} đang dùng sudo: firewall, Docker và tiến trình của user khác được đọc qua sudo.':
     "The {user}@{server} session uses sudo: the firewall, Docker and other users' processes are read through sudo.",

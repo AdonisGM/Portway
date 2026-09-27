@@ -84,6 +84,12 @@ export function fileError(e: AppError): string {
       return t('Chỉ root mới đổi được owner. Bật sudo hoặc kết nối bằng root.')
     case 'invalid_owner':
       return t('Tên owner hoặc group không hợp lệ')
+    case 'sftp_server_missing':
+      return t('Server không có sftp-server để chạy bằng sudo (SFTP được cấu hình internal-sftp?)')
+    case 'sftp_root_failed':
+      return t('Không mở được SFTP bằng sudo: {detail}', { detail: e.detail ?? '' })
+    case 'sudo_off':
+      return t('Cần bật sudo cho phiên này trước')
     case 'sftp_unavailable':
       return t('Server không mở được SFTP (subsystem sftp bị tắt?)')
     case 'exists':

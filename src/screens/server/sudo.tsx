@@ -50,7 +50,7 @@ export function SudoPrompt({ server, user }: { server: Server; user: string }) {
       onClose={close}
       width={420}
       title={t('Dùng sudo cho {user}@{server}', { user, server: server.name })}
-      subtitle={t('Để đọc firewall, Docker và tiến trình của user khác')}
+      subtitle={t('Để đọc firewall, Docker, tiến trình của user khác và thao tác tệp bằng root')}
       footer={
         refused ? (
           <Button onClick={close}>{t('Đóng')}</Button>
@@ -84,7 +84,7 @@ export function SudoPrompt({ server, user }: { server: Server; user: string }) {
             <TextInput type="password" value={pw} onChange={setPw} invalid={!!error} autoFocus />
           </Field>
           <span className="text-[11px] leading-relaxed text-muted">
-            {t('Mật khẩu chỉ giữ trong bộ nhớ của Portway cho phiên này, không lưu xuống máy. Portway chỉ dùng sudo để đọc, chưa chạy lệnh nào thay đổi server.')}
+            {t('Mật khẩu chỉ giữ trong bộ nhớ của Portway cho phiên này, không lưu xuống máy. Lệnh thay đổi server chỉ chạy bằng sudo khi bạn chọn làm thao tác đó.')}
           </span>
           <button type="submit" hidden />
         </form>

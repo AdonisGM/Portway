@@ -85,6 +85,7 @@ const en: Dict = {
     'Shortcuts: ⇥ switch pane · ↑↓ move (⇧ selects a range) · Space select · ↵ open folder · ⌫ parent folder · ⌘A select all · ⌘→ ⌘← copy to the other side',
   'Không tạo được thư mục': "Couldn't create the folder",
   'ten-thu-muc': 'folder-name',
+  'Phiên này đang thao tác tệp bằng quyền root qua sudo (bật ở màn Tệp)': 'This session works on files as root through sudo (turned on in Files)',
 }
 
 export default en

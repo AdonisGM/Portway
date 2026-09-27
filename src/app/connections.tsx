@@ -8,9 +8,10 @@ export type Prompt = Exclude<ConnectResult, { status: 'connected' }>
 
 export type Connection =
   | { status: 'connecting' }
-  | { status: 'connected'; info: HostInfo; since: number; sudo: boolean }
+  /** `filesRoot`: file operations run as root through sudo (needs `sudo`). */
+  | { status: 'connected'; info: HostInfo; since: number; sudo: boolean; filesRoot: boolean }
   /** Dropped after being connected; retrying on its own with the same credential. */
-  | { status: 'reconnecting'; info: HostInfo; since: number; sudo: boolean; attempt: number; lostAt: number; error: AppError }
+  | { status: 'reconnecting'; info: HostInfo; since: number; sudo: boolean; filesRoot: boolean; attempt: number; lostAt: number; error: AppError }
   | { status: 'prompt'; prompt: Prompt }
   | { status: 'failed'; error: AppError }
 
@@ -29,7 +30,9 @@ type Connections = {
   markLost: (serverId: string, user: string, error: AppError) => void
   /** Try reconnecting now instead of waiting for the next attempt. */
   retryNow: (serverId: string, user: string) => void
+  /** Turning sudo off also ends files as root, as on the Rust side. */
   setSudo: (serverId: string, user: string, on: boolean) => void
+  setFilesRoot: (serverId: string, user: string, on: boolean) => void
   /** Whether the sudo password dialog is open for this session. */
   sudoAsked: (serverId: string, user: string) => boolean
   askSudo: (serverId: string, user: string, open: boolean) => void
@@ -88,7 +91,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
           pending.current[key] = { password: merged.password, passphrase: merged.passphrase, remember: merged.remember }
         }
         if (r.status === 'connected') {
-          set(key, { status: 'connected', info: r.info, since: Date.now(), sudo: false })
+          set(key, { status: 'connected', info: r.info, since: Date.now(), sudo: false, filesRoot: false })
           // The OS may have just been detected and saved.
           refresh()
         } else {
@@ -115,7 +118,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     try {
       const r = await api.reconnect(serverId, user)
       if (attempt.current[key] !== id) return
-      if (r.status === 'connected') set(key, { status: 'connected', info: r.info, since: Date.now(), sudo: cur.sudo })
+      if (r.status === 'connected') set(key, { status: 'connected', info: r.info, since: Date.now(), sudo: cur.sudo, filesRoot: cur.filesRoot })
       else set(key, { status: 'prompt', prompt: r })
     } catch (e) {
       if (attempt.current[key] !== id) return
@@ -146,7 +149,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       delete pending.current[key]
       const cur = mapRef.current[key]
       if (cur?.status === 'connected') {
-        set(key, { status: 'reconnecting', info: cur.info, since: cur.since, sudo: cur.sudo, attempt: 0, lostAt: Date.now(), error })
+        set(key, { status: 'reconnecting', info: cur.info, since: cur.since, sudo: cur.sudo, filesRoot: cur.filesRoot, attempt: 0, lostAt: Date.now(), error })
         timers.current[key] = setTimeout(() => void tryReconnect(serverId, user), RETRY_DELAYS[0] * 1000)
       } else if (cur?.status !== 'reconnecting') {
         stopTimer(key)
@@ -161,7 +164,13 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
   const setSudo = useCallback((serverId: string, user: string, on: boolean) => {
     const key = connKey(serverId, user)
     const c = mapRef.current[key]
-    if (c?.status === 'connected' || c?.status === 'reconnecting') set(key, { ...c, sudo: on })
+    if (c?.status === 'connected' || c?.status === 'reconnecting') set(key, { ...c, sudo: on, filesRoot: on && c.filesRoot })
+  }, [])
+
+  const setFilesRoot = useCallback((serverId: string, user: string, on: boolean) => {
+    const key = connKey(serverId, user)
+    const c = mapRef.current[key]
+    if (c?.status === 'connected' || c?.status === 'reconnecting') set(key, { ...c, filesRoot: on })
   }, [])
 
   const askSudo = useCallback((serverId: string, user: string, open: boolean) => {
@@ -179,6 +188,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
         markLost,
         retryNow,
         setSudo,
+        setFilesRoot,
         sudoAsked: (s, u) => !!sudoPrompt[connKey(s, u)],
         askSudo,
       }}

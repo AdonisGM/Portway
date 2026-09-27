@@ -73,7 +73,7 @@ export function TransferQueue() {
                 const Icon = tr.direction === 'up' ? ArrowUpFromLine : tr.direction === 'copy' ? ArrowLeftRight : ArrowDownToLine
                 const bar = tr.status === 'error' ? 'var(--danger)' : tr.status === 'done' ? 'var(--success)' : 'var(--ink2)'
                 return (
-                  <div key={tr.id} className="grid items-center gap-3 border-t border-line px-3.5 py-2 first:border-t-0" style={{ gridTemplateColumns: '18px minmax(0,1fr) 128px auto' }}>
+                  <div key={tr.id} className="grid items-center gap-3 border-t border-line px-3.5 py-2 first:border-t-0" style={{ gridTemplateColumns: '18px minmax(0,1fr) 128px 26px' }}>
                     <Icon size={15} strokeWidth={1.8} className={tr.status === 'error' ? 'text-danger' : 'text-ink2'} />
                     <div className="flex min-w-0 flex-col gap-0.5">
                       <span className="truncate font-medium">{tr.name}</span>

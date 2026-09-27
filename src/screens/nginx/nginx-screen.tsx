@@ -12,6 +12,9 @@ import { api, isAppError, type AppError, type NginxAction, type NginxResult, typ
 import { LogTail } from '../files/log-tail'
 import { fullTime, q } from '../files/format'
 
+/** Columns of the sites list: domain box, what nginx does, target box. */
+const SITE_COLS = '220px minmax(0,1fr) 220px'
+
 /** Certificates this close to the end are flagged. */
 const SOON = 14
 
@@ -185,12 +188,17 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
       {ok && (
         <div className="grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: 'minmax(0,1fr) 380px' }}>
           <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
-            <div className="grid flex-none gap-0 bg-sunken px-3.5 py-2 text-[11px] tracking-[.06em] text-muted uppercase" style={{ gridTemplateColumns: '220px minmax(0,1fr) 220px' }}>
-              <span>{t('Tên miền')}</span>
-              <span className="text-center">Nginx</span>
-              <span>{t('Đích')}</span>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-2.5">
+            <div className="min-h-0 flex-1 overflow-auto overscroll-contain px-2.5 pb-2.5">
+              {/* In the scrolling box, with the rows' padding, so it lines up with them
+                  whether or not a scrollbar shows; labels sit where the boxes' text does. */}
+              <div
+                className="sticky top-0 z-[1] -mx-2.5 mb-1.5 grid bg-sunken px-2.5 py-2 text-[11px] tracking-[.06em] text-muted uppercase"
+                style={{ gridTemplateColumns: SITE_COLS }}
+              >
+                <span className="px-3">{t('Tên miền')}</span>
+                <span className="text-center">Nginx</span>
+                <span className="px-3">{t('Đích')}</span>
+              </div>
               {sites.length === 0 && <div className="p-7 text-center text-muted">{t('nginx chưa có khối server nào.')}</div>}
               {sites.map((s) => {
                 const sel = s === current
@@ -207,7 +215,7 @@ export function NginxScreen({ server, user }: { server: Server; user: string }) 
                     type="button"
                     onClick={() => setSelected(nameOf(s))}
                     className="grid w-full cursor-pointer items-center py-1 text-left"
-                    style={{ gridTemplateColumns: '220px minmax(0,1fr) 220px', opacity: s.enabled ? 1 : 0.55 }}
+                    style={{ gridTemplateColumns: SITE_COLS, opacity: s.enabled ? 1 : 0.55 }}
                   >
                     <span className={cx('flex min-w-0 flex-col gap-0.5 rounded-[10px] border bg-raised px-3 py-2.5', sel ? 'border-accent' : 'border-line')}>
                       <span className="truncate font-semibold">{nameOf(s)}</span>

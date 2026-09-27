@@ -14,6 +14,11 @@ import { copyText } from '../../lib/clipboard'
 import { addressOf, describe, isOn, KIND_LABELS, openTarget, status } from './format'
 import { TunnelDialog } from './tunnel-dialog'
 
+/** Every row is its own grid: all tracks are fixed or minmax(0,…) so the
+ *  columns line up whatever a row holds (the last one fits Copy, the longest
+ *  "Mở"/"Chuỗi kết nối" label in either language, and the ⋯ menu). */
+const ROW_COLS = '36px minmax(0,1.3fr) minmax(0,1fr) 220px'
+
 /** Tick every second while something is live, for uptime and retry countdowns. */
 function useNow(on: boolean) {
   const [now, setNow] = useState(Date.now())
@@ -103,7 +108,7 @@ export function TunnelsScreen() {
             const on = isOn(tn)
             const st = status(tn, now)
             return (
-              <div key={tn.id} className="grid items-center gap-3.5 border-t border-line px-3.5 py-2.5 first-of-type:border-t-0" style={{ gridTemplateColumns: '36px minmax(0,1.3fr) minmax(0,1fr) auto' }}>
+              <div key={tn.id} className="grid items-center gap-3.5 border-t border-line px-3.5 py-2.5 first-of-type:border-t-0" style={{ gridTemplateColumns: ROW_COLS }}>
                 <button
                   type="button"
                   title={on ? t('Tắt tunnel') : t('Bật tunnel')}
@@ -143,7 +148,8 @@ export function TunnelsScreen() {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center justify-end gap-1">
+                {/* Fixed slots (Copy | Mở | ⋯) so each button sits at the same place on every row. */}
+                <div className="grid items-center gap-1" style={{ gridTemplateColumns: '52px minmax(0,1fr) 26px' }}>
                   <Button
                     variant="ghost"
                     size="xs"
@@ -151,10 +157,12 @@ export function TunnelsScreen() {
                   >
                     Copy
                   </Button>
-                  {tn.openKind !== 'none' && (
-                    <Button size="xs" onClick={() => openIt(tn)}>
+                  {tn.openKind !== 'none' ? (
+                    <Button size="xs" className="justify-self-start" onClick={() => openIt(tn)}>
                       {tn.openKind === 'url' ? t('Mở') : t('Chuỗi kết nối')}
                     </Button>
+                  ) : (
+                    <span />
                   )}
                   <RowMenu
                     open={menu === tn.id}

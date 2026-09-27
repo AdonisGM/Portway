@@ -2006,7 +2006,8 @@ mod tests {
             let (hh, st) = (h.clone(), stats.clone());
             tokio::spawn(async move {
                 let (sock, peer) = l.accept().await.unwrap();
-                serve_local(sock, peer, "127.0.0.1:5000", &hh, &st).await.unwrap();
+                let link = st.open_link(Some(peer), None, String::new());
+                assert_eq!(serve_local(sock, peer, "127.0.0.1:5000", &hh, &st, &link).await, None);
             });
             assert!(get(TcpStream::connect(addr).await.unwrap()).await.ends_with("portway\n"), "local forward reaches the loopback-only server");
             // socks5
@@ -2015,7 +2016,9 @@ mod tests {
             let (hh, st) = (h.clone(), stats.clone());
             tokio::spawn(async move {
                 let (sock, peer) = l.accept().await.unwrap();
-                serve_socks(sock, peer, &hh, &st, None).await.unwrap();
+                let link = st.open_link(Some(peer), None, String::new());
+                assert_eq!(serve_socks(sock, peer, &hh, &st, &link, None).await, None);
+                st.close_link(&link, None);
             });
             let mut s = TcpStream::connect(addr).await.unwrap();
             s.write_all(&[5, 1, 0]).await.unwrap();
@@ -2034,6 +2037,8 @@ mod tests {
             let out = exec(&session, "curl -s --max-time 5 http://localhost:17777/").await.unwrap().stdout;
             assert_eq!(out, "from-the-mac");
             assert!(stats.total.load(std::sync::atomic::Ordering::Relaxed) >= 1 && stats.rx.load(std::sync::atomic::Ordering::Relaxed) > 0);
+            let m = stats.monitor();
+            assert!(m.recent.iter().any(|l| l.target == "localhost:5000" && l.rx > 0 && l.open_ms.is_some()), "socks target recorded");
             let _ = h.disconnect(russh::Disconnect::ByApplication, "", "en").await;
         }
 

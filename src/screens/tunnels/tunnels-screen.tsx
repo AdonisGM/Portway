@@ -1,3 +1,5 @@
+import { isTauri } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ArrowLeftRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -9,10 +11,12 @@ import { Button, cx } from '../../components/ui/primitives'
 import { RowMenu } from '../../components/ui/row-menu'
 import { SearchInput } from '../../components/ui/search-input'
 import { t } from '../../i18n'
-import { api, isAppError, type Tunnel } from '../../lib/api'
+import { api, isAppError, type Tunnel, type TunnelSample } from '../../lib/api'
 import { copyText } from '../../lib/clipboard'
 import { addressOf, describe, isOn, KIND_LABELS, openTarget, status } from './format'
 import { TunnelDialog } from './tunnel-dialog'
+import { TunnelMonitorSheet } from './tunnel-monitor'
+import { rate, RX, Sparkline, TX } from './traffic-chart'
 
 /** Every row is its own grid: all tracks are fixed or minmax(0,…) so the
  *  columns line up whatever a row holds (the last one fits Copy, the longest
@@ -30,6 +34,24 @@ function useNow(on: boolean) {
   return now
 }
 
+/** The last minute of every running tunnel, for the row sparklines: seeded
+ *  from the Rust side, then one `tunnel-sample` event a second per tunnel. */
+function useSparks() {
+  const [map, setMap] = useState<Record<string, TunnelSample[]>>({})
+  useEffect(() => {
+    if (!isTauri()) return
+    void api.tunnelSamples().then(setMap)
+    const off = listen<{ id: string; sample: TunnelSample }>('tunnel-sample', (e) => {
+      const { id, sample } = e.payload
+      setMap((m) => ({ ...m, [id]: [...(m[id] ?? []), sample].slice(-60) }))
+    })
+    return () => {
+      void off.then((f) => f())
+    }
+  }, [])
+  return map
+}
+
 export function TunnelsScreen() {
   const { list, start, stop, remove, save, draft, setDraft } = useTunnels()
   const { byId } = useServers()
@@ -38,6 +60,9 @@ export function TunnelsScreen() {
   const [dialog, setDialog] = useState<{ editing: Tunnel | null } | null>(null)
   const [menu, setMenu] = useState<string | null>(null)
   const now = useNow(list.some(isOn))
+  const sparks = useSparks()
+  const [watching, setWatching] = useState<string | null>(null)
+  const watched = list.find((tn) => tn.id === watching)
 
   // "Mở tunnel" from Firewall or Docker lands here with a draft.
   useEffect(() => {
@@ -107,6 +132,8 @@ export function TunnelsScreen() {
           {g.items.map((tn) => {
             const on = isOn(tn)
             const st = status(tn, now)
+            const spark = sparks[tn.id] ?? []
+            const last = tn.run.state === 'running' ? spark[spark.length - 1] : undefined
             return (
               <div key={tn.id} className="grid items-center gap-3.5 border-t border-line px-3.5 py-2.5 first-of-type:border-t-0" style={{ gridTemplateColumns: ROW_COLS }}>
                 <button
@@ -117,7 +144,7 @@ export function TunnelsScreen() {
                 >
                   <span className={cx('size-4 rounded-full', on ? 'bg-accent-fg' : 'bg-muted')} />
                 </button>
-                <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="flex min-w-0 cursor-pointer flex-col gap-0.5" onClick={() => setWatching(tn.id)} title={t('Xem lưu lượng và kết nối')}>
                   <span className="flex items-center gap-2">
                     <span className="truncate font-semibold">{tn.name}</span>
                     <span className="rounded-[4px] bg-sunken px-1.5 py-px text-[10.5px] text-ink2">{KIND_LABELS[tn.kind]}</span>
@@ -135,18 +162,26 @@ export function TunnelsScreen() {
                     {describe(tn, g.server?.name ?? tn.serverId)}
                   </span>
                 </div>
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="flex items-center gap-1.5 truncate font-medium" style={{ color: st.color }}>
-                    <span className="size-1.5 flex-none rounded-full" style={{ background: st.color }} />
-                    <span className="truncate" title={st.label}>
-                      {st.label}
+                <div className="flex min-w-0 cursor-pointer items-center gap-3" onClick={() => setWatching(tn.id)} title={t('Xem lưu lượng và kết nối')}>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex items-center gap-1.5 truncate font-medium" style={{ color: st.color }}>
+                      <span className="size-1.5 flex-none rounded-full" style={{ background: st.color }} />
+                      <span className="truncate" title={st.label}>
+                        {st.label}
+                      </span>
+                      {last && (
+                        <span className="num truncate text-[11px] font-normal">
+                          <span style={{ color: RX }}>↓ {rate(last.rx)}</span> <span style={{ color: TX }}>↑ {rate(last.tx)}</span>
+                        </span>
+                      )}
                     </span>
-                  </span>
-                  {st.sub && (
-                    <span className="truncate text-[11px] text-muted" title={st.sub}>
-                      {st.sub}
-                    </span>
-                  )}
+                    {st.sub && (
+                      <span className="truncate text-[11px] text-muted" title={st.sub}>
+                        {st.sub}
+                      </span>
+                    )}
+                  </div>
+                  {last && <Sparkline samples={spark} />}
                 </div>
                 {/* Fixed slots (Copy | Mở | ⋯) so each button sits at the same place on every row. */}
                 <div className="grid items-center gap-1" style={{ gridTemplateColumns: '52px minmax(0,1fr) 26px' }}>
@@ -168,6 +203,7 @@ export function TunnelsScreen() {
                     open={menu === tn.id}
                     setOpen={(v) => setMenu(v ? tn.id : null)}
                     items={[
+                      { label: t('Xem lưu lượng và kết nối'), run: () => setWatching(tn.id) },
                       { label: t('Sửa'), run: () => setDialog({ editing: tn }) },
                       { label: t('Nhân bản'), run: () => void duplicate(tn) },
                       { label: t('Sao chép lệnh ssh'), run: () => void copyText(tn.command).then(() => toast({ title: t('Đã sao chép lệnh'), detail: tn.command })) },
@@ -201,6 +237,8 @@ export function TunnelsScreen() {
           )}
         </span>
       )}
+
+      {watched && <TunnelMonitorSheet tunnel={watched} onClose={() => setWatching(null)} onStart={() => void toggle(watched)} />}
 
       {dialog && (
         <TunnelDialog

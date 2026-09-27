@@ -425,6 +425,35 @@ export type TunnelRun =
   | { state: 'error'; code: string; detail: string | null }
 /** `socksLogin`: [user, password] a SOCKS tunnel open to the LAN asks for. */
 export type Tunnel = TunnelSpec & { run: TunnelRun; command: string; socksLogin: [string, string] | null }
+/** One second of a tunnel's traffic; `rttUs` is the last SSH round trip. */
+export type TunnelSample = { at: number; rx: number; tx: number; active: number; rttUs: number | null }
+export type TunnelProcess = { pid: number; name: string; app: string | null }
+/** A connection through a tunnel. `peer` is null when the server forwarded
+ *  it (remote tunnels); `openMs` is how long the channel took to open. */
+export type TunnelLink = {
+  id: number
+  peer: string | null
+  target: string
+  openedAt: number
+  closedAt: number | null
+  openMs: number | null
+  rx: number
+  tx: number
+  rateRx: number
+  rateTx: number
+  process: TunnelProcess | null
+  error: string | null
+}
+export type TunnelMonitor = {
+  samples: TunnelSample[]
+  open: TunnelLink[]
+  recent: TunnelLink[]
+  rttUs: number | null
+  reconnects: number
+  total: number
+  rx: number
+  tx: number
+}
 
 export type TraceKind = 'exec' | 'sftp' | 'connect' | 'transfer'
 export type TraceStatus = 'waiting' | 'running' | 'ok' | 'error'
@@ -594,6 +623,10 @@ type Api = {
   deleteTunnel(id: string): Promise<void>
   startTunnel(id: string): Promise<void>
   stopTunnel(id: string): Promise<void>
+  /** Live numbers of a running tunnel; null when it is off. */
+  tunnelMonitor(id: string): Promise<TunnelMonitor | null>
+  /** The last minute of every running tunnel. */
+  tunnelSamples(): Promise<Record<string, TunnelSample[]>>
   /** A free local port from `start` up, skipping other tunnels' ports. */
   freePort(start: number, except?: string): Promise<number>
   portFree(port: number, bind: string, except?: string): Promise<boolean>
@@ -693,6 +726,8 @@ const tauriApi: Api = {
   deleteTunnel: (id) => invoke('tunnel_delete', { id }),
   startTunnel: (id) => invoke('tunnel_start', { id }),
   stopTunnel: (id) => invoke('tunnel_stop', { id }),
+  tunnelMonitor: (id) => invoke('tunnel_monitor', { id }),
+  tunnelSamples: () => invoke('tunnel_samples'),
   freePort: (start, except) => invoke('tunnel_free_port', { start, except }),
   portFree: (port, bind, except) => invoke('tunnel_port_free', { port, bind, except }),
   traceList: () => invoke('trace_list'),
@@ -893,6 +928,8 @@ function browserApi(): Api {
     deleteTunnel: async () => fail('needs_app'),
     startTunnel: async () => fail('needs_app'),
     stopTunnel: async () => fail('needs_app'),
+    tunnelMonitor: async () => null,
+    tunnelSamples: async () => ({}),
     freePort: async (start) => start,
     portFree: async () => true,
     traceList: async () => [],

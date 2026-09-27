@@ -14,13 +14,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 
@@ -30,6 +28,8 @@ use crate::i18n::tr;
 use crate::servers::ServerStore;
 use crate::ssh::{open_for_tunnel, ssh_target_args, Client, Conn, Forward, Sessions};
 use crate::trace;
+pub(crate) use crate::tunnel_stats::Stats;
+use crate::tunnel_stats::{pipe, resolve, Link, Monitor, Sample};
 
 /// Seconds between reconnect attempts; the last one repeats.
 const RETRY: [u64; 6] = [2, 4, 8, 15, 30, 60];
@@ -134,15 +134,6 @@ pub struct TunnelView {
     pub command: String,
     /// Login a LAN SOCKS tunnel asks for (user, password); None otherwise.
     pub socks_login: Option<(String, String)>,
-}
-
-#[derive(Default)]
-pub(crate) struct Stats {
-    pub(crate) active: AtomicU32,
-    pub(crate) total: AtomicU64,
-    /// Bytes to this Mac / from this Mac.
-    pub(crate) rx: AtomicU64,
-    pub(crate) tx: AtomicU64,
 }
 
 struct Run {
@@ -271,6 +262,15 @@ impl Tunnels {
         self.emit(id);
     }
 
+    pub fn monitor(&self, id: &str) -> Option<Monitor> {
+        self.runs.lock().unwrap().get(id).map(|r| r.stats.monitor())
+    }
+
+    /// The last minute of every running tunnel, for the sparklines.
+    pub fn recent_samples(&self) -> HashMap<String, Vec<Sample>> {
+        self.runs.lock().unwrap().iter().map(|(id, r)| (id.clone(), r.stats.tail(60))).collect()
+    }
+
     pub fn list(&self) -> Vec<TunnelView> {
         let specs = self.specs.lock().unwrap().clone();
         specs.iter().map(|s| self.view(s)).collect()
@@ -355,6 +355,7 @@ impl Tunnels {
             let spec = spec.clone();
             tauri::async_runtime::spawn(accept_loop(l, spec, slot, stats, login.clone()))
         });
+        let sampler = tauri::async_runtime::spawn(sample_loop(self.app.clone(), id.clone(), stats.clone(), handle_slot.clone()));
 
         let mut attempt = 0u32;
         let mut logged = false;
@@ -445,6 +446,7 @@ impl Tunnels {
                 self.set_state(&id, RunState::Error { code: "connection_lost".into(), detail: None });
                 break;
             }
+            stats.reconnects.fetch_add(1, Ordering::Relaxed);
             attempt += 1;
             self.set_state(&id, RunState::Retrying { attempt, error: tr("Mất kết nối tới server", "Lost connection to the server"), next_at: now_ms() + RETRY[0] * 1000 });
             if sleep_or_stop(&mut stop, RETRY[0]).await {
@@ -454,6 +456,7 @@ impl Tunnels {
         if let Some(a) = accept {
             a.abort();
         }
+        sampler.abort();
         if self.stopped(&id, &stop) {
             audit.record(&spec.server_id, &spec.user, "tunnelStop", &command, true, None);
         }
@@ -512,6 +515,65 @@ async fn sleep_or_stop(stop: &mut watch::Receiver<bool>, secs: u64) -> bool {
     }
 }
 
+#[derive(Clone, Serialize)]
+struct SampleEvent<'a> {
+    id: &'a str,
+    sample: Sample,
+}
+
+/// Seconds to wait for an SSH ping; a slower answer is recorded as this long.
+const PING_WAIT: u64 = 10;
+
+/// Every second while the tunnel runs: a traffic sample (pushed to the UI as
+/// `tunnel-sample`), and every 5 seconds an SSH ping for the round trip.
+/// New connections get their process looked up as they come in.
+async fn sample_loop(app: AppHandle, id: String, stats: Arc<Stats>, slot: Arc<Mutex<Option<Arc<Conn>>>>) {
+    let resolver = {
+        let stats = stats.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                stats.new_link.notified().await;
+                // Gather a burst (a browser opens several at once) into one lsof.
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                let todo = stats.take_unresolved();
+                if !todo.is_empty() {
+                    let _ = tauri::async_runtime::spawn_blocking(move || resolve(&todo)).await;
+                }
+            }
+        })
+    };
+    let _guard = AbortOnDrop(resolver);
+    for n in 0u64.. {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let sample = stats.tick();
+        let _ = app.emit("tunnel-sample", SampleEvent { id: &id, sample });
+        if n % 5 == 0 {
+            let handle = slot.lock().unwrap().clone();
+            match handle {
+                Some(h) => {
+                    let stats = stats.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let started = Instant::now();
+                        // No answer in time still says something: the server is that slow.
+                        let answered = !matches!(tokio::time::timeout(Duration::from_secs(PING_WAIT), h.send_ping()).await, Ok(Err(_)));
+                        stats.set_rtt(answered.then(|| started.elapsed().as_micros().min(u32::MAX as u128) as u32));
+                    });
+                }
+                None => stats.set_rtt(None),
+            }
+        }
+    }
+}
+
+/// Stops a helper task when the loop that owns it is aborted.
+struct AbortOnDrop(tauri::async_runtime::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 async fn accept_loop(listener: TcpListener, spec: Spec, slot: Arc<Mutex<Option<Arc<Conn>>>>, stats: Arc<Stats>, login: Option<Arc<(String, String)>>) {
     loop {
         let (sock, peer) = match listener.accept().await {
@@ -522,31 +584,45 @@ async fn accept_loop(listener: TcpListener, spec: Spec, slot: Arc<Mutex<Option<A
                 continue;
             }
         };
+        let target = if spec.kind == Kind::Local { spec.dest.clone() } else { String::new() };
+        let link = stats.open_link(Some(peer), sock.local_addr().ok(), target);
         // Between reconnects there is no connection: refuse by closing.
-        let Some(handle) = slot.lock().unwrap().clone() else { continue };
+        let Some(handle) = slot.lock().unwrap().clone() else {
+            stats.close_link(&link, Some(tr("Từ chối: tunnel đang kết nối lại tới server", "Refused: the tunnel is reconnecting to the server")));
+            continue;
+        };
         let stats = stats.clone();
         let spec = spec.clone();
         let login = login.clone();
         tauri::async_runtime::spawn(async move {
-            stats.active.fetch_add(1, Ordering::Relaxed);
-            stats.total.fetch_add(1, Ordering::Relaxed);
-            let _ = match spec.kind {
-                Kind::Local => serve_local(sock, peer, &spec.dest, &handle, &stats).await,
-                Kind::Socks => serve_socks(sock, peer, &handle, &stats, login.as_deref()).await,
-                Kind::Remote => Ok(()),
+            let error = match spec.kind {
+                Kind::Local => serve_local(sock, peer, &spec.dest, &handle, &stats, &link).await,
+                Kind::Socks => serve_socks(sock, peer, &handle, &stats, &link, login.as_deref()).await,
+                Kind::Remote => None,
             };
-            stats.active.fetch_sub(1, Ordering::Relaxed);
+            stats.close_link(&link, error);
         });
     }
 }
 
-pub(crate) async fn serve_local(sock: TcpStream, peer: SocketAddr, dest: &str, handle: &russh::client::Handle<Client>, stats: &Arc<Stats>) -> std::io::Result<()> {
-    let (host, port) = split_dest(dest).ok_or_else(|| std::io::Error::other("bad dest"))?;
-    let channel = handle
-        .channel_open_direct_tcpip(host, port as u32, peer.ip().to_string(), peer.port() as u32)
-        .await
-        .map_err(std::io::Error::other)?;
-    pipe(sock, channel.into_stream(), stats).await
+/// The server could not open the connection onward.
+fn unreachable(target: &str, e: impl std::fmt::Display) -> String {
+    tr(format!("Server không kết nối được tới {target}: {e}"), format!("The server couldn't connect to {target}: {e}"))
+}
+
+/// Serve one connection of a local tunnel; the error says why it never
+/// carried anything (a connection that breaks mid-way is not an error here).
+pub(crate) async fn serve_local(sock: TcpStream, peer: SocketAddr, dest: &str, handle: &russh::client::Handle<Client>, stats: &Arc<Stats>, link: &Arc<Link>) -> Option<String> {
+    let Some((host, port)) = split_dest(dest) else { return Some(unreachable(dest, "bad destination")) };
+    let started = Instant::now();
+    match handle.channel_open_direct_tcpip(host, port as u32, peer.ip().to_string(), peer.port() as u32).await {
+        Ok(channel) => {
+            link.set_open_ms(started.elapsed().as_millis() as u32);
+            let _ = pipe(sock, channel.into_stream(), stats, link).await;
+            None
+        }
+        Err(e) => Some(unreachable(dest, e)),
+    }
 }
 
 /// Equal-length-independent comparison, so a wrong password takes as long as a right one.
@@ -561,23 +637,43 @@ fn same(a: &[u8], b: &[u8]) -> bool {
 /// Minimal SOCKS5, CONNECT only. With a login (LAN tunnels) only the
 /// user/password method (RFC 1929) is accepted; otherwise no authentication.
 pub(crate) async fn serve_socks(
+    sock: TcpStream,
+    peer: SocketAddr,
+    handle: &russh::client::Handle<Client>,
+    stats: &Arc<Stats>,
+    link: &Arc<Link>,
+    login: Option<&(String, String)>,
+) -> Option<String> {
+    let handshake = tr("Client ngắt kết nối giữa lúc bắt tay SOCKS", "The client hung up during the SOCKS handshake");
+    match socks_handshake(sock, peer, handle, stats, link, login).await {
+        Ok(error) => error,
+        Err(_) => Some(handshake),
+    }
+}
+
+async fn socks_handshake(
     mut sock: TcpStream,
     peer: SocketAddr,
     handle: &russh::client::Handle<Client>,
     stats: &Arc<Stats>,
+    link: &Arc<Link>,
     login: Option<&(String, String)>,
-) -> std::io::Result<()> {
+) -> std::io::Result<Option<String>> {
     let mut head = [0u8; 2];
     sock.read_exact(&mut head).await?;
     if head[0] != 5 {
-        return Err(std::io::Error::other("not socks5"));
+        return Ok(Some(tr("Không phải yêu cầu SOCKS5", "Not a SOCKS5 request")));
     }
     let mut methods = vec![0u8; head[1] as usize];
     sock.read_exact(&mut methods).await?;
     let method = if login.is_some() { 2 } else { 0 };
     if !methods.contains(&method) {
         sock.write_all(&[5, 0xff]).await?;
-        return Ok(());
+        return Ok(Some(if login.is_some() {
+            tr("Client không gửi user và mật khẩu SOCKS", "The client sent no SOCKS user and password")
+        } else {
+            tr("Client đòi đăng nhập SOCKS, tunnel này không dùng", "The client wants a SOCKS login, which this tunnel doesn't use")
+        }));
     }
     sock.write_all(&[5, method]).await?;
     if let Some((user, password)) = login {
@@ -592,7 +688,7 @@ pub(crate) async fn serve_socks(
         let ok = ver[0] == 1 && same(&u, user.as_bytes()) & same(&p, password.as_bytes());
         sock.write_all(&[1, if ok { 0 } else { 1 }]).await?;
         if !ok {
-            return Ok(());
+            return Ok(Some(tr("Sai user hoặc mật khẩu SOCKS", "Wrong SOCKS user or password")));
         }
     }
     let mut req = [0u8; 4];
@@ -617,26 +713,31 @@ pub(crate) async fn serve_socks(
         }
         _ => {
             sock.write_all(&[5, 8, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
-            return Ok(());
+            return Ok(Some(tr("Kiểu địa chỉ SOCKS không hỗ trợ", "Unsupported SOCKS address type")));
         }
     };
     let mut port = [0u8; 2];
     sock.read_exact(&mut port).await?;
     let port = u16::from_be_bytes(port);
+    let target = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
+    link.set_target(target.clone());
     if req[1] != 1 {
         // Only CONNECT; BIND and UDP ASSOCIATE are not supported.
         sock.write_all(&[5, 7, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
-        return Ok(());
+        return Ok(Some(tr("Chỉ hỗ trợ SOCKS CONNECT (không có UDP, BIND)", "Only SOCKS CONNECT is supported (no UDP, BIND)")));
     }
+    let started = Instant::now();
     match handle.channel_open_direct_tcpip(host, port as u32, peer.ip().to_string(), peer.port() as u32).await {
         Ok(channel) => {
+            link.set_open_ms(started.elapsed().as_millis() as u32);
             sock.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
-            pipe(sock, channel.into_stream(), stats).await
+            let _ = pipe(sock, channel.into_stream(), stats, link).await;
+            Ok(None)
         }
-        Err(_) => {
+        Err(e) => {
             // General failure: the server could not reach the target.
             sock.write_all(&[5, 5, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
-            Ok(())
+            Ok(Some(unreachable(&target, e)))
         }
     }
 }
@@ -647,57 +748,37 @@ pub(crate) fn remote_forward(dest: String, stats: Arc<Stats>) -> Forward {
         let dest = dest.clone();
         let stats = stats.clone();
         tauri::async_runtime::spawn(async move {
-            stats.active.fetch_add(1, Ordering::Relaxed);
-            stats.total.fetch_add(1, Ordering::Relaxed);
-            if let Some((host, port)) = split_dest(&dest) {
-                if let Ok(sock) = TcpStream::connect((host.as_str(), port)).await {
-                    let _ = pipe(sock, channel.into_stream(), &stats).await;
+            let link = stats.open_link(None, None, dest.clone());
+            let error = match split_dest(&dest) {
+                Some((host, port)) => {
+                    let started = Instant::now();
+                    match TcpStream::connect((host.as_str(), port)).await {
+                        Ok(sock) => {
+                            link.set_open_ms(started.elapsed().as_millis() as u32);
+                            let _ = pipe(sock, channel.into_stream(), &stats, &link).await;
+                            None
+                        }
+                        Err(e) => Some(tr(format!("Không kết nối được tới {dest} trên máy bạn: {e}"), format!("Couldn't connect to {dest} on this Mac: {e}"))),
+                    }
                 }
-            }
-            stats.active.fetch_sub(1, Ordering::Relaxed);
+                None => None,
+            };
+            stats.close_link(&link, error);
         });
     })
 }
 
-/// Copy both ways until either side closes, counting bytes.
-async fn pipe<S: AsyncRead + AsyncWrite + Unpin>(sock: TcpStream, mut remote: S, stats: &Arc<Stats>) -> std::io::Result<()> {
-    let mut local = Counted { inner: sock, stats: stats.clone() };
-    tokio::io::copy_bidirectional(&mut local, &mut remote).await.map(|_| ())
-}
-
-/// The local socket, counting what it reads (sent out: tx) and writes (rx).
-struct Counted {
-    inner: TcpStream,
-    stats: Arc<Stats>,
-}
-
-impl AsyncRead for Counted {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
-        let before = buf.filled().len();
-        let r = Pin::new(&mut self.inner).poll_read(cx, buf);
-        let n = buf.filled().len() - before;
-        self.stats.tx.fetch_add(n as u64, Ordering::Relaxed);
-        r
-    }
-}
-
-impl AsyncWrite for Counted {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
-        let r = Pin::new(&mut self.inner).poll_write(cx, buf);
-        if let Poll::Ready(Ok(n)) = &r {
-            self.stats.rx.fetch_add(*n as u64, Ordering::Relaxed);
-        }
-        r
-    }
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_flush(cx)
-    }
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_shutdown(cx)
-    }
-}
-
 // ------------------------------------------------------------------ commands
+
+#[tauri::command]
+pub fn tunnel_monitor(tunnels: tauri::State<'_, Arc<Tunnels>>, id: String) -> Option<Monitor> {
+    tunnels.monitor(&id)
+}
+
+#[tauri::command]
+pub fn tunnel_samples(tunnels: tauri::State<'_, Arc<Tunnels>>) -> HashMap<String, Vec<Sample>> {
+    tunnels.recent_samples()
+}
 
 #[tauri::command]
 pub fn tunnels_list(tunnels: tauri::State<'_, Arc<Tunnels>>) -> Vec<TunnelView> {
@@ -797,32 +878,6 @@ mod tests {
         let mut s = spec(Kind::Local, "x:1");
         s.bind = "192.168.1.5".into();
         assert_eq!(validate(&s).unwrap_err().code, "invalid_bind");
-    }
-
-    #[tokio::test]
-    async fn counts_bytes_both_ways() {
-        let stats = Arc::new(Stats::default());
-        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = l.local_addr().unwrap();
-        let client = tokio::spawn(async move {
-            let mut c = TcpStream::connect(addr).await.unwrap();
-            c.write_all(b"ping!").await.unwrap();
-            let mut buf = [0u8; 4];
-            c.read_exact(&mut buf).await.unwrap();
-            buf
-        });
-        let (sock, _) = l.accept().await.unwrap();
-        let (mut a, b) = tokio::io::duplex(64);
-        let st = stats.clone();
-        let piping = tokio::spawn(async move { pipe(sock, b, &st).await });
-        let mut got = [0u8; 5];
-        a.read_exact(&mut got).await.unwrap();
-        a.write_all(b"pong").await.unwrap();
-        assert_eq!(&client.await.unwrap(), b"pong");
-        assert_eq!(&got, b"ping!");
-        drop(a);
-        let _ = piping.await;
-        assert_eq!((stats.tx.load(Ordering::Relaxed), stats.rx.load(Ordering::Relaxed)), (5, 4));
     }
 
     #[test]

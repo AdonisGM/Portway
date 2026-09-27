@@ -21,6 +21,7 @@ mod ssh;
 mod ssh_config;
 mod trace;
 mod transfers;
+mod tunnel_stats;
 mod tunnels;
 
 use tauri::Manager;
@@ -147,6 +148,8 @@ pub fn run() {
             firewall::firewall_plan,
             firewall::firewall_apply,
             tunnels::tunnels_list,
+            tunnels::tunnel_monitor,
+            tunnels::tunnel_samples,
             tunnels::tunnel_save,
             tunnels::tunnel_delete,
             tunnels::tunnel_start,

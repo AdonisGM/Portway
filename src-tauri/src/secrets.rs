@@ -5,7 +5,7 @@
 
 use crate::error::{AppError, AppResult};
 
-const SERVICE: &str = "com.portway.app";
+pub(crate) const SERVICE: &str = "com.portway.app";
 /// Room per entry, in UTF-16 units; unlimited where the store has no limit.
 const LIMIT: usize = if cfg!(windows) { 1200 } else { usize::MAX };
 /// Starts the main entry of a split value; no real secret starts with U+0001.

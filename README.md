@@ -96,6 +96,7 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 
 - Mật khẩu đăng nhập, passphrase của khoá, mật khẩu SOCKS và bí mật trong request HTTP đều được lưu trong kho bí mật của hệ điều hành: **Keychain** trên macOS, **Credential Manager** trên Windows. Credential Manager giới hạn mỗi mục khoảng 1.280 ký tự, nên giá trị dài hơn được Portway tự chia thành nhiều mục.
 - Mật khẩu `sudo` được truyền qua stdin (`sudo -S`), không xuất hiện trong dòng lệnh hay trong nhật ký.
+- Khi mở Terminal cho một tài khoản đăng nhập bằng mật khẩu (hoặc khoá có passphrase), `ssh` lấy bí mật đã lưu qua một script `SSH_ASKPASS` tạm thời trên macOS. Script không chứa mật khẩu, chỉ biết mục nào trong Keychain trả lời câu hỏi nào; `security` đọc mục đó sau khi macOS hỏi người dùng cho phép. Bí mật chưa được lưu thì Terminal hỏi như bình thường.
 - Cấu hình được lưu tại `~/Library/Application Support/com.portway.app/` trên macOS và `%APPDATA%\com.portway.app\` trên Windows:
 
   | Tệp | Nội dung |

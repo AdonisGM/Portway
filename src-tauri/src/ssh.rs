@@ -9,7 +9,7 @@ use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCe
 use russh::ChannelMsg;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -528,7 +528,9 @@ pub(crate) fn ssh_target_args(store: &ServerStore, server_id: &str, user: &str) 
 /// Arguments after `ssh` that reach an account from a terminal, one item per
 /// argument (not quoted). A jump host becomes a ProxyCommand running ssh with
 /// that account's own key (`-J` would not pass it on).
-fn ssh_argv(store: &ServerStore, server_id: &str, user: &str, depth: u8) -> AppResult<Vec<String>> {
+/// `asks` collects what ssh may ask the terminal for on the way (passwords,
+/// key passphrases, of the jump hosts too), for the askpass helper.
+fn ssh_argv(store: &ServerStore, server_id: &str, user: &str, depth: u8, asks: &mut Vec<AskSecret>) -> AppResult<Vec<String>> {
     let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
     let account = server.accounts.iter().find(|a| a.user == user).ok_or_else(|| AppError::new("no_account"))?;
     // Checked again here for lists saved before these checks existed.
@@ -540,23 +542,72 @@ fn ssh_argv(store: &ServerStore, server_id: &str, user: &str, depth: u8) -> AppR
         args.push("-p".into());
         args.push(server.port.to_string());
     }
-    if let Auth::Key { path } = &account.auth {
-        args.push("-i".into());
-        args.push(expand_tilde(path).to_string_lossy().into_owned());
+    let who = format!("{}@{}", account.user, server.host);
+    match &account.auth {
+        Auth::Key { path } => {
+            let file = expand_tilde(path).to_string_lossy().into_owned();
+            // ssh: "Enter passphrase for key '<file>': "
+            asks.push(AskSecret { contains: vec![format!("passphrase for key '{file}'")], account: passphrase_account(path) });
+            args.push("-i".into());
+            args.push(file);
+        }
+        Auth::Password => {
+            // "user@host's password: " (password method) and "(user@host) Password: " (keyboard-interactive).
+            let account = password_account(server_id, user);
+            asks.push(AskSecret { contains: vec![format!("{who}'s password")], account: account.clone() });
+            asks.push(AskSecret { contains: vec![format!("({who})"), "assword".into()], account });
+        }
     }
     if let Some(j) = &server.jump {
         if depth >= MAX_HOPS {
             return Err(AppError::detail("jump_loop", &server.name));
         }
         let mut inner = vec![proxy_ssh(), "-W".into(), "%h:%p".into()];
-        inner.extend(ssh_argv(store, &j.server_id, &j.user, depth + 1)?);
+        inner.extend(ssh_argv(store, &j.server_id, &j.user, depth + 1, asks)?);
         args.push("-o".into());
         args.push(format!("ProxyCommand={}", inner.iter().map(|a| proxy_quote(a)).collect::<Vec<_>>().join(" ")));
     }
     // `--` ends ssh's options: the destination can never be read as one.
     args.push("--".into());
-    args.push(format!("{}@{}", account.user, server.host));
+    args.push(who);
     Ok(args)
+}
+
+/// A question ssh may ask in a terminal (its prompt contains every string of
+/// `contains`), and the Keychain entry that answers it.
+#[derive(Debug, Clone, PartialEq)]
+struct AskSecret {
+    contains: Vec<String>,
+    account: String,
+}
+
+/// The askpass helper for a terminal Portway opens (SSH_ASKPASS). It holds no
+/// secret, only which Keychain entry answers which question: `security` reads
+/// it (macOS asks the user whether to allow that). Anything it cannot answer,
+/// or a secret that was never saved, is asked on the terminal itself, the way
+/// ssh would: confirmations visibly, passwords hidden.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn askpass_script(asks: &[AskSecret], security: &str, service: &str) -> String {
+    let mut s = String::from(
+        "#!/bin/sh\n# Portway's askpass for this terminal: no secret here, only where to find one.\nprompt=$1\n",
+    );
+    s.push_str(&format!("from_keychain() {{ {} find-generic-password -s {} -a \"$1\" -w 2>/dev/null; }}\n", shell_quote(security), shell_quote(service)));
+    for a in asks {
+        // Nested cases: the prompt must contain every piece, each matched literally.
+        let open: String = a.contains.iter().map(|c| format!("case $prompt in *{}*) ", shell_quote(c))).collect();
+        let close: String = a.contains.iter().map(|_| ";; esac; ").collect();
+        s.push_str(&format!("{open}from_keychain {} && exit 0 {close}\n", shell_quote(&a.account)));
+    }
+    s.push_str(concat!(
+        "printf '%s' \"$prompt\" > /dev/tty\n",
+        "case ${SSH_ASKPASS_PROMPT:-} in\n",
+        "  none) printf '\\n' > /dev/tty; exit 0 ;;\n",
+        "  confirm) IFS= read -r answer < /dev/tty ;;\n",
+        "  *) stty -echo < /dev/tty 2>/dev/null; IFS= read -r answer < /dev/tty; stty echo < /dev/tty 2>/dev/null; printf '\\n' > /dev/tty ;;\n",
+        "esac\n",
+        "printf '%s\\n' \"$answer\"\n",
+    ));
+    s
 }
 
 /// The ssh a ProxyCommand runs. On Windows the full path, since the command
@@ -1726,10 +1777,11 @@ pub fn open_terminal(
     if remote.is_some() {
         argv.push("-t".to_string());
     }
-    argv.extend(ssh_argv(&store, &server_id, &user, 0)?);
+    let mut asks = Vec::new();
+    argv.extend(ssh_argv(&store, &server_id, &user, 0, &mut asks)?);
     // One argument: the server's shell reads it, never this computer's.
     argv.extend(remote);
-    let (line, launched) = launch_ssh(&argv);
+    let (line, launched) = launch_ssh(&argv, &asks);
     match launched {
         Ok(()) => {
             audit.record(&server_id, &user, "openTerminal", line, true, None);
@@ -1743,16 +1795,22 @@ pub fn open_terminal(
 }
 
 /// Terminal.app running `ssh argv`, through a temporary .command file so no
-/// Automation permission is needed. Returns the command line as logged.
+/// Automation permission is needed. Saved passwords and passphrases are filled
+/// in by the askpass helper (OpenSSH 8.4+ honours SSH_ASKPASS_REQUIRE; older
+/// ones just ask as before). Returns the command line as logged.
 #[cfg(target_os = "macos")]
-fn launch_ssh(argv: &[String]) -> (String, AppResult<()>) {
+fn launch_ssh(argv: &[String], asks: &[AskSecret]) -> (String, AppResult<()>) {
+    use std::os::unix::fs::PermissionsExt;
     let line = std::iter::once("ssh".to_string()).chain(argv.iter().map(|a| shell_quote(a))).collect::<Vec<_>>().join(" ");
     let run = || -> AppResult<()> {
         let dir = std::env::temp_dir().join("portway");
         std::fs::create_dir_all(&dir)?;
-        let file = dir.join(format!("ssh-{}.command", uuid::Uuid::new_v4()));
-        std::fs::write(&file, format!("#!/bin/sh\nrm -f \"$0\"\nexec {line}\n"))?;
-        use std::os::unix::fs::PermissionsExt;
+        let id = uuid::Uuid::new_v4();
+        let helper = dir.join(format!("askpass-{id}.sh"));
+        std::fs::write(&helper, askpass_script(asks, "/usr/bin/security", crate::secrets::SERVICE))?;
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700))?;
+        let file = dir.join(format!("ssh-{id}.command"));
+        std::fs::write(&file, command_script(&helper, &line))?;
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o700))?;
         let status = std::process::Command::new("open").arg("-a").arg("Terminal").arg(&file).status()?;
         if !status.success() {
@@ -1764,16 +1822,25 @@ fn launch_ssh(argv: &[String]) -> (String, AppResult<()>) {
     (line, r)
 }
 
+/// The .command file Terminal runs: it removes itself, runs `line` (the ssh
+/// command, already quoted) with the askpass helper, and removes the helper
+/// once ssh ends or the window is closed.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn command_script(helper: &Path, line: &str) -> String {
+    let helper = shell_quote(&helper.to_string_lossy());
+    format!("#!/bin/sh\nrm -f \"$0\"\nhelper={helper}\ntrap 'rm -f \"$helper\"' EXIT HUP INT TERM\nSSH_ASKPASS=\"$helper\" SSH_ASKPASS_REQUIRE=force {line}\n")
+}
+
 /// ssh.exe in its own console window (Windows Terminal on Windows 11).
 #[cfg(windows)]
-fn launch_ssh(argv: &[String]) -> (String, AppResult<()>) {
+fn launch_ssh(argv: &[String], _asks: &[AskSecret]) -> (String, AppResult<()>) {
     let line = std::iter::once("ssh".to_string()).chain(argv.iter().map(|a| win_quote(a))).collect::<Vec<_>>().join(" ");
     let r = crate::winterm::ssh_exe().and_then(|exe| crate::winterm::spawn(&exe, argv, &crate::paths::home_dir()));
     (line, r)
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
-fn launch_ssh(argv: &[String]) -> (String, AppResult<()>) {
+fn launch_ssh(argv: &[String], _asks: &[AskSecret]) -> (String, AppResult<()>) {
     let line = std::iter::once("ssh".to_string()).chain(argv.iter().map(|a| shell_quote(a))).collect::<Vec<_>>().join(" ");
     (line, Err(AppError::detail("terminal", "no terminal on this system")))
 }
@@ -1899,6 +1966,40 @@ mod tests {
         assert!(matches!(open(&t, Credential::Password("portway".into()), fp).await.unwrap(), Opened::Ready(_)), "right password through keyboard-interactive");
         assert!(matches!(open(&t, Credential::Password("nope".into()), None).await.unwrap(), Opened::Rejected), "wrong password is rejected");
         let _ = std::fs::remove_file(&known_hosts);
+    }
+
+    /// The system ssh with Portway's askpass logs in to pw-debian (deploy,
+    /// password "portway") without a terminal: `cargo test -- --ignored live_askpass`.
+    /// Run once as is (password method) and once with pw-debian switched to
+    /// keyboard-interactive (see live_password_keyboard_interactive).
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_askpass_with_system_ssh() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("portway-askpass-live-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("security");
+        std::fs::write(&fake, "#!/bin/sh\necho portway\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let who = "deploy@127.0.0.1";
+        let asks = vec![
+            AskSecret { contains: vec![format!("{who}'s password")], account: "password:x:deploy".into() },
+            AskSecret { contains: vec![format!("({who})"), "assword".into()], account: "password:x:deploy".into() },
+        ];
+        let helper = dir.join("askpass.sh");
+        std::fs::write(&helper, askpass_script(&asks, &fake.to_string_lossy(), "com.portway.app")).unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let out = std::process::Command::new("ssh")
+            .args(["-o", "PubkeyAuthentication=no", "-o", "StrictHostKeyChecking=no", "-o", &format!("UserKnownHostsFile={}", dir.join("kh").display()), "-p", "2202", "--", who, "echo logged-in"])
+            .env("SSH_ASKPASS", &helper)
+            .env("SSH_ASKPASS_REQUIRE", "force")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("logged-in"), "stdout {stdout:?} stderr {:?}", String::from_utf8_lossy(&out.stderr));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[tokio::test]
@@ -2243,6 +2344,63 @@ mod tests {
         assert_eq!(err.code, "refused");
 
         std::fs::remove_file(&known_hosts).ok();
+    }
+
+    /// The askpass helper answers each known question from the right entry,
+    /// literally (a key path with glob characters matches only itself), and
+    /// leaves other questions (a one-time code) to the terminal.
+    #[cfg(unix)]
+    #[test]
+    fn askpass_answers_known_questions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("portway-askpass-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Stands in for /usr/bin/security: prints the entry it was asked for.
+        let fake = dir.join("security");
+        std::fs::write(&fake, "#!/bin/sh\nwhile [ $# -gt 1 ]; do [ \"$1\" = -a ] && { echo \"secret-of:$2\"; exit 0; }; shift; done; exit 44\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let asks = vec![
+            AskSecret { contains: vec!["deploy@10.0.0.5's password".into()], account: "password:s1:deploy".into() },
+            AskSecret { contains: vec!["(deploy@10.0.0.5)".into(), "assword".into()], account: "password:s1:deploy".into() },
+            AskSecret { contains: vec!["passphrase for key '/home/me/.ssh/it's [x]*'".into()], account: "passphrase:~/.ssh/it's [x]*".into() },
+        ];
+        let helper = dir.join("askpass.sh");
+        std::fs::write(&helper, askpass_script(&asks, &fake.to_string_lossy(), "com.portway.app")).unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let ask = |prompt: &str| {
+            let out = std::process::Command::new(&helper).arg(prompt).stdin(std::process::Stdio::null()).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        assert_eq!(ask("deploy@10.0.0.5's password: "), "secret-of:password:s1:deploy");
+        assert_eq!(ask("(deploy@10.0.0.5) Password: "), "secret-of:password:s1:deploy");
+        assert_eq!(ask("Enter passphrase for key '/home/me/.ssh/it's [x]*': "), "secret-of:passphrase:~/.ssh/it's [x]*");
+        // Not ours: another host, a glob look-alike, a second factor.
+        assert_eq!(ask("root@10.0.0.5's password: "), "");
+        assert_eq!(ask("Enter passphrase for key '/home/me/.ssh/it's xx': "), "");
+        assert_eq!(ask("(deploy@10.0.0.5) Verification code: "), "");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// The .command script passes the helper to ssh and removes both files.
+    #[cfg(unix)]
+    #[test]
+    fn command_script_runs_ssh_with_the_helper() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("portway-cmd {}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("askpass it's.sh");
+        std::fs::write(&helper, "").unwrap();
+        // A fake ssh that reports what it got.
+        let fake = dir.join("ssh");
+        std::fs::write(&fake, "#!/bin/sh\necho \"askpass=$SSH_ASKPASS require=$SSH_ASKPASS_REQUIRE args=$*\"\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let script = dir.join("x.command");
+        std::fs::write(&script, command_script(&helper, &format!("{} -p 22 -- 'deploy@h'", shell_quote(&fake.to_string_lossy())))).unwrap();
+        let out = std::process::Command::new("/bin/sh").arg(&script).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.contains(&format!("askpass={}", helper.display())) && text.contains("require=force args=-p 22 -- deploy@h"), "{text} / {}", String::from_utf8_lossy(&out.stderr));
+        assert!(!script.exists() && !helper.exists(), "both files removed");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

@@ -58,6 +58,8 @@ pub struct Edit {
     pub local_path: String,
     /// App it was opened with, for display; None is the default text editor.
     pub app: Option<String>,
+    /// That app's path, to open it again with the same one.
+    pub app_path: Option<String>,
     /// Read and written through sudo (the user could not read it).
     pub sudo: bool,
     pub status: Status,
@@ -267,6 +269,153 @@ pub(crate) fn finish_script(tmp: &str, path: &str, size: usize) -> String {
     )
 }
 
+/// The app a local copy opens with, and the file type to remember it for.
+struct Chosen {
+    /// None: the default text editor.
+    app: Option<String>,
+    remember: Option<(String, String)>,
+}
+
+impl Chosen {
+    fn remember(&self, handle: &AppHandle) {
+        if let Some((ext, app)) = &self.remember {
+            crate::settings::remember_app(handle, ext, app);
+        }
+    }
+}
+
+/// The extension a file type is remembered by ("Report.DOCX" → "docx").
+fn ext_of(file: &Path) -> Option<String> {
+    let ext = file.extension()?.to_string_lossy().to_ascii_lowercase();
+    crate::settings::valid_ext(&ext).then_some(ext)
+}
+
+/// Text (config, code, logs) or not: no NUL byte and valid UTF-8 in the
+/// first 8 KB. Office files, PDFs and images fail at once.
+fn looks_like_text(file: &Path) -> bool {
+    use std::io::Read;
+    let mut head = Vec::with_capacity(8192);
+    let Ok(f) = std::fs::File::open(file) else { return false };
+    if f.take(8192).read_to_end(&mut head).is_err() {
+        return false;
+    }
+    if head.contains(&0) {
+        return false;
+    }
+    match std::str::from_utf8(&head) {
+        Ok(_) => true,
+        // Cut in the middle of a character at the 8 KB mark.
+        Err(e) => e.error_len().is_none() && head.len() == 8192,
+    }
+}
+
+/// File types that "opening" runs instead of showing (a shell script opens
+/// in Terminal and executes, a .bat runs): never left to the system's choice.
+fn runs_code(ext: &str) -> bool {
+    const RUN: &[&str] = &[
+        "app", "command", "tool", "sh", "bash", "zsh", "csh", "ksh", "fish", "py", "pyw", "pyc", "rb", "pl", "jar", "pkg", "mpkg", "dmg", "scpt", "scptd", "applescript", "workflow", "terminal", "exe", "com", "bat", "cmd", "ps1", "psm1", "vbs",
+        "vbe", "js", "jse", "wsf", "wsh", "msi", "msp", "scr", "hta", "lnk", "reg", "cpl", "pif", "application", "appref-ms", "url", "inf", "desktop",
+    ];
+    RUN.contains(&ext)
+}
+
+/// Apps that run what they open (terminals, script runners, installers).
+fn is_runner(app: &Path) -> bool {
+    const RUNNERS: &[&str] = &[
+        "terminal", "iterm", "warp", "ghostty", "alacritty", "kitty", "wezterm", "hyper", "script editor", "python launcher", "installer", "archive utility", "jar launcher", "automator application stub", "shortcuts", "cmd", "wscript", "cscript", "powershell",
+        "pwsh", "mshta", "rundll32", "msiexec", "regedit", "conhost", "windowsterminal", "wt", "java", "javaw", "python", "pythonw", "py",
+    ];
+    let name = app.file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    RUNNERS.contains(&name.as_str())
+}
+
+/// Which app a local copy opens with:
+/// 1. `explicit` (picked with "Mở bằng app khác…"), remembered for the type;
+/// 2. the app remembered for the type;
+/// 3. text: the editor from Cài đặt, else the default text editor;
+/// 4. anything else: the system's app for the type, remembered, so a Word
+///    file opens in Word and the choice can be changed later. Never a type
+///    that runs code, and never a binary in a text editor (saving would
+///    upload a broken file): then the user is asked to pick an app.
+fn choose_app(explicit: Option<String>, settings: &crate::settings::Settings, local: &Path) -> AppResult<Chosen> {
+    let ext = ext_of(local);
+    if let Some(app) = explicit.filter(|a| is_app(Path::new(a))) {
+        let remember = ext.map(|e| (e, app.clone()));
+        return Ok(Chosen { app: Some(app), remember });
+    }
+    if let Some(app) = ext.as_ref().and_then(|e| settings.open_with.get(e)).filter(|a| is_app(Path::new(a.as_str()))) {
+        return Ok(Chosen { app: Some(app.clone()), remember: None });
+    }
+    if looks_like_text(local) {
+        return Ok(Chosen { app: settings.editor.clone().filter(|a| is_app(Path::new(a))), remember: None });
+    }
+    let name = local.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    if ext.as_deref().is_none_or(runs_code) {
+        return Err(AppError::detail("no_app", name));
+    }
+    match system_app(local).filter(|a| is_app(a) && !is_runner(a)) {
+        Some(app) => {
+            let app = app.to_string_lossy().into_owned();
+            Ok(Chosen { app: Some(app.clone()), remember: ext.map(|e| (e, app)) })
+        }
+        // Windows: an app from the Store (Photos…) has no .exe to name; Windows opens it itself.
+        None if cfg!(windows) && has_association(local) => Ok(Chosen { app: Some(SYSTEM_APP.into()), remember: None }),
+        None => Err(AppError::detail("no_app", name)),
+    }
+}
+
+/// `Edit.app_path` when Windows opens the file with its own choice.
+const SYSTEM_APP: &str = "system";
+
+/// Whether Windows has any app for this file type, even one without an .exe.
+#[cfg(windows)]
+fn has_association(file: &Path) -> bool {
+    use windows_sys::Win32::UI::Shell::{AssocQueryStringW, ASSOCF_INIT_IGNOREUNKNOWN, ASSOCSTR_FRIENDLYAPPNAME};
+    let Some(ext) = file.extension() else { return false };
+    let ext: Vec<u16> = format!(".{}", ext.to_string_lossy()).encode_utf16().chain([0]).collect();
+    let mut buf = vec![0u16; 512];
+    let mut len = buf.len() as u32;
+    let hr = unsafe { AssocQueryStringW(ASSOCF_INIT_IGNOREUNKNOWN, ASSOCSTR_FRIENDLYAPPNAME, ext.as_ptr(), std::ptr::null(), buf.as_mut_ptr(), &mut len) };
+    hr == 0 && len > 1
+}
+
+#[cfg(not(windows))]
+fn has_association(_file: &Path) -> bool {
+    false
+}
+
+/// The app the system opens this file with (LaunchServices).
+#[cfg(target_os = "macos")]
+fn system_app(file: &Path) -> Option<PathBuf> {
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{NSString, NSURL};
+    let url = NSURL::fileURLWithPath(&NSString::from_str(&file.to_string_lossy()));
+    let app = NSWorkspace::sharedWorkspace().URLForApplicationToOpenURL(&url)?;
+    app.path().map(|p| PathBuf::from(p.to_string()))
+}
+
+/// The program Windows opens this file type with (its "open" association).
+/// Apps from the Store have no plain .exe and are not returned.
+#[cfg(windows)]
+fn system_app(file: &Path) -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Shell::{AssocQueryStringW, ASSOCF_INIT_IGNOREUNKNOWN, ASSOCF_NOTRUNCATE, ASSOCSTR_EXECUTABLE};
+    let ext: Vec<u16> = format!(".{}", file.extension()?.to_string_lossy()).encode_utf16().chain([0]).collect();
+    let verb: Vec<u16> = "open".encode_utf16().chain([0]).collect();
+    let mut buf = vec![0u16; 1024];
+    let mut len = buf.len() as u32;
+    let hr = unsafe { AssocQueryStringW(ASSOCF_INIT_IGNOREUNKNOWN | ASSOCF_NOTRUNCATE, ASSOCSTR_EXECUTABLE, ext.as_ptr(), verb.as_ptr(), buf.as_mut_ptr(), &mut len) };
+    if hr != 0 || len == 0 {
+        return None;
+    }
+    let path = PathBuf::from(String::from_utf16_lossy(&buf[..(len as usize).saturating_sub(1)]));
+    path.is_file().then_some(path)
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn system_app(_file: &Path) -> Option<PathBuf> {
+    None
+}
+
 /// Whether `path` is an app that can open files: a .app bundle on macOS, an
 /// .exe on Windows.
 pub(crate) fn is_app(path: &Path) -> bool {
@@ -298,6 +447,10 @@ fn open_in(app: Option<&str>, file: &Path) -> AppResult<()> {
 /// Windows would only ask which app to use.
 #[cfg(windows)]
 fn open_in(app: Option<&str>, file: &Path) -> AppResult<()> {
+    if app == Some(SYSTEM_APP) {
+        // Explorer opens a file with its associated app, Store apps included.
+        return std::process::Command::new("explorer.exe").arg(file).spawn().map(|_| ()).map_err(|e| AppError::detail("open_failed", e));
+    }
     let exe = app.map(PathBuf::from).unwrap_or_else(notepad);
     std::process::Command::new(&exe)
         .arg(file)
@@ -319,6 +472,9 @@ fn notepad() -> PathBuf {
 }
 
 fn app_label(app: Option<&str>) -> Option<String> {
+    if app == Some(SYSTEM_APP) {
+        return Some(crate::i18n::tr("App mặc định của Windows", "Windows default app"));
+    }
     app.map(|a| known_name(Path::new(a)).unwrap_or_else(|| Path::new(a).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| a.to_string())))
 }
 
@@ -425,12 +581,19 @@ pub async fn edit_open(
     path: String,
     app: Option<String>,
 ) -> AppResult<Edit> {
-    let app = app.or_else(|| settings.get().editor);
     // Already open: bring it up again rather than downloading over local edits.
     let existing = edits.map.lock().unwrap().values().find(|e| e.edit.server_id == server_id && e.edit.user == user && e.edit.remote_path == path).map(|e| e.edit.clone());
     if let Some(e) = existing {
-        open_in(app.as_deref(), Path::new(&e.local_path))?;
-        return Ok(edits.update(&e.id, |x| x.edit.app = app_label(app.as_deref())).unwrap_or(e));
+        let local = PathBuf::from(&e.local_path);
+        let chosen = choose_app(app.or(e.app_path.clone()), &settings.get(), &local)?;
+        open_in(chosen.app.as_deref(), &local)?;
+        chosen.remember(&edits.app);
+        return Ok(edits
+            .update(&e.id, |x| {
+                x.edit.app = app_label(chosen.app.as_deref());
+                x.edit.app_path = chosen.app.clone();
+            })
+            .unwrap_or(e));
     }
 
     let server = store.list().into_iter().find(|s| s.id == server_id).ok_or_else(|| AppError::new("not_found"))?;
@@ -494,6 +657,14 @@ pub async fn edit_open(
     std::fs::create_dir_all(&dir)?;
     let local = dir.join(local_name(path.rsplit('/').next().unwrap_or("")));
     std::fs::write(&local, &data)?;
+    // Picked now the content is here (text or not); nothing to watch if no app fits.
+    let chosen = match choose_app(app, &settings.get(), &local) {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(e);
+        }
+    };
 
     let (stop_tx, stop_rx) = watch::channel(false);
     let edit = Edit {
@@ -503,7 +674,8 @@ pub async fn edit_open(
         server_name: server.name.clone(),
         remote_path: path,
         local_path: local.to_string_lossy().into_owned(),
-        app: app_label(app.as_deref()),
+        app: app_label(chosen.app.as_deref()),
+        app_path: chosen.app.clone(),
         sudo,
         status: Status::Synced,
         uploads: 0,
@@ -514,9 +686,12 @@ pub async fn edit_open(
     edits.map.lock().unwrap().insert(edit.id.clone(), Entry { edit: edit.clone(), known, stop: stop_tx, force: false });
     edits.emit(&edit);
     spawn_watch(edits.inner().clone(), edit.id.clone(), stop_rx);
-    if let Err(e) = open_in(app.as_deref(), &local) {
+    match open_in(chosen.app.as_deref(), &local) {
+        Ok(()) => chosen.remember(&edits.app),
         // Downloaded but no app opened: keep watching, say why.
-        edits.update(&edit.id, |x| x.edit.error = Some(e.detail.clone().unwrap_or_else(|| e.code.to_string())));
+        Err(e) => {
+            edits.update(&edit.id, |x| x.edit.error = Some(e.detail.clone().unwrap_or_else(|| e.code.to_string())));
+        }
     }
     Ok(edit)
 }
@@ -568,10 +743,16 @@ pub async fn edit_resolve(
 }
 
 #[tauri::command]
-pub fn edit_reopen(edits: tauri::State<'_, Arc<Edits>>, id: String, app: Option<String>) -> AppResult<()> {
-    let local = edits.map.lock().unwrap().get(&id).map(|e| e.edit.local_path.clone()).ok_or_else(|| AppError::new("not_found"))?;
-    open_in(app.as_deref(), Path::new(&local))?;
-    edits.update(&id, |e| e.edit.app = app_label(app.as_deref()));
+pub fn edit_reopen(edits: tauri::State<'_, Arc<Edits>>, settings: tauri::State<'_, crate::settings::SettingsStore>, id: String, app: Option<String>) -> AppResult<()> {
+    let (local, before) = edits.map.lock().unwrap().get(&id).map(|e| (PathBuf::from(&e.edit.local_path), e.edit.app_path.clone())).ok_or_else(|| AppError::new("not_found"))?;
+    // No app given: the one it was opened with.
+    let chosen = choose_app(app.or(before), &settings.get(), &local)?;
+    open_in(chosen.app.as_deref(), &local)?;
+    chosen.remember(&edits.app);
+    edits.update(&id, |e| {
+        e.edit.app = app_label(chosen.app.as_deref());
+        e.edit.app_path = chosen.app.clone();
+    });
     Ok(())
 }
 
@@ -781,6 +962,71 @@ mod tests {
         let name = a.file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.starts_with("web-01_root_"), "{name}");
         assert_eq!(tidy("Máy chủ / A"), "M_y_ch____A");
+    }
+
+    #[test]
+    fn tells_text_from_binary() {
+        let dir = std::env::temp_dir().join(format!("portway-kind-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = |name: &str, bytes: &[u8]| {
+            let p = dir.join(name);
+            std::fs::write(&p, bytes).unwrap();
+            p
+        };
+        assert!(looks_like_text(&file("a.conf", b"server {\n  listen 80;\n}\n")));
+        assert!(looks_like_text(&file("empty", b"")));
+        assert!(looks_like_text(&file("vi.txt", "Tiếng Việt có dấu".as_bytes())));
+        // A multi-byte character cut by the 8 KB read is still text.
+        let mut long = "a".repeat(8191).into_bytes();
+        long.extend("ế".as_bytes());
+        assert!(looks_like_text(&file("long.txt", &long)));
+        assert!(!looks_like_text(&file("a.docx", b"PK\x03\x04\x14\x00\x06\x00")));
+        assert!(!looks_like_text(&file("a.pdf", b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn picks_an_app_per_type() {
+        use crate::settings::Settings;
+        let dir = std::env::temp_dir().join(format!("portway-choose-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = dir.join("nginx.conf");
+        std::fs::write(&text, "worker_processes 1;\n").unwrap();
+        let script = dir.join("deploy.sh");
+        std::fs::write(&script, b"\x7fELF\x00binary").unwrap();
+        let odd = dir.join("blob");
+        std::fs::write(&odd, b"\x00\x01\x02").unwrap();
+        let none = Settings::default();
+
+        // Text follows the editor setting (none: the default text editor), nothing remembered.
+        let c = choose_app(None, &none, &text).unwrap();
+        assert_eq!((c.app, c.remember), (None, None));
+        // A binary that would run, or with no type to go by: the user picks.
+        assert_eq!(choose_app(None, &none, &script).err().map(|e| e.code), Some("no_app"));
+        assert_eq!(choose_app(None, &none, &odd).err().map(|e| e.code), Some("no_app"));
+        // An app that is not one is ignored.
+        assert_eq!(choose_app(Some("/nowhere/Fake.app".into()), &none, &text).unwrap().app, None);
+
+        // macOS: a picked app is remembered for the type and then used.
+        #[cfg(target_os = "macos")]
+        {
+            let textedit = "/System/Applications/TextEdit.app".to_string();
+            if is_app(Path::new(&textedit)) {
+                let c = choose_app(Some(textedit.clone()), &none, &text).unwrap();
+                assert_eq!(c.remember, Some(("conf".to_string(), textedit.clone())));
+                let mut s = Settings::default();
+                s.open_with.insert("sh".into(), textedit.clone());
+                let c = choose_app(None, &s, &script).unwrap();
+                assert_eq!((c.app.as_deref(), c.remember), (Some(textedit.as_str()), None), "a remembered app wins, even for a script");
+                // A Word file with no remembered app: the system's app for it, remembered.
+                let doc = dir.join("Report.DOCX");
+                std::fs::write(&doc, b"PK\x03\x04\x00\x00").unwrap();
+                let c = choose_app(None, &none, &doc).unwrap();
+                assert!(c.app.as_deref().is_some_and(|a| a.ends_with(".app")), "{:?}", c.app);
+                assert_eq!(c.remember.map(|r| r.0), Some("docx".to_string()));
+            }
+        }
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

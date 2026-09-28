@@ -8,8 +8,10 @@ import { t } from '../i18n'
 type Edits = {
   list: Edit[]
   apps: EditorApp[]
-  /** Download a server file and open it in an app; saving there uploads it. */
-  open: (serverId: string, user: string, path: string, app?: string | null) => Promise<void>
+  /** Download a server file and open it in an app; saving there uploads it.
+   *  Resolves to 'no_app' when no app fits the file (the caller lets the
+   *  user pick one); other errors are shown here. */
+  open: (serverId: string, user: string, path: string, app?: string | null) => Promise<'no_app' | null>
   stop: (id: string) => void
   resolve: (id: string, overwrite: boolean) => Promise<void>
   reopen: (id: string, app?: string | null) => void
@@ -34,6 +36,8 @@ function editError(e: unknown): string {
       return t('Chỉ sửa được tệp, không phải thư mục.')
     case 'not_connected':
       return t('Phiên SSH chưa kết nối.')
+    case 'no_app':
+      return t('Chưa biết mở {name} bằng app nào. Chọn app bằng "Mở bằng app khác…"; Portway sẽ nhớ cho loại tệp này.', { name: e.detail ?? '' })
     default:
       return e.detail ?? e.code
   }
@@ -60,8 +64,11 @@ export function EditsProvider({ children }: { children: ReactNode }) {
     async (serverId: string, user: string, path: string, app?: string | null) => {
       try {
         await api.editOpen(serverId, user, path, app)
+        return null
       } catch (e) {
+        if (isAppError(e) && e.code === 'no_app') return 'no_app'
         toast({ title: t('Không mở được để sửa'), detail: editError(e) })
+        return null
       }
     },
     [toast],

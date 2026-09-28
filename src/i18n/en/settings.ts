@@ -31,9 +31,6 @@ const en: Dict = {
   'Hỏi mỗi lần': 'Ask each time',
   'Lưu thẳng': 'Save directly',
   'Sửa tệp#section': 'File editing',
-  'Mở tệp của server bằng': 'Open server files with',
-  'Tệp được tải về thư mục tạm riêng cho từng server và user; mỗi lần lưu trong app, Portway tải lên lại. Bấm đúp một tệp trong màn Tệp để mở.':
-    'Files are downloaded to a temporary folder per server and user; each time you save in the app, Portway uploads it again. Double-click a file in Files to open it.',
   'Chọn app để sửa tệp của server': 'Choose an app to edit server files',
   'Mặc định của macOS': 'macOS default',
   'Mặc định của macOS ({app})': 'macOS default ({app})',
@@ -54,6 +51,18 @@ const en: Dict = {
   'Giới thiệu': 'About',
   'Quản lý server qua SSH · AdonisGM': 'Manage servers over SSH · AdonisGM',
   'Phiên bản {version}': 'Version {version}',
+  'Tệp chữ': 'Text files',
+  'Tệp cấu hình, mã nguồn, log… mở bằng app này, trừ loại tệp đã có app riêng bên dưới. Tệp được tải về thư mục tạm riêng cho từng server và user; mỗi lần lưu trong app, Portway tải lên lại.':
+    'Config files, code, logs… open in this app, except types that have their own app below. Files are downloaded to a temporary folder per server and user; every save in the app uploads them again.',
+  'Theo loại tệp': 'By file type',
+  'Lần đầu mở một loại tệp khác (Word, Excel, PDF, ảnh…), Portway dùng app mặc định của máy cho loại đó rồi ghi nhớ ở đây. App chọn bằng "Mở bằng app khác…" cũng được ghi nhớ.':
+    'The first time another type of file is opened (Word, Excel, PDF, images…), Portway uses this Mac’s default app for it and remembers it here. An app picked with "Open with another app…" is remembered too.',
+  'Chưa có loại tệp nào': 'No file types yet',
+  'Mở tệp .{ext} bằng…': 'Open .{ext} files with…',
+  'Đổi…': 'Change…',
+  'Bỏ': 'Remove',
+  'Lần sau mở tệp .{ext}, Portway lại dùng app mặc định của máy': 'Next time a .{ext} file is opened, Portway uses this Mac’s default app again',
+  '{ext} không phải đuôi tệp hợp lệ': '{ext} is not a valid file extension',
 }
 
 export default en

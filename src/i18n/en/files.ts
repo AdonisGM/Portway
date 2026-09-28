@@ -236,6 +236,9 @@ const en: Dict = {
   'Đã chuyển xong': 'Transfers complete',
   '{n} lỗi': (v) => plural(v.n, 'error'),
   'Đóng và xoá danh sách': 'Close and clear the list',
+  'Chưa biết mở {name} bằng app nào. Chọn app bằng "Mở bằng app khác…"; Portway sẽ nhớ cho loại tệp này.':
+    'No app is known for {name} yet. Pick one with "Open with another app…"; Portway remembers it for this type of file.',
+  'Portway nhớ app này cho các tệp .{ext}; lưu trong app là tự tải lên server': 'Portway remembers this app for .{ext} files; saving in the app uploads to the server',
 }
 
 export default en

@@ -2,10 +2,11 @@
 //! every window as a `settings` event when they change.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::paths::expand_tilde;
@@ -39,9 +40,34 @@ pub struct Settings {
     /// None for files from before this setting: they asked unless a folder was set.
     pub ask_download: Option<bool>,
     pub theme: Theme,
-    /// App (a .app path) that opens files edited on this Mac; None is the
-    /// default text editor.
+    /// App (a .app path) that opens text files edited on this Mac; None is
+    /// the default text editor.
     pub editor: Option<String>,
+    /// App per file extension ("docx" → Microsoft Word), for files edited on
+    /// this Mac. Learnt the first time a type is opened (the system's app for
+    /// it, or the one picked with "Mở bằng app khác…"); changed in Cài đặt.
+    pub open_with: BTreeMap<String, String>,
+}
+
+/// A key of `open_with`: a lowercase extension without the dot.
+pub fn valid_ext(ext: &str) -> bool {
+    (1..=16).contains(&ext.len()) && ext.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "+-_".contains(c))
+}
+
+/// Remember `app` for files ending in `.ext`, and tell every window.
+pub fn remember_app(handle: &AppHandle, ext: &str, app: &str) {
+    if !valid_ext(ext) {
+        return;
+    }
+    let store = handle.state::<SettingsStore>();
+    let mut next = store.get();
+    if next.open_with.get(ext).map(String::as_str) == Some(app) {
+        return;
+    }
+    next.open_with.insert(ext.to_string(), app.to_string());
+    if let Ok(saved) = store.save(next) {
+        let _ = handle.emit("settings", saved);
+    }
 }
 
 pub struct SettingsStore {
@@ -96,6 +122,15 @@ pub fn settings_set(app: AppHandle, store: tauri::State<'_, SettingsStore>, sett
             return Err(AppError::detail("not_an_app", app));
         }
     }
+    next.open_with = next.open_with.into_iter().map(|(k, v)| (k.trim().trim_start_matches('.').to_ascii_lowercase(), v)).collect();
+    for (ext, app) in &next.open_with {
+        if !valid_ext(ext) {
+            return Err(AppError::detail("invalid_ext", ext));
+        }
+        if !crate::editing::is_app(std::path::Path::new(app)) {
+            return Err(AppError::detail("not_an_app", app));
+        }
+    }
     let saved = store.save(next)?;
     let _ = app.emit("settings", saved.clone());
     Ok(saved)
@@ -118,12 +153,29 @@ mod tests {
         let path = std::env::temp_dir().join(format!("portway-settings-{}.json", std::process::id()));
         let _ = fs::remove_file(&path);
         let store = SettingsStore::load(path.clone());
-        assert_eq!(store.get(), Settings { language: Language::Vi, download_dir: None, ask_download: None, theme: Theme::Dark, editor: None });
-        store.save(Settings { language: Language::Vi, download_dir: Some(std::env::temp_dir().to_string_lossy().into_owned()), ask_download: Some(false), theme: Theme::System, editor: None }).unwrap();
+        assert_eq!(store.get(), Settings::default());
+        assert_eq!(store.get().theme, Theme::Dark);
+        let mut open_with = BTreeMap::new();
+        open_with.insert("docx".to_string(), "/Applications/Microsoft Word.app".to_string());
+        store
+            .save(Settings { download_dir: Some(std::env::temp_dir().to_string_lossy().into_owned()), ask_download: Some(false), theme: Theme::System, open_with, ..Default::default() })
+            .unwrap();
+        let back = SettingsStore::load(path.clone()).get();
+        assert_eq!((back.theme, back.open_with.get("docx").map(String::as_str)), (Theme::System, Some("/Applications/Microsoft Word.app")));
         assert_eq!(SettingsStore::load(path.clone()).get().theme, Theme::System);
         // Unknown or missing fields fall back to defaults.
         fs::write(&path, r#"{"theme":"light","extra":1}"#).unwrap();
-        assert_eq!(SettingsStore::load(path.clone()).get(), Settings { language: Language::Vi, download_dir: None, ask_download: None, theme: Theme::Light, editor: None });
+        assert_eq!(SettingsStore::load(path.clone()).get(), Settings { theme: Theme::Light, ..Default::default() });
         fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn extension_keys() {
+        for ok in ["docx", "xlsx", "tar", "c++", "7z", "mp4"] {
+            assert!(valid_ext(ok), "{ok}");
+        }
+        for bad in ["", "DOCX", ".docx", "a b", "x/y", "averyveryverylongext"] {
+            assert!(!valid_ext(bad), "{bad}");
+        }
     }
 }

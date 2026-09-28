@@ -57,6 +57,11 @@ type Selection = { path: string; names: string[]; anchor: string | null }
 type Cached = { path: string; listing: Listing | null }
 
 const asError = (e: unknown): AppError => (isAppError(e) ? e : { code: 'unknown', detail: String(e) })
+/** "docx" for "Report.DOCX"; null without an extension (".bashrc", "Makefile"). */
+const extOf = (name: string) => {
+  const m = /[^.]\.([A-Za-z0-9+_-]{1,16})$/.exec(name)
+  return m ? m[1].toLowerCase() : null
+}
 const ownerOf = (e: FileEntry) => e.owner ?? String(e.uid ?? '?')
 const groupOf = (e: FileEntry) => e.group ?? String(e.gid ?? '?')
 
@@ -74,6 +79,10 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   const toast = useToast()
   const edits = useEdits()
   const [chooseApp, setChooseApp] = useState<FileEntry | null>(null)
+  // A file no app is known for (a new binary type): let the user pick one.
+  const editFile = async (entry: FileEntry) => {
+    if ((await edits.open(id, user, entry.path)) === 'no_app') setChooseApp(entry)
+  }
   const conn = conns.get(id, user)
   const live = conn?.status === 'connected'
   const sudo = live && conn.sudo
@@ -498,7 +507,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
                   key={e.name}
                   selected={on}
                   onClick={(ev) => clickRow(ev, e.name)}
-                  onDoubleClick={() => (isDirLike(e) ? void go(e.path) : e.kind === 'file' && void edits.open(id, user, e.path))}
+                  onDoubleClick={() => (isDirLike(e) ? void go(e.path) : e.kind === 'file' && void editFile(e))}
                 >
                   <button
                     type="button"
@@ -569,7 +578,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
               },
               terminal: () => one && void terminalAt(isDirLike(one) ? one.path : path),
               follow: () => one && setTailing({ path: one.path, sudo: !isRoot && (asRoot || !one.readable) && sudo }),
-              edit: () => one && void edits.open(id, user, one.path),
+              edit: () => one && void editFile(one),
               editWith: () => one && setChooseApp(one),
             }}
           />
@@ -583,15 +592,25 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
       )}
 
       {chooseApp && (
-        <Modal open onClose={() => setChooseApp(null)} width={420} title={t('Mở {name} bằng…', { name: chooseApp.name })} subtitle={t('Lưu trong app là Portway tự tải lên server')}>
+        <Modal
+          open
+          onClose={() => setChooseApp(null)}
+          width={420}
+          title={t('Mở {name} bằng…', { name: chooseApp.name })}
+          subtitle={
+            extOf(chooseApp.name)
+              ? t('Portway nhớ app này cho các tệp .{ext}; lưu trong app là tự tải lên server', { ext: extOf(chooseApp.name)! })
+              : t('Lưu trong app là Portway tự tải lên server')
+          }
+        >
           <div className="flex flex-col gap-px">
-            {[{ name: edits.apps.find((x) => x.default) ? t('Mặc định của macOS ({app})', { app: edits.apps.find((x) => x.default)!.name }) : t('Mặc định của macOS'), path: '' }, ...edits.apps].map((a) => (
+            {edits.apps.map((a) => (
               <button
-                key={a.path || 'default'}
+                key={a.path}
                 type="button"
                 onClick={() => {
                   setChooseApp(null)
-                  void edits.open(id, user, chooseApp.path, a.path || null)
+                  void edits.open(id, user, chooseApp.path, a.path)
                 }}
                 className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-raised"
               >

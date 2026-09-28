@@ -73,8 +73,10 @@ export type Settings = {
   /** Ask where to save each download; null (older settings) asks unless a folder is set. */
   askDownload: boolean | null
   theme: Theme
-  /** App (.app path) that opens files edited on this Mac; null is the default text editor. */
+  /** App (.app path) that opens text files edited on this Mac; null is the default text editor. */
   editor: string | null
+  /** App per file extension ("docx" → path), learnt the first time a type is opened. */
+  openWith: Record<string, string>
 }
 
 /** A server file open in an app on this Mac, uploaded again on each save. */
@@ -86,6 +88,8 @@ export type Edit = {
   remotePath: string
   localPath: string
   app: string | null
+  /** Path of that app, to open it again with the same one. */
+  appPath: string | null
   sudo: boolean
   status: 'synced' | 'uploading' | 'pending' | 'conflict' | 'error'
   uploads: number
@@ -841,7 +845,7 @@ function browserApi(): Api {
     exportServers: async () => fail('needs_app'),
     importServersFile: async () => fail('needs_app'),
     async settings() {
-      return { language: 'vi', downloadDir: null, askDownload: null, theme: 'dark', editor: null }
+      return { language: 'vi', downloadDir: null, askDownload: null, theme: 'dark', editor: null, openWith: {} }
     },
     async setSettings(s) {
       return s

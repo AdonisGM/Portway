@@ -14,7 +14,7 @@ import { SegmentedControl } from '../../components/ui/segmented'
 import { api, isAppError, type Theme } from '../../lib/api'
 import { pickApp } from '../../lib/pick-app'
 import { t } from '../../i18n'
-import { isWindows } from '../../lib/platform'
+import { isWindows, localBaseName } from '../../lib/platform'
 
 /** Select value for "no app chosen" (the select treats '' as nothing chosen). */
 const DEFAULT_EDITOR = 'default'
@@ -28,9 +28,11 @@ const errText = (e: unknown) =>
   isAppError(e)
     ? e.code === 'not_a_dir'
       ? t('{path} không phải thư mục', { path: e.detail ?? '' })
-      : e.code === 'not_an_app'
-        ? t('{path} không phải một ứng dụng (.app)', { path: e.detail ?? '' })
-        : (e.detail ?? e.code)
+      : e.code === 'invalid_ext'
+        ? t('{ext} không phải đuôi tệp hợp lệ', { ext: e.detail ?? '' })
+        : e.code === 'not_an_app'
+          ? t('{path} không phải một ứng dụng (.app)', { path: e.detail ?? '' })
+          : (e.detail ?? e.code)
     : String(e)
 
 /** "Cài đặt": downloads, appearance, the server list as a file, version. */
@@ -149,8 +151,8 @@ export function SettingsScreen() {
 
       <Section id="editor" title={t('Sửa tệp#section')}>
         <Row
-          label={t('Mở tệp của server bằng')}
-          hint={t('Tệp được tải về thư mục tạm riêng cho từng server và user; mỗi lần lưu trong app, Portway tải lên lại. Bấm đúp một tệp trong màn Tệp để mở.')}
+          label={t('Tệp chữ')}
+          hint={t('Tệp cấu hình, mã nguồn, log… mở bằng app này, trừ loại tệp đã có app riêng bên dưới. Tệp được tải về thư mục tạm riêng cho từng server và user; mỗi lần lưu trong app, Portway tải lên lại.')}
         >
           <SelectField
             value={settings.editor ?? DEFAULT_EDITOR}
@@ -172,6 +174,46 @@ export function SettingsScreen() {
             className="!w-64"
           />
         </Row>
+        <Row
+          label={t('Theo loại tệp')}
+          hint={t('Lần đầu mở một loại tệp khác (Word, Excel, PDF, ảnh…), Portway dùng app mặc định của máy cho loại đó rồi ghi nhớ ở đây. App chọn bằng "Mở bằng app khác…" cũng được ghi nhớ.')}
+        >
+          {!Object.keys(settings.openWith).length && <span className="text-[11.5px] text-muted">{t('Chưa có loại tệp nào')}</span>}
+        </Row>
+        {Object.entries(settings.openWith)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([ext, app]) => (
+            <div key={ext} className="flex items-center gap-3 border-t border-line px-4 py-2">
+              <span className="w-24 flex-none font-mono text-[12px]">.{ext}</span>
+              <span className="min-w-0 flex-1 truncate" title={app}>
+                {apps.find((a) => a.path === app)?.name ?? localBaseName(app).replace(/\.(app|exe)$/i, '')}
+              </span>
+              <Button
+                size="xs"
+                onClick={() =>
+                  void run(async () => {
+                    const picked = await pickApp(t('Mở tệp .{ext} bằng…', { ext }))
+                    if (picked) await update({ openWith: { ...settings.openWith, [ext]: picked } })
+                  }, t('Không lưu được'))
+                }
+              >
+                {t('Đổi…')}
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                title={t('Lần sau mở tệp .{ext}, Portway lại dùng app mặc định của máy', { ext })}
+                onClick={() =>
+                  void run(async () => {
+                    const { [ext]: _gone, ...rest } = settings.openWith
+                    await update({ openWith: rest })
+                  }, t('Không lưu được'))
+                }
+              >
+                {t('Bỏ')}
+              </Button>
+            </div>
+          ))}
       </Section>
 
       <Section id="appearance" title={t('Giao diện')}>

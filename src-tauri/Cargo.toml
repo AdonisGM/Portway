@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.5.1"
+version = "0.5.2"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"
@@ -46,6 +46,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 # Which process owns a local TCP connection (tunnel monitor) on Windows.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
+# russh's crypto backend; use the NASM objects shipped with aws-lc-sys so the
+# build does not need NASM installed.
+aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

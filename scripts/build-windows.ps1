@@ -13,7 +13,9 @@ $out = Join-Path (Get-Location) "release\$version"
 
 Write-Host "==> Build $($conf.productName) $version (Windows x64)"
 pnpm install --frozen-lockfile
+if ($LASTEXITCODE) { exit $LASTEXITCODE }
 pnpm tauri build --bundles nsis
+if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
 Write-Host "==> Collecting output in release\$version"
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }

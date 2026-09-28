@@ -48,6 +48,11 @@ export function connectError(e: AppError, host: string, port: number): { title: 
       return { title, message: t('Lỗi mạng khi mở kết nối.') }
     case 'auth_failed':
       return { title: t('Server không nhận khoá'), message: t('Kiểm tra public key của khoá này đã nằm trong ~/.ssh/authorized_keys của user trên server chưa.') }
+    case 'auth_prompt':
+      return {
+        title: t('Server hỏi thêm một bước xác thực'),
+        message: t('Sau mật khẩu, server còn hỏi "{prompt}" (xác thực 2 bước). Portway chưa trả lời được bước này; dùng khoá SSH cho tài khoản này, hoặc kết nối bằng Terminal.', { prompt: e.detail ?? '' }),
+      }
     case 'key_missing':
       return { title: t('Không thấy tệp khoá'), message: t('Tệp {file} không có trên máy này. Sửa tài khoản để chọn khoá khác.', { file: e.detail ?? '' }) }
     case 'key_unreadable':

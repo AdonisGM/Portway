@@ -169,6 +169,7 @@ const en: Dict = {
   'Kéo dài': 'Lasted',
   'Chưa có kết nối nào đóng': 'No closed connections yet',
   'mở kênh mất {n} ms': 'channel opened in {n} ms',
+  'Server đòi xác thực 2 bước ({prompt}); dùng khoá SSH cho tài khoản này': 'The server wants two-step sign-in ({prompt}); use an SSH key for this account',
 }
 
 export default en

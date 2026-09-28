@@ -364,24 +364,63 @@ async fn open_with(target: &Target, credential: Credential, trust: Option<String
         Ok(Ok(h)) => h,
     };
 
-    let auth = match credential {
+    let accepted = match credential {
         Credential::Key(k) => {
             let hash = if k.algorithm().is_rsa() {
                 handle.best_supported_rsa_hash().await.ok().flatten().unwrap_or(Some(HashAlg::Sha256))
             } else {
                 None
             };
-            handle.authenticate_publickey(&target.user, PrivateKeyWithHashAlg::new(k, hash)).await
+            handle.authenticate_publickey(&target.user, PrivateKeyWithHashAlg::new(k, hash)).await.map_err(|e| AppError::detail("ssh", e))?.success()
         }
-        Credential::Password(p) => handle.authenticate_password(&target.user, p).await,
-    }
-    .map_err(|e| AppError::detail("ssh", e))?;
+        Credential::Password(p) => password_login(&mut handle, &target.user, &p).await?,
+    };
 
-    if !auth.success() {
+    if !accepted {
         let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
         return Ok(Opened::Rejected);
     }
     Ok(Opened::Ready(Conn { handle, via }))
+}
+
+/// Log in with a password. First the "password" method; many servers only
+/// ask for a password through "keyboard-interactive" instead (PAM setups,
+/// `PasswordAuthentication no`), which is what `ssh` falls back to, so that
+/// is tried next: the first round's hidden prompts get the password. A server
+/// that asks again after that wants a second factor (a one-time code), which
+/// Portway cannot answer; that is an error naming the prompt, not a rejection,
+/// so the UI does not ask for the password once more.
+async fn password_login(handle: &mut Handle<Client>, user: &str, password: &str) -> AppResult<bool> {
+    use russh::client::KeyboardInteractiveAuthResponse as Reply;
+    use russh::MethodKind;
+    let ssh = |e: russh::Error| AppError::detail("ssh", e);
+    let first = handle.authenticate_password(user, password).await.map_err(ssh)?;
+    let kbd = match &first {
+        russh::client::AuthResult::Success => return Ok(true),
+        russh::client::AuthResult::Failure { remaining_methods, .. } => remaining_methods.contains(&MethodKind::KeyboardInteractive),
+    };
+    if !kbd {
+        return Ok(false);
+    }
+    let mut reply = handle.authenticate_keyboard_interactive_start(user, None::<String>).await.map_err(ssh)?;
+    let mut answered = false;
+    // Servers may send a few rounds (some start with an empty one); never loop forever.
+    for _ in 0..6 {
+        reply = match reply {
+            Reply::Success => return Ok(true),
+            Reply::Failure { .. } => return Ok(false),
+            Reply::InfoRequest { prompts, .. } if prompts.is_empty() => handle.authenticate_keyboard_interactive_respond(Vec::new()).await.map_err(ssh)?,
+            Reply::InfoRequest { prompts, .. } => {
+                if answered || prompts.iter().any(|p| p.echo) {
+                    let asked = prompts.iter().map(|p| p.prompt.trim()).collect::<Vec<_>>().join(" / ");
+                    return Err(AppError::detail("auth_prompt", asked));
+                }
+                answered = true;
+                handle.authenticate_keyboard_interactive_respond(prompts.iter().map(|_| password.to_string()).collect()).await.map_err(ssh)?
+            }
+        };
+    }
+    Ok(false)
 }
 
 /// Open a jump host quietly. Anything it would need to ask (a host key, a
@@ -1842,6 +1881,23 @@ mod tests {
             assert!(crate::files::sftp(&session).await.unwrap().read_dir("/root").await.is_err(), "{port}: back to deploy");
             println!("{port}: ok");
         }
+        let _ = std::fs::remove_file(&known_hosts);
+    }
+
+    /// Password login where the server takes it only through keyboard-interactive.
+    /// pw-debian must be switched first:
+    /// `docker exec portway-test-debian-1 sh -c 'printf "PasswordAuthentication no\nKbdInteractiveAuthentication yes\n" > /etc/ssh/sshd_config.d/00-kbd.conf && kill -HUP 1'`
+    #[tokio::test]
+    #[ignore]
+    async fn live_password_keyboard_interactive() {
+        let known_hosts = std::env::temp_dir().join(format!("portway-known-hosts-kbd-{}", std::process::id()));
+        let t = Target { host: "127.0.0.1".into(), port: 2202, user: "deploy".into(), known_hosts: known_hosts.clone(), via: None };
+        let fp = match open(&t, Credential::Password("portway".into()), None).await.unwrap() {
+            Opened::HostKey(HostKeyIssue::Unknown { fingerprint, .. }) => Some(fingerprint),
+            _ => None,
+        };
+        assert!(matches!(open(&t, Credential::Password("portway".into()), fp).await.unwrap(), Opened::Ready(_)), "right password through keyboard-interactive");
+        assert!(matches!(open(&t, Credential::Password("nope".into()), None).await.unwrap(), Opened::Rejected), "wrong password is rejected");
         let _ = std::fs::remove_file(&known_hosts);
     }
 

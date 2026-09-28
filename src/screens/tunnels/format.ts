@@ -65,6 +65,8 @@ export function errorText(code: string, detail: string | null): string {
       return t('Chưa tin khoá máy chủ: kết nối server này một lần trong Portway')
     case 'auth_failed':
       return t('Server từ chối đăng nhập')
+    case 'auth_prompt':
+      return t('Server đòi xác thực 2 bước ({prompt}); dùng khoá SSH cho tài khoản này', { prompt: detail ?? '' })
     case 'key_missing':
       return t('Không thấy file khoá {path}', { path: detail ?? '' })
     case 'remote_forward_refused':

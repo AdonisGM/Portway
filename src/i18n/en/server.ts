@@ -313,6 +313,9 @@ const en: Dict = {
     ". The firewall, Docker and other users' processes may need root, so what you see is limited.",
   'Dùng sudo cho phiên này': 'Use sudo for this session',
   'Dùng sudo': 'Use sudo',
+  'Server hỏi thêm một bước xác thực': 'The server asks for another sign-in step',
+  'Sau mật khẩu, server còn hỏi "{prompt}" (xác thực 2 bước). Portway chưa trả lời được bước này; dùng khoá SSH cho tài khoản này, hoặc kết nối bằng Terminal.':
+    'After the password the server also asks for "{prompt}" (two-step sign-in). Portway can\'t answer that step yet; use an SSH key for this account, or connect from Terminal.',
 }
 
 export default en

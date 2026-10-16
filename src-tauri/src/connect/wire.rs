@@ -59,6 +59,9 @@ pub enum Intent {
     Pair,
     /// Already paired: the key must be one the receiver knows.
     Link,
+    /// Already paired, and has files to hand over: the key must be known, and the
+    /// receiver's user decides whether to take them.
+    Send,
 }
 
 /// A network card another machine can wake this one through.
@@ -70,6 +73,12 @@ pub struct MacInfo {
     pub name: String,
     /// "ethernet" or "wifi"
     pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OfferFile {
+    pub name: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -94,6 +103,15 @@ pub enum Msg {
     Nonce { n: String },
     /// Pairing step 3: the number committed to in step 1.
     Reveal { n: String },
+    /// Sending files: what is on offer. The receiver answers `Accept` or `Refuse`.
+    Offer { files: Vec<OfferFile> },
+    Accept,
+    /// After a file's bytes: its BLAKE2s hash, hex.
+    FileEnd { hash: String },
+    /// The receiver's verdict on the file just finished.
+    FileOk { ok: bool },
+    /// Either side stops the transfer.
+    Cancel,
     PairConfirm {
         ok: bool,
         /// Sent with a yes, so the machine just paired with can wake this one.
@@ -190,12 +208,27 @@ impl<S: AsyncRead + AsyncWrite> Channel<S> {
     }
 }
 
+/// Most file bytes one frame carries: a frame holds 65535 bytes, minus the
+/// authentication tag and the one-byte kind.
+pub const MAX_DATA: usize = MAX_FRAME - TAG - 1;
+
+/// What came over the channel: a message, or raw file bytes.
+pub enum Frame {
+    Msg(Msg),
+    Data(Vec<u8>),
+}
+
+const KIND_MSG: u8 = 0;
+const KIND_DATA: u8 = 1;
+
 impl<S: AsyncWrite> Sender<S> {
-    pub async fn send(&mut self, msg: &Msg) -> WireResult<()> {
-        let plain = serde_json::to_vec(msg).map_err(|_| WireError::Protocol("cannot encode"))?;
-        if plain.len() + TAG > MAX_FRAME {
+    async fn send_frame(&mut self, kind: u8, body: &[u8]) -> WireResult<()> {
+        if body.len() + 1 + TAG > MAX_FRAME {
             return Err(WireError::Protocol("message too large"));
         }
+        let mut plain = Vec::with_capacity(body.len() + 1);
+        plain.push(kind);
+        plain.extend_from_slice(body);
         let mut out = vec![0u8; plain.len() + TAG];
         let n = self.transport.write_message(self.nonce, &plain, &mut out)?;
         self.nonce += 1;
@@ -203,16 +236,43 @@ impl<S: AsyncWrite> Sender<S> {
         write_frame(&mut half, &out[..n]).await?;
         Ok(())
     }
+
+    pub async fn send(&mut self, msg: &Msg) -> WireResult<()> {
+        let json = serde_json::to_vec(msg).map_err(|_| WireError::Protocol("cannot encode"))?;
+        self.send_frame(KIND_MSG, &json).await
+    }
+
+    /// File bytes, at most `MAX_DATA` per call.
+    pub async fn send_data(&mut self, bytes: &[u8]) -> WireResult<()> {
+        self.send_frame(KIND_DATA, bytes).await
+    }
 }
 
 impl<S: AsyncRead> Receiver<S> {
-    pub async fn recv(&mut self) -> WireResult<Msg> {
+    pub async fn recv_frame(&mut self) -> WireResult<Frame> {
         let mut half = std::pin::Pin::new(&mut self.half);
         let frame = read_frame(&mut half).await?;
         let mut out = vec![0u8; frame.len()];
         let n = self.transport.read_message(self.nonce, &frame, &mut out)?;
         self.nonce += 1;
-        serde_json::from_slice(&out[..n]).map_err(|_| WireError::Protocol("unknown message"))
+        out.truncate(n);
+        if out.is_empty() {
+            return Err(WireError::Protocol("empty frame"));
+        }
+        let kind = out.remove(0);
+        match kind {
+            KIND_MSG => serde_json::from_slice(&out).map(Frame::Msg).map_err(|_| WireError::Protocol("unknown message")),
+            KIND_DATA => Ok(Frame::Data(out)),
+            _ => Err(WireError::Protocol("unknown frame")),
+        }
+    }
+
+    /// The next message; file bytes here are a protocol error.
+    pub async fn recv(&mut self) -> WireResult<Msg> {
+        match self.recv_frame().await? {
+            Frame::Msg(m) => Ok(m),
+            Frame::Data(_) => Err(WireError::Protocol("unexpected file bytes")),
+        }
     }
 }
 
@@ -296,7 +356,7 @@ mod tests {
     use tokio::io::duplex;
 
     async fn pair() -> (Established<tokio::io::DuplexStream>, Established<tokio::io::DuplexStream>, Keypair, Keypair) {
-        let (a, b) = duplex(4096);
+        let (a, b) = duplex(1 << 20);
         let (ka, kb) = (generate_keypair(), generate_keypair());
         let (ra, rb) = tokio::join!(initiate(a, &ka.private), respond(b, &kb.private));
         (ra.ok().unwrap(), rb.ok().unwrap(), ka, kb)
@@ -390,5 +450,27 @@ mod tests {
         assert!(matches!(serde_json::from_str::<Msg>(old), Ok(Msg::Hello { macs, .. }) if macs.is_empty()));
         let old = r#"{"t":"pairConfirm","ok":true}"#;
         assert!(matches!(serde_json::from_str::<Msg>(old), Ok(Msg::PairConfirm { ok: true, macs }) if macs.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn file_bytes_and_messages_share_a_channel() {
+        let (a, b, _, _) = pair().await;
+        let ((mut sa, _ra), (_sb, mut rb)) = (a.channel.split(), b.channel.split());
+        let chunk = vec![0xABu8; MAX_DATA];
+        sa.send(&Msg::Offer { files: vec![OfferFile { name: "a.bin".into(), size: 3 }] }).await.ok().unwrap();
+        sa.send_data(&chunk).await.ok().unwrap();
+        sa.send_data(&[1, 2, 3]).await.ok().unwrap();
+        sa.send(&Msg::FileEnd { hash: "00".into() }).await.ok().unwrap();
+        assert!(matches!(rb.recv_frame().await.ok().unwrap(), Frame::Msg(Msg::Offer { .. })));
+        assert!(matches!(rb.recv_frame().await.ok().unwrap(), Frame::Data(d) if d == chunk));
+        assert!(matches!(rb.recv_frame().await.ok().unwrap(), Frame::Data(d) if d == [1, 2, 3]));
+        assert!(matches!(rb.recv().await.ok().unwrap(), Msg::FileEnd { .. }));
+    }
+
+    #[tokio::test]
+    async fn one_byte_too_many_for_a_frame_is_refused() {
+        let (a, _b, _, _) = pair().await;
+        let (mut sa, _ra) = a.channel.split();
+        assert!(sa.send_data(&vec![0u8; MAX_DATA + 1]).await.is_err());
     }
 }

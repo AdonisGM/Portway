@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api, type ConnectView } from '../lib/api'
 
-const EMPTY: ConnectView = { enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null }
+const EMPTY: ConnectView = { enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null, transfers: [] }
 
 const ConnectContext = createContext<ConnectView | null>(null)
 

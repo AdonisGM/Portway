@@ -148,6 +148,7 @@ pub struct View {
     pub link: Option<LinkView>,
     pub link_error: Option<LinkErrorView>,
     pub wake: Option<WakeView>,
+    pub transfers: Vec<TransferView>,
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +219,7 @@ struct State {
     link_error: Option<(String, String)>,
     last_pair_request: Option<Instant>,
     wake: Option<Wake>,
+    transfers: Vec<Transfer>,
     next_token: u64,
 }
 
@@ -247,6 +249,9 @@ struct Inner {
     state: Mutex<State>,
 }
 
+mod transfer;
+use transfer::{Transfer, TransferView};
+
 type Stream = TcpStream;
 
 impl Connect {
@@ -265,6 +270,7 @@ impl Connect {
             link_error: None,
             last_pair_request: None,
             wake: None,
+            transfers: Vec::new(),
             next_token: 1,
         };
         Self { inner: Arc::new(Inner { app, state: Mutex::new(state) }) }
@@ -411,6 +417,9 @@ impl Connect {
             s.paths.clear();
             s.link_error = None;
             s.wake = None;
+            for t in &s.transfers {
+                t.cancel.notify_one();
+            }
             (s.run.take(), s.link.take(), s.pairing.take())
         };
         if let Some(l) = link {
@@ -552,6 +561,17 @@ impl Connect {
                 self.publish();
                 self.audit("link", &name, true, Some("incoming".into()));
                 self.run_session(token, tx, rx, cancel).await;
+            }
+            Intent::Send => {
+                let peer = self.lock().store.peer(&id).filter(|p| p.public_key == hex(&remote_key)).cloned();
+                let Some(peer) = peer else {
+                    let _ = tx.send(&Msg::Refuse { code: "not_paired".into() }).await;
+                    return;
+                };
+                if tx.send(&hello).await.is_err() {
+                    return;
+                }
+                self.accept_send(tx, rx, peer).await;
             }
             Intent::Pair => {
                 let (decide_tx, decide_rx) = mpsc::unbounded_channel();
@@ -916,23 +936,15 @@ impl Connect {
                 return Err(AppError::new("link_busy"));
             }
             let peer = s.store.peer(id).ok_or_else(|| AppError::new("peer_not_found"))?.clone();
-            let mut targets: Vec<(Option<Duration>, SocketAddrV4)> = s.paths.get(id).map(|v| v.iter().map(|p| (p.result.ok(), p.addr)).collect()).unwrap_or_default();
-            if targets.is_empty() {
-                if let Some(n) = s.nearby.get(id) {
-                    targets.extend(n.addrs.iter().map(|ip| (None, SocketAddrV4::new(*ip, n.port))));
-                }
-                targets.extend(peer.manual_addrs.iter().filter_map(|m| net::parse_addr(m, DEFAULT_PORT)).map(|a| (None, a)));
-            }
+            let targets = targets_for(&s, id, &peer);
             if targets.is_empty() {
                 return Err(AppError::new("peer_not_found"));
             }
-            // Fastest known first; addresses never measured go last.
-            targets.sort_by_key(|(rtt, _)| rtt.map_or(u128::MAX, |d| d.as_micros()));
             s.link_error = None;
             let token = s.next_token;
             s.next_token += 1;
             s.link = Some(Link { token, peer_id: id.to_string(), addr: String::new(), up: false, since: now_ms(), rtt: None, cancel: Arc::new(Notify::new()) });
-            (targets.into_iter().map(|(_, a)| a).collect::<Vec<_>>(), peer.name)
+            (targets, peer.name)
         };
         let me = self.me().ok_or_else(|| AppError::new("keychain"))?;
         self.publish();
@@ -1078,6 +1090,20 @@ async fn connect_any(targets: &[SocketAddrV4]) -> Result<(Stream, SocketAddrV4),
     Err(last)
 }
 
+/// The addresses to try for a paired machine, the one that answered fastest
+/// first; those never measured go last.
+fn targets_for(s: &State, id: &str, peer: &Peer) -> Vec<SocketAddrV4> {
+    let mut targets: Vec<(Option<Duration>, SocketAddrV4)> = s.paths.get(id).map(|v| v.iter().map(|p| (p.result.ok(), p.addr)).collect()).unwrap_or_default();
+    if targets.is_empty() {
+        if let Some(n) = s.nearby.get(id) {
+            targets.extend(n.addrs.iter().map(|ip| (None, SocketAddrV4::new(*ip, n.port))));
+        }
+        targets.extend(peer.manual_addrs.iter().filter_map(|m| net::parse_addr(m, DEFAULT_PORT)).map(|a| (None, a)));
+    }
+    targets.sort_by_key(|(rtt, _)| rtt.map_or(u128::MAX, |d| d.as_micros()));
+    targets.into_iter().map(|(_, a)| a).collect()
+}
+
 /// A paired machine that is on the network right now: announced over mDNS or
 /// answering on one of its paths.
 fn is_online(s: &State, id: &str) -> bool {
@@ -1154,5 +1180,6 @@ fn build_view(s: &State) -> View {
         link: s.link.as_ref().map(|l| LinkView { peer_id: l.peer_id.clone(), addr: l.addr.clone(), stage: if l.up { "up" } else { "connecting" }, since: l.since, rtt_ms: l.rtt.map(|d| (d.as_secs_f64() * 10_000.0).round() / 10.0) }),
         link_error: s.link_error.as_ref().map(|(peer_id, code)| LinkErrorView { peer_id: peer_id.clone(), code: code.clone() }),
         wake: s.wake.as_ref().map(|w| WakeView { peer_id: w.peer_id.clone(), stage: w.stage, sent: w.sent, since: w.since }),
+        transfers: s.transfers.iter().map(transfer::view).collect(),
     }
 }

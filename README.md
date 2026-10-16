@@ -96,7 +96,8 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 - **Kết nối** tới máy đã ghép đôi qua đường nhanh nhất trong các đường tìm được (cáp, Wi-Fi hoặc IP nhập tay), đo độ trễ mỗi 5 giây. Mỗi máy một kết nối.
 - Khi lỗi, Portway chỉ gợi ý cách xử lý theo loại lỗi (xem bên dưới), không tự sửa tường lửa.
 - **Đánh thức (WOL)**: sau khi ghép đôi (hoặc kết nối lần đầu với máy đã ghép từ bản cũ), hai máy trao cho nhau địa chỉ MAC của các card cáp và Wi-Fi thật. Nút "Đánh thức" gửi magic packet (UDP broadcast cổng 9 và 7, qua từng card đang có địa chỉ), rồi đợi tối đa 2 phút để máy kia hiện lại trong mạng. Máy kia cần bật Wake-on-LAN (BIOS/UEFI, card mạng, tắt Fast Startup trên Windows); Mac chỉ dậy từ trạng thái ngủ qua cáp.
-- Gửi tệp và clipboard chưa làm.
+- **Gửi tệp** tới máy đã ghép đôi (nút "Gửi tệp…" ở dòng máy đang thấy trong mạng). Mỗi lần gửi mở một kết nối mã hoá riêng, không cần đang "Kết nối". Người nhận luôn được hỏi Nhận hay Từ chối; tệp lưu vào thư mục tải xuống mặc định, không ghi đè tệp trùng tên (thêm " (1)"), được ghi dưới tên tạm và chỉ đổi tên sau khi BLAKE2s khớp. Tên tệp từ máy kia được làm sạch (không có đường dẫn, không có ký tự Windows cấm). Bản đầu chỉ gửi tệp lẻ, chưa gửi thư mục, và chưa tiếp tục được khi đứt giữa chừng.
+- Clipboard chưa làm.
 
 ### Khác
 
@@ -228,7 +229,7 @@ Khi tải tệp từ server về Windows, những tên Linux cho phép nhưng Wi
 
 ## Ghi chú khi làm Portway Connect
 
-Portway Connect cho hai bản Portway trong cùng LAN tự nhận ra nhau, ghép đôi rồi gửi tệp, đồng bộ clipboard và đánh thức nhau (WOL). Mới có phát hiện, ghép đôi, kết nối và đánh thức (code ở `src-tauri/src/connect/`); phần còn lại chưa làm. Các điều dưới đây rút ra từ bản thử `scripts/connect-probe` trên một Mac và một PC Windows nối cả cáp Ethernet lẫn Wi-Fi (16/10/2026).
+Portway Connect cho hai bản Portway trong cùng LAN tự nhận ra nhau, ghép đôi rồi gửi tệp, đồng bộ clipboard và đánh thức nhau (WOL). Mới có phát hiện, ghép đôi, kết nối, đánh thức và gửi tệp (code ở `src-tauri/src/connect/`); phần còn lại chưa làm. Các điều dưới đây rút ra từ bản thử `scripts/connect-probe` trên một Mac và một PC Windows nối cả cáp Ethernet lẫn Wi-Fi (16/10/2026).
 
 ### Chạy probe
 

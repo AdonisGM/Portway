@@ -125,11 +125,39 @@ export function commandError(e: unknown): string {
       return t('Địa chỉ IP không hợp lệ')
     case 'peer_not_found':
       return t('Không thấy máy này trong mạng')
+    case 'no_files':
+      return t('Chưa chọn tệp nào')
+    case 'too_many_files':
+      return t('Quá nhiều tệp một lần (tối đa 1000)')
+    case 'not_a_file':
+      return t('{path} không phải một tệp. Chưa gửi được thư mục.', { path: e.detail ?? '' })
+    case 'no_offer':
+      return t('Yêu cầu nhận tệp này đã hết hạn')
     case 'no_mac':
       return t('Chưa có địa chỉ MAC của máy này. Kết nối với nó một lần để Portway ghi lại.')
     case 'wake_failed':
       return t('Không gửi được gói đánh thức: kiểm tra máy này đang nối mạng')
     default:
       return hintFor(e.code, null).title + (e.detail ? ` (${e.detail})` : '')
+  }
+}
+
+/** Why a file transfer ended badly, for the row in the list. */
+export function transferError(code: string): string {
+  switch (code) {
+    case 'hash_mismatch':
+      return t('Tệp nhận về bị sai, đã bỏ')
+    case 'file_changed':
+      return t('Tệp bị đổi trong lúc gửi')
+    case 'io':
+      return t('Không đọc hoặc ghi được tệp (ổ đĩa đầy hoặc không có quyền)')
+    case 'protocol':
+      return t('Máy kia gửi dữ liệu không đúng')
+    case 'refused_busy':
+      return t('Máy kia đang có quá nhiều yêu cầu nhận tệp')
+    case 'refused_bad_offer':
+      return t('Máy kia không nhận danh sách tệp này')
+    default:
+      return hintFor(code, null).title
   }
 }

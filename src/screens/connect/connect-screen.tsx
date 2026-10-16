@@ -10,6 +10,7 @@ import { t } from '../../i18n'
 import { api, type ConnectFail, type ConnectPath, type ConnectPeer } from '../../lib/api'
 import { commandError, hintFor } from './hints'
 import { HintSteps } from './pairing-dialog'
+import { pickAndSend, TransfersSection } from './transfers'
 
 /** Same grid on every row, so the columns line up whatever a row holds. */
 const ROW_COLS = '28px minmax(0,1fr) auto auto'
@@ -138,6 +139,8 @@ export function ConnectScreen() {
             ))}
           </Section>
 
+          <TransfersSection />
+
           <Section title={t('Máy chưa ghép đôi')} count={view.nearby.length}>
             {!view.nearby.length && <Empty>{t('Chưa thấy máy nào khác. Cần bật Connect ở máy kia, và hai máy cùng một mạng.')}</Empty>}
             {view.nearby.map((n) => (
@@ -251,6 +254,11 @@ function PeerRow({
         </span>
         <Chip tone={status.tone}>{status.text}</Chip>
         <span className="flex items-center gap-1.5">
+          {peer.online && (
+            <Button size="sm" onClick={() => void pickAndSend(peer.id, onError(t('Không gửi được tệp')))}>
+              {t('Gửi tệp…')}
+            </Button>
+          )}
           {peer.canWake && !peer.online && !mine && (
             <Button size="sm" disabled={waking?.stage === 'waiting'} onClick={() => void api.connectWake(peer.id).catch(onError(t('Không đánh thức được')))}>
               {t('Đánh thức')}

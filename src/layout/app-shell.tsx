@@ -7,6 +7,7 @@ import { TransferScreen } from '../screens/transfer/transfer-screen'
 import { TunnelsScreen } from '../screens/tunnels/tunnels-screen'
 import { ConnectScreen } from '../screens/connect/connect-screen'
 import { PairingDialog } from '../screens/connect/pairing-dialog'
+import { IncomingTransferDialog } from '../screens/connect/transfers'
 import { EditsDock } from './edits-dock'
 import { Menu } from './menu'
 import { Rail } from './rail'
@@ -46,6 +47,7 @@ export function AppShell() {
           </main>
           <EditsDock />
           <PairingDialog />
+          <IncomingTransferDialog />
         </div>
       </div>
     </div>

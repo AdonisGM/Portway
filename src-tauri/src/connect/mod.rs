@@ -83,3 +83,25 @@ pub fn connect_wake(connect: State<'_, Connect>, id: String) -> AppResult<()> {
 pub fn connect_dismiss_wake(connect: State<'_, Connect>) {
     connect.dismiss_wake()
 }
+
+/// Offer files (by path) to a paired machine.
+#[tauri::command]
+pub fn connect_send(connect: State<'_, Connect>, id: String, paths: Vec<String>) -> AppResult<()> {
+    connect.send_files(&id, paths)
+}
+
+/// The user's answer to a machine that wants to send files.
+#[tauri::command]
+pub fn connect_transfer_decide(connect: State<'_, Connect>, id: String, accept: bool) -> AppResult<()> {
+    connect.transfer_decide(&id, accept)
+}
+
+#[tauri::command]
+pub fn connect_transfer_cancel(connect: State<'_, Connect>, id: String) {
+    connect.transfer_cancel(&id)
+}
+
+#[tauri::command]
+pub fn connect_transfers_clear(connect: State<'_, Connect>) {
+    connect.transfers_clear()
+}

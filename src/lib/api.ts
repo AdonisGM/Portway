@@ -614,6 +614,27 @@ export type ConnectPairing = {
 export type ConnectLink = { peerId: string; addr: string; stage: 'connecting' | 'up'; since: number; rttMs: number | null }
 /** Magic packets sent to a paired machine, and whether it has shown up since. */
 export type ConnectWake = { peerId: string; stage: 'waiting' | 'up' | 'timeout'; sent: number; since: number }
+export type ConnectTransfer = {
+  id: string
+  peerId: string
+  peerName: string
+  direction: 'send' | 'receive'
+  /** The first few files; `fileCount` is how many there are. */
+  files: { name: string; size: number }[]
+  fileCount: number
+  total: number
+  done: number
+  /** Index of the file in progress. */
+  current: number
+  /** "offering": the receiver is being asked. "waiting": for the receiver's answer. */
+  stage: 'offering' | 'waiting' | 'active' | 'done' | 'failed' | 'declined' | 'canceled'
+  /** Bytes per second. */
+  rate: number
+  error: string | null
+  /** Where the first received file was saved. */
+  savedTo: string | null
+  since: number
+}
 export type ConnectView = {
   enabled: boolean
   device: { id: string; name: string; os: string; version: string; port: number | null; fingerprint: string } | null
@@ -626,6 +647,7 @@ export type ConnectView = {
   link: ConnectLink | null
   linkError: { peerId: string; code: string } | null
   wake: ConnectWake | null
+  transfers: ConnectTransfer[]
 }
 
 export function isAppError(e: unknown): e is AppError {
@@ -696,6 +718,12 @@ type Api = {
   /** Broadcast magic packets to a paired machine and wait for it to come up. */
   connectWake(id: string): Promise<void>
   connectDismissWake(): Promise<void>
+  /** Offer files (by path) to a paired machine; its user answers. */
+  connectSend(id: string, paths: string[]): Promise<void>
+  connectTransferDecide(id: string, accept: boolean): Promise<void>
+  connectTransferCancel(id: string): Promise<void>
+  /** Forget the transfers that are over. */
+  connectTransfersClear(): Promise<void>
   tunnels(): Promise<Tunnel[]>
   saveTunnel(spec: TunnelSpec): Promise<Tunnel>
   deleteTunnel(id: string): Promise<void>
@@ -813,6 +841,10 @@ const tauriApi: Api = {
   connectRemoveAddress: (id, addr) => invoke('connect_remove_address', { id, addr }),
   connectWake: (id) => invoke('connect_wake', { id }),
   connectDismissWake: () => invoke('connect_dismiss_wake'),
+  connectSend: (id, paths) => invoke('connect_send', { id, paths }),
+  connectTransferDecide: (id, accept) => invoke('connect_transfer_decide', { id, accept }),
+  connectTransferCancel: (id) => invoke('connect_transfer_cancel', { id }),
+  connectTransfersClear: () => invoke('connect_transfers_clear'),
   tunnels: () => invoke('tunnels_list'),
   saveTunnel: (spec) => invoke('tunnel_save', { spec }),
   deleteTunnel: (id) => invoke('tunnel_delete', { id }),
@@ -1016,7 +1048,7 @@ function browserApi(): Api {
     servicesJournal: async () => fail('needs_app'),
     servicesUnitFile: async () => fail('needs_app'),
     servicesAction: async () => fail('needs_app'),
-    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null }),
+    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null, transfers: [] }),
     connectSetEnabled: async () => fail('needs_app'),
     connectPair: async () => fail('needs_app'),
     connectPairDecide: async () => fail('needs_app'),
@@ -1029,6 +1061,10 @@ function browserApi(): Api {
     connectRemoveAddress: async () => fail('needs_app'),
     connectWake: async () => fail('needs_app'),
     connectDismissWake: async () => {},
+    connectSend: async () => fail('needs_app'),
+    connectTransferDecide: async () => fail('needs_app'),
+    connectTransferCancel: async () => {},
+    connectTransfersClear: async () => {},
     tunnels: async () => [],
     saveTunnel: async () => fail('needs_app'),
     deleteTunnel: async () => fail('needs_app'),

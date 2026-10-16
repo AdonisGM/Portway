@@ -199,7 +199,7 @@ function Section({ title, count, children }: { title: string; count: number; chi
         {title}
         <span className="num font-normal text-muted">{count}</span>
       </span>
-      <div className="overflow-hidden rounded-xl border border-line bg-surface">{children}</div>
+      <div className="rounded-xl border border-line bg-surface">{children}</div>
     </div>
   )
 }

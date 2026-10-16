@@ -184,6 +184,18 @@ Tệp `dev/test-servers/ssh_config` có sẵn các khối `Host` tương ứng �
 
 Kết quả (`Portway.app` và tệp `.dmg`) được đặt trong `release/<version>/`, với version lấy từ `src-tauri/tauri.conf.json`. Thư mục `release/` không được đưa vào git.
 
+### Ký bản build trên Mac
+
+Mặc định bản build chỉ được ký tạm (`adhoc`), mà chữ ký tạm đổi theo từng bản build. macOS coi mỗi bản là một app mới: Keychain hỏi lại quyền đọc từng mục của `com.portway.app` (mật khẩu server, khoá của Connect) và bấm "Always Allow" chỉ có tác dụng cho đúng bản đó.
+
+Để chữ ký giữ nguyên qua các lần build trên máy của bạn, tạo một chứng chỉ ký mã tự ký rồi đặt tên nó vào `APPLE_SIGNING_IDENTITY`:
+
+1. Keychain Access › Certificate Assistant › Create a Certificate: tên `Portway Local Signing`, Identity Type là Self Signed Root, Certificate Type là Code Signing.
+2. Build: `APPLE_SIGNING_IDENTITY="Portway Local Signing" ./scripts/build-mac.sh`.
+3. Kiểm tra: `codesign -dr - release/<version>/Portway.app` phải in `identifier "com.portway.app" and certificate leaf = …`.
+
+Biến môi trường được dùng thay cho `tauri.conf.json`, để máy không có chứng chỉ vẫn build được. Chứng chỉ tự ký chỉ có tác dụng trên máy tạo ra nó; phát hành cho người khác cần chứng chỉ Developer ID của Apple và công chứng (notarize).
+
 Trên Windows, bộ cài NSIS (cài cho người dùng hiện tại, không cần quyền quản trị) được tạo bằng:
 
 ```powershell
@@ -248,7 +260,7 @@ Nó in các card mạng (trên Windows kèm profile mạng Public/Private), mở
 - **macOS nhận diện app bằng UUID của file chạy** (Mach-O `LC_UUID`), không phải bundle ID, tên file hay đường dẫn. Nhiều bản build từ cùng một binary có chung UUID, nên macOS chỉ hỏi một lần rồi chặn im lặng các bản còn lại, không có hộp thoại nào. Build với UUID khác (ví dụ `-C link-arg=-Wl,-random_uuid`) thì hộp thoại hiện lại. Kiểm tra bằng `dwarfdump --uuid <file chạy>`.
 - Các khoá `NSLocalNetworkUsageDescription` và `NSBonjourServices` không quyết định việc hộp thoại có hiện hay không. Vẫn nên khai để câu chữ trong hộp thoại có nghĩa.
 - `tccutil reset` không đặt lại được quyền này. Muốn thử lại phải đổi UUID.
-- Chưa kiểm chứng: UUID của Portway đổi theo từng bản build nên quyền có thể phải cấp lại sau cập nhật, nhất là với bản ký tạm. Apple khuyên ký bằng Developer ID. Cần thử bằng bản Portway thật, mở từ Finder.
+- UUID của file chạy đổi theo nội dung mỗi bản build (đã thấy: hai bản build liên tiếp có hai UUID khác nhau), và Info.plist có `NSLocalNetworkUsageDescription` cùng `NSBonjourServices` được Tauri gộp vào bản `.app`. Chưa kiểm chứng: quyền Mạng cục bộ có phải cấp lại sau cập nhật không. Apple khuyên ký bằng Developer ID để danh tính ổn định.
 
 ### Khi kết nối lỗi
 

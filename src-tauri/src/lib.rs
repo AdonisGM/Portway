@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod askpass;
 mod audit;
 mod disks;
 mod docker;
@@ -91,6 +93,8 @@ mod macos {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    askpass::run_if_requested();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())

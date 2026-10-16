@@ -575,10 +575,10 @@ fn ssh_argv(store: &ServerStore, server_id: &str, user: &str, depth: u8, asks: &
 
 /// A question ssh may ask in a terminal (its prompt contains every string of
 /// `contains`), and the Keychain entry that answers it.
-#[derive(Debug, Clone, PartialEq)]
-struct AskSecret {
-    contains: Vec<String>,
-    account: String,
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AskSecret {
+    pub(crate) contains: Vec<String>,
+    pub(crate) account: String,
 }
 
 /// The askpass helper for a terminal Portway opens (SSH_ASKPASS). It holds no
@@ -1831,11 +1831,22 @@ fn command_script(helper: &Path, line: &str) -> String {
     format!("#!/bin/sh\nrm -f \"$0\"\nhelper={helper}\ntrap 'rm -f \"$helper\"' EXIT HUP INT TERM\nSSH_ASKPASS=\"$helper\" SSH_ASKPASS_REQUIRE=force {line}\n")
 }
 
-/// ssh.exe in its own console window (Windows Terminal on Windows 11).
+/// ssh.exe in its own console window (Windows Terminal on Windows 11). Saved
+/// passwords and passphrases are filled in by Portway itself acting as the
+/// askpass helper (see askpass.rs); the map it gets holds no secret.
 #[cfg(windows)]
-fn launch_ssh(argv: &[String], _asks: &[AskSecret]) -> (String, AppResult<()>) {
+fn launch_ssh(argv: &[String], asks: &[AskSecret]) -> (String, AppResult<()>) {
     let line = std::iter::once("ssh".to_string()).chain(argv.iter().map(|a| win_quote(a))).collect::<Vec<_>>().join(" ");
-    let r = crate::winterm::ssh_exe().and_then(|exe| crate::winterm::spawn(&exe, argv, &crate::paths::home_dir()));
+    let r = crate::winterm::ssh_exe().and_then(|exe| {
+        let mut env = vec![("SSH_ASKPASS_REQUIRE", "force".to_string())];
+        if let (Ok(me), Ok(map)) = (std::env::current_exe(), serde_json::to_string(asks)) {
+            env.push(("SSH_ASKPASS", me.to_string_lossy().into_owned()));
+            env.push((crate::askpass::MAP_ENV, map));
+            env.push((crate::askpass::ID_ENV, uuid::Uuid::new_v4().to_string()));
+            crate::askpass::remove_stale();
+        }
+        crate::winterm::spawn(&exe, argv, &crate::paths::home_dir(), &env)
+    });
     (line, r)
 }
 

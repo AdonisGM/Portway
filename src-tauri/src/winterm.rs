@@ -23,10 +23,11 @@ pub fn ssh_exe() -> AppResult<PathBuf> {
     on_path.ok_or_else(|| AppError::new("ssh_client_missing"))
 }
 
-/// Start `program args` in a new console window, in `dir`.
-pub fn spawn(program: &Path, args: &[String], dir: &Path) -> AppResult<()> {
+/// Start `program args` in a new console window, in `dir`, with `env` added.
+pub fn spawn(program: &Path, args: &[String], dir: &Path, env: &[(&str, String)]) -> AppResult<()> {
     Command::new(program)
         .args(args)
+        .envs(env.iter().map(|(k, v)| (*k, v)))
         .current_dir(dir)
         .creation_flags(CREATE_NEW_CONSOLE)
         .spawn()
@@ -39,5 +40,5 @@ pub fn open(dir: &Path) -> AppResult<()> {
     let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
     let ps = root.join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
     let program = if ps.is_file() { ps } else { PathBuf::from("powershell.exe") };
-    spawn(&program, &["-NoLogo".to_string()], dir)
+    spawn(&program, &["-NoLogo".to_string()], dir, &[])
 }

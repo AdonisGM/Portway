@@ -704,7 +704,10 @@ impl Connect {
     fn finish_pairing(&self, outcome: String) {
         {
             let mut s = self.lock();
-            if let Some(p) = s.pairing.as_mut() {
+            // A machine that was asked and never got to show a code has nothing to report.
+            if s.pairing.as_ref().is_some_and(|p| p.role == Role::Responder && p.stage == "connecting") {
+                s.pairing = None;
+            } else if let Some(p) = s.pairing.as_mut() {
                 p.stage = "done";
                 p.decide = None;
                 if p.outcome.is_none() {

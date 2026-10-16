@@ -60,7 +60,9 @@ impl Store {
         if self.private_key.is_some() {
             return Ok(());
         }
-        let stored = secrets::get(KEY_ACCOUNT).and_then(|h| unhex(&h)).filter(|k| k.len() == 32);
+        // A refused read is an error, not "no key": treating it as one would
+        // replace the identity and forget every pairing.
+        let stored = secrets::get_checked(KEY_ACCOUNT)?.and_then(|h| unhex(&h)).filter(|k| k.len() == 32);
         match stored {
             Some(key) if !self.data.id.is_empty() && !self.data.public_key.is_empty() => self.private_key = Some(key),
             _ => {

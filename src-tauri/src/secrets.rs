@@ -44,6 +44,18 @@ pub fn get(account: &str) -> Option<String> {
     (1..=n).map(|i| entry(&part_account(account, i))?.get_password().ok()).collect()
 }
 
+/// Like `get`, but tells "nothing stored" (`Ok(None)`) from "the store refused
+/// or failed" (`Err`): a locked Keychain or a denied prompt must not look like
+/// a secret that was never saved. Only for a value that is split over no parts.
+pub fn get_checked(account: &str) -> AppResult<Option<String>> {
+    let entry = keyring::Entry::new(SERVICE, account).map_err(|e| AppError::detail("keychain", e))?;
+    match entry.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(AppError::detail("keychain", e)),
+    }
+}
+
 pub fn set(account: &str, value: &str) -> AppResult<()> {
     let main = entry(account).ok_or_else(|| AppError::new("keychain"))?;
     // Parts of an earlier, longer value would be left behind otherwise.

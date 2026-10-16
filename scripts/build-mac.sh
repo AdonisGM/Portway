@@ -31,7 +31,8 @@ echo "==> Collecting output in release/$VERSION"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 ditto "$BUNDLE_DIR/macos/$PRODUCT.app" "$OUT_DIR/$PRODUCT.app"
-cp "$BUNDLE_DIR/dmg/"*.dmg "$OUT_DIR/"
+# The bundle folder keeps disk images of earlier builds: take only this version's.
+cp "$BUNDLE_DIR/dmg/"*_"${VERSION}"_*.dmg "$OUT_DIR/"
 
 echo
 echo "Done. Files are in: $OUT_DIR"

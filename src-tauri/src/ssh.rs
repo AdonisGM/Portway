@@ -928,10 +928,24 @@ fn sudo_reason(stderr: &str) -> String {
         .to_string()
 }
 
+/// The saved login password of a password account: tried once for sudo when
+/// none was typed, since it is usually the same one.
+fn saved_login_password(store: &ServerStore, server_id: &str, user: &str) -> Option<String> {
+    let server = store.list().into_iter().find(|s| s.id == server_id)?;
+    let account = server.accounts.iter().find(|a| a.user == user)?;
+    match account.auth {
+        Auth::Password => crate::secrets::get(&password_account(server_id, user)).filter(|p| !p.is_empty()),
+        Auth::Key { .. } => None,
+    }
+}
+
 /// Turn on sudo for a session: privileged reads (UFW, Docker, other users'
 /// processes) then run through sudo. The password stays in memory only.
+/// Without a typed password, NOPASSWD is tried, then the saved login password
+/// once (a wrong one is never retried: the caller asks the user).
 #[tauri::command]
 pub async fn ssh_sudo(
+    store: tauri::State<'_, ServerStore>,
     sessions: tauri::State<'_, Sessions>,
     audit: tauri::State<'_, AuditLog>,
     server_id: String,
@@ -953,21 +967,23 @@ pub async fn ssh_sudo(
             audit.record(&server_id, &user, "sudoOn", "sudo -n true", false, Some(sudo_reason(&probe.stderr)));
             return Ok(SudoResult::NotAllowed { detail: sudo_reason(&probe.stderr) });
         }
-        let Some(pw) = password.filter(|p| !p.is_empty()) else {
+        let typed = password.filter(|p| !p.is_empty());
+        let from_saved = typed.is_none();
+        let Some(pw) = typed.or_else(|| saved_login_password(&store, &server_id, &user)) else {
             return Ok(SudoResult::NeedPassword { retry: false });
         };
         // -k: ignore a cached timestamp so the password is really checked.
         let check = run_channel(&session, "sudo -S -k -p '' true", "sudo -S -k -p '' true", Some(format!("{pw}\n")), EXEC_TIMEOUT).await?;
         if check.code == Some(0) {
             *session.sudo.lock().unwrap() = Some(SudoMode::Password(pw));
-            audit.record(&server_id, &user, "sudoOn", "sudo -v", true, None);
+            audit.record(&server_id, &user, "sudoOn", "sudo -v", true, from_saved.then(|| "saved password".to_string()));
             return Ok(SudoResult::Enabled);
         }
         audit.record(&server_id, &user, "sudoOn", "sudo -v", false, Some(sudo_reason(&check.stderr)));
         if sudo_refused(&check.stderr) {
             return Ok(SudoResult::NotAllowed { detail: sudo_reason(&check.stderr) });
         }
-        Ok(SudoResult::NeedPassword { retry: true })
+        Ok(SudoResult::NeedPassword { retry: !from_saved })
     };
     let r: AppResult<SudoResult> = trace::labelled(tr("Bật sudo", "Enable sudo"), run).await;
     r

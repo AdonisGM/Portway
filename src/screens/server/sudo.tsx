@@ -1,5 +1,5 @@
 import { Lock } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useConnections } from '../../app/connections'
 import { t } from '../../i18n'
 import { useToast } from '../../components/toast'
@@ -17,7 +17,33 @@ export function SudoPrompt({ server, user }: { server: Server; user: string }) {
   const [error, setError] = useState<string | null>(null)
   const [refused, setRefused] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [probing, setProbing] = useState(true)
+  const probed = useRef(false)
   const close = () => conns.askSudo(server.id, user, false)
+
+  const enabled = () => {
+    conns.setSudo(server.id, user, true)
+    toast({
+      title: t('Đã bật sudo cho {user}@{server}', { user, server: server.name }),
+      detail: t('Mật khẩu chỉ giữ trong bộ nhớ, hết khi ngắt kết nối'),
+    })
+    close()
+  }
+
+  // NOPASSWD or the saved login password: no need to ask when either works.
+  useEffect(() => {
+    if (probed.current) return
+    probed.current = true
+    api
+      .sudo(server.id, user, undefined)
+      .then((r) => {
+        if (r.status === 'enabled') enabled()
+        else if (r.status === 'notAllowed') setRefused(r.detail)
+      })
+      .catch(() => {})
+      .finally(() => setProbing(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const submit = async () => {
     setBusy(true)
@@ -25,12 +51,7 @@ export function SudoPrompt({ server, user }: { server: Server; user: string }) {
     try {
       const r = await api.sudo(server.id, user, pw || undefined)
       if (r.status === 'enabled') {
-        conns.setSudo(server.id, user, true)
-        toast({
-          title: t('Đã bật sudo cho {user}@{server}', { user, server: server.name }),
-          detail: t('Mật khẩu chỉ giữ trong bộ nhớ, hết khi ngắt kết nối'),
-        })
-        close()
+        enabled()
       } else if (r.status === 'needPassword') {
         if (r.retry) setError(t('Mật khẩu không đúng, nhập lại'))
         setPw('')
@@ -52,7 +73,7 @@ export function SudoPrompt({ server, user }: { server: Server; user: string }) {
       title={t('Dùng sudo cho {user}@{server}', { user, server: server.name })}
       subtitle={t('Để đọc firewall, Docker, tiến trình của user khác và thao tác tệp bằng root')}
       footer={
-        refused ? (
+        probing || refused ? (
           <Button onClick={close}>{t('Đóng')}</Button>
         ) : (
           <>
@@ -64,7 +85,9 @@ export function SudoPrompt({ server, user }: { server: Server; user: string }) {
         )
       }
     >
-      {refused ? (
+      {probing ? (
+        <span className="text-ink2">{t('Đang kiểm tra…')}</span>
+      ) : refused ? (
         <div className="flex flex-col gap-2">
           <span className="leading-relaxed text-ink2">{t('User {user} không dùng được sudo trên server này.', { user })}</span>
           <span className="rounded-md bg-danger-soft px-2 py-1 font-mono text-[11.5px] break-all text-danger select-text">{refused}</span>

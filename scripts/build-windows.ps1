@@ -20,7 +20,10 @@ if ($LASTEXITCODE) { exit $LASTEXITCODE }
 Write-Host "==> Collecting output in release\$version"
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Path $out | Out-Null
-Copy-Item 'src-tauri\target\release\bundle\nsis\*.exe' $out
+# The bundle folder keeps installers of earlier builds: take only this version's.
+$installers = Get-ChildItem 'src-tauri\target\release\bundle\nsis' -Filter "*_$($version)_*.exe"
+if (-not $installers) { throw "No installer for $version in src-tauri\target\release\bundle\nsis" }
+$installers | Copy-Item -Destination $out
 
 Write-Host ''
 Write-Host "Done. Files are in: $out"

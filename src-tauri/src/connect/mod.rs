@@ -72,3 +72,14 @@ pub fn connect_add_address(connect: State<'_, Connect>, id: String, addr: String
 pub fn connect_remove_address(connect: State<'_, Connect>, id: String, addr: String) -> AppResult<()> {
     connect.remove_address(&id, &addr)
 }
+
+/// Send magic packets to a paired machine and wait for it to come up.
+#[tauri::command]
+pub fn connect_wake(connect: State<'_, Connect>, id: String) -> AppResult<()> {
+    connect.wake(&id)
+}
+
+#[tauri::command]
+pub fn connect_dismiss_wake(connect: State<'_, Connect>) {
+    connect.dismiss_wake()
+}

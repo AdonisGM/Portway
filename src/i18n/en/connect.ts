@@ -119,6 +119,21 @@ const en: Dict = {
   'Đang kết nối với một máy khác': 'Already connected to another machine',
   'Địa chỉ IP không hợp lệ': 'Not a valid IP address',
   'Không thấy máy này trong mạng': "That machine isn't on the network",
+  // Waking a machine
+  'Đánh thức': 'Wake up',
+  'Không đánh thức được': "Couldn't wake it",
+  'Đang đợi máy lên…': 'Waiting for it to come up…',
+  'Máy đã lên': 'It is up',
+  'Máy chưa lên': "It hasn't come up",
+  'Máy chưa lên sau 2 phút': "The machine hasn't come up after 2 minutes",
+  'Chưa có địa chỉ MAC của máy này. Kết nối với nó một lần để Portway ghi lại.': "No MAC address for this machine yet. Connect to it once so Portway can record it.",
+  'Không gửi được gói đánh thức: kiểm tra máy này đang nối mạng': "Couldn't send the wake packet: check this Mac is on a network",
+  'Wake-on-LAN phải được bật ở máy kia: trong BIOS/UEFI, và trong cài đặt card mạng (Windows: Wake on Magic Packet).':
+    'Wake-on-LAN must be on at the other machine: in the BIOS/UEFI, and in the network card settings (Windows: Wake on Magic Packet).',
+  'Windows: tắt Fast Startup, vì nó thường làm Wake-on-LAN không hoạt động khi máy tắt.': 'Windows: turn Fast Startup off; it often stops Wake-on-LAN from working once the machine is shut down.',
+  'Mac chỉ thức dậy được từ trạng thái ngủ, qua cáp mạng, khi bật “Wake for network access”. Tắt hẳn hoặc qua Wi-Fi thường không được.':
+    'A Mac only wakes from sleep, over a network cable, with “Wake for network access” on. Fully shut down, or over Wi-Fi, it usually does not.',
+  'Máy kia cần nối cáp mạng vào cùng mạng với máy này.': 'The other machine needs its network cable plugged into the same network as this Mac.',
 }
 
 export default en

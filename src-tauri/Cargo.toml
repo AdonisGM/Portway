@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.8.4"
+version = "0.9.0"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"
@@ -37,8 +37,9 @@ dunce = "1"
 tokio = { version = "1", features = ["time", "sync", "net", "rt", "io-util", "macros"] }
 snow = "0.9"
 mdns-sd = "0.21"
-if-addrs = "0.15"
+
 blake2 = "0.10"
+netdev = "0.46.3"
 
 # Hide/show the native traffic lights while the splash screen is up.
 [target.'cfg(target_os = "macos")'.dependencies]

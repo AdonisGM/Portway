@@ -594,6 +594,8 @@ export type ConnectPeer = {
   /** Reachable first, fastest first. */
   paths: ConnectPath[]
   manualAddrs: string[]
+  /** A card to wake it through is known. */
+  canWake: boolean
 }
 export type ConnectNearby = { id: string; addrs: string[] }
 export type ConnectPairing = {
@@ -610,6 +612,8 @@ export type ConnectPairing = {
   outcome: string | null
 }
 export type ConnectLink = { peerId: string; addr: string; stage: 'connecting' | 'up'; since: number; rttMs: number | null }
+/** Magic packets sent to a paired machine, and whether it has shown up since. */
+export type ConnectWake = { peerId: string; stage: 'waiting' | 'up' | 'timeout'; sent: number; since: number }
 export type ConnectView = {
   enabled: boolean
   device: { id: string; name: string; os: string; version: string; port: number | null; fingerprint: string } | null
@@ -621,6 +625,7 @@ export type ConnectView = {
   pairing: ConnectPairing | null
   link: ConnectLink | null
   linkError: { peerId: string; code: string } | null
+  wake: ConnectWake | null
 }
 
 export function isAppError(e: unknown): e is AppError {
@@ -688,6 +693,9 @@ type Api = {
   connectDismissLinkError(): Promise<void>
   connectAddAddress(id: string, addr: string): Promise<void>
   connectRemoveAddress(id: string, addr: string): Promise<void>
+  /** Broadcast magic packets to a paired machine and wait for it to come up. */
+  connectWake(id: string): Promise<void>
+  connectDismissWake(): Promise<void>
   tunnels(): Promise<Tunnel[]>
   saveTunnel(spec: TunnelSpec): Promise<Tunnel>
   deleteTunnel(id: string): Promise<void>
@@ -803,6 +811,8 @@ const tauriApi: Api = {
   connectDismissLinkError: () => invoke('connect_dismiss_link_error'),
   connectAddAddress: (id, addr) => invoke('connect_add_address', { id, addr }),
   connectRemoveAddress: (id, addr) => invoke('connect_remove_address', { id, addr }),
+  connectWake: (id) => invoke('connect_wake', { id }),
+  connectDismissWake: () => invoke('connect_dismiss_wake'),
   tunnels: () => invoke('tunnels_list'),
   saveTunnel: (spec) => invoke('tunnel_save', { spec }),
   deleteTunnel: (id) => invoke('tunnel_delete', { id }),
@@ -1006,7 +1016,7 @@ function browserApi(): Api {
     servicesJournal: async () => fail('needs_app'),
     servicesUnitFile: async () => fail('needs_app'),
     servicesAction: async () => fail('needs_app'),
-    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null }),
+    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null }),
     connectSetEnabled: async () => fail('needs_app'),
     connectPair: async () => fail('needs_app'),
     connectPairDecide: async () => fail('needs_app'),
@@ -1017,6 +1027,8 @@ function browserApi(): Api {
     connectDismissLinkError: async () => {},
     connectAddAddress: async () => fail('needs_app'),
     connectRemoveAddress: async () => fail('needs_app'),
+    connectWake: async () => fail('needs_app'),
+    connectDismissWake: async () => {},
     tunnels: async () => [],
     saveTunnel: async () => fail('needs_app'),
     deleteTunnel: async () => fail('needs_app'),

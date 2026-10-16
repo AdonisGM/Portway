@@ -221,12 +221,19 @@ function PeerRow({
   onUnpair: () => void
   onError: (title: string) => (e: unknown) => void
 }) {
-  const { link, linkError, pairing } = useConnect()
+  const { link, linkError, pairing, wake } = useConnect()
+  const waking = wake?.peerId === peer.id ? wake : null
   const mine = link?.peerId === peer.id ? link : null
   const otherBusy = !!link && !mine
   const error = linkError?.peerId === peer.id ? hintFor(linkError.code, peer.os) : null
 
-  const status = mine
+  const status = waking?.stage === 'waiting'
+    ? { tone: TONES.info, text: t('Đang đợi máy lên…') }
+    : waking?.stage === 'up'
+      ? { tone: TONES.success, text: t('Máy đã lên') }
+      : waking?.stage === 'timeout'
+        ? { tone: TONES.warn, text: t('Máy chưa lên') }
+        : mine
     ? mine.stage === 'up'
       ? { tone: TONES.success, text: mine.rttMs !== null ? t('Đang kết nối · {ms}', { ms: ms(mine.rttMs) }) : t('Đang kết nối') }
       : { tone: TONES.info, text: t('Đang kết nối…') }
@@ -244,6 +251,11 @@ function PeerRow({
         </span>
         <Chip tone={status.tone}>{status.text}</Chip>
         <span className="flex items-center gap-1.5">
+          {peer.canWake && !peer.online && !mine && (
+            <Button size="sm" disabled={waking?.stage === 'waiting'} onClick={() => void api.connectWake(peer.id).catch(onError(t('Không đánh thức được')))}>
+              {t('Đánh thức')}
+            </Button>
+          )}
           {mine ? (
             <Button size="sm" onClick={() => void api.connectUnlink()}>
               {mine.stage === 'up' ? t('Ngắt') : t('Huỷ')}
@@ -257,6 +269,12 @@ function PeerRow({
             open={menuOpen}
             setOpen={setMenuOpen}
             items={[
+              {
+                label: t('Đánh thức'),
+                run: () => void api.connectWake(peer.id).catch(onError(t('Không đánh thức được'))),
+                ok: peer.canWake,
+                why: t('Chưa có địa chỉ MAC của máy này. Kết nối với nó một lần để Portway ghi lại.'),
+              },
               { label: t('Thêm địa chỉ IP…'), run: onAddAddress },
               { label: t('Bỏ ghép đôi'), run: onUnpair, danger: true },
             ]}
@@ -270,6 +288,7 @@ function PeerRow({
           ))}
         </div>
       )}
+      {waking?.stage === 'timeout' && <WakeTimeout />}
       {error && (
         <div className="mx-3.5 mb-3 flex flex-col gap-1.5 rounded-lg border border-line bg-danger-soft px-3 py-2.5">
           <span className="flex items-center gap-2">
@@ -281,6 +300,21 @@ function PeerRow({
           <HintSteps steps={error.steps} command={error.command} />
         </div>
       )}
+    </div>
+  )
+}
+
+function WakeTimeout() {
+  const hint = hintFor('wake_timeout', null)
+  return (
+    <div className="mx-3.5 mb-3 flex flex-col gap-1.5 rounded-lg border border-line bg-warn-soft px-3 py-2.5">
+      <span className="flex items-center gap-2">
+        <span className="mr-auto font-semibold text-warn">{hint.title}</span>
+        <button type="button" className="cursor-pointer text-[11.5px] text-muted hover:text-ink" onClick={() => void api.connectDismissWake()}>
+          {t('Đóng')}
+        </button>
+      </span>
+      <HintSteps steps={hint.steps} />
     </div>
   )
 }

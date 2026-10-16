@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::wire::{self, hex, unhex};
+use super::wire::{self, hex, unhex, MacInfo};
 use crate::error::AppResult;
 use crate::secrets;
 
@@ -26,6 +26,9 @@ pub struct Peer {
     /// Addresses ("ip:port") the user added by hand, for when mDNS does not find it.
     #[serde(default)]
     pub manual_addrs: Vec<String>,
+    /// Cards it can be woken through, as it last told us.
+    #[serde(default)]
+    pub macs: Vec<MacInfo>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -91,7 +94,9 @@ impl Store {
         match self.data.peers.iter_mut().find(|p| p.id == peer.id) {
             Some(old) => {
                 let manual_addrs = std::mem::take(&mut old.manual_addrs);
-                *old = Peer { manual_addrs, ..peer };
+                // Pairing again may come without cards; keep the ones we had.
+                let macs = if peer.macs.is_empty() { std::mem::take(&mut old.macs) } else { peer.macs.clone() };
+                *old = Peer { manual_addrs, macs, ..peer };
             }
             None => self.data.peers.push(peer),
         }
@@ -124,7 +129,7 @@ mod tests {
     use super::*;
 
     fn peer(id: &str, key: &str) -> Peer {
-        Peer { id: id.into(), name: format!("name-{id}"), os: "macos".into(), public_key: key.into(), paired_at: 1, manual_addrs: vec![] }
+        Peer { id: id.into(), name: format!("name-{id}"), os: "macos".into(), public_key: key.into(), paired_at: 1, manual_addrs: vec![], macs: vec![] }
     }
 
     fn temp(name: &str) -> PathBuf {

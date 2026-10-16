@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, Notify};
 
 use super::net::{self, Fail, DEFAULT_PORT, SERVICE};
 use super::store::{Peer, Store};
-use super::wire::{self, hex, Intent, Msg, Receiver, Sender, VERSION};
+use super::wire::{self, hex, Intent, MacInfo, Msg, Receiver, Sender, VERSION};
 use crate::audit::AuditLog;
 use crate::error::{AppError, AppResult};
 
@@ -29,6 +29,8 @@ const NEARBY_TTL: Duration = Duration::from_secs(120);
 /// Incoming pairing requests closer together than this are refused, so one
 /// machine on the network cannot keep popping the dialog up.
 const PAIR_COOLDOWN: Duration = Duration::from_secs(5);
+/// How long to wait for a machine to appear after waking it.
+const WAKE_WAIT: Duration = Duration::from_secs(120);
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -80,6 +82,19 @@ pub struct PeerView {
     pub online: bool,
     pub paths: Vec<PathView>,
     pub manual_addrs: Vec<String>,
+    /// We know a card to wake it through.
+    pub can_wake: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WakeView {
+    pub peer_id: String,
+    /// "waiting" for the machine to show up, then "up" or "timeout".
+    pub stage: &'static str,
+    /// Magic packets sent.
+    pub sent: usize,
+    pub since: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -132,6 +147,7 @@ pub struct View {
     pub pairing: Option<PairingView>,
     pub link: Option<LinkView>,
     pub link_error: Option<LinkErrorView>,
+    pub wake: Option<WakeView>,
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +217,16 @@ struct State {
     link: Option<Link>,
     link_error: Option<(String, String)>,
     last_pair_request: Option<Instant>,
+    wake: Option<Wake>,
     next_token: u64,
+}
+
+struct Wake {
+    token: u64,
+    peer_id: String,
+    stage: &'static str,
+    sent: usize,
+    since: u64,
 }
 
 /// This machine as other machines are told about it.
@@ -239,6 +264,7 @@ impl Connect {
             link: None,
             link_error: None,
             last_pair_request: None,
+            wake: None,
             next_token: 1,
         };
         Self { inner: Arc::new(Inner { app, state: Mutex::new(state) }) }
@@ -276,6 +302,24 @@ impl Connect {
     fn me(&self) -> Option<Me> {
         let s = self.lock();
         Some(Me { id: s.store.data.id.clone(), name: s.name.clone(), key: s.store.private_key.clone()? })
+    }
+
+    /// The cards other machines can wake this one through.
+    fn my_macs(&self) -> Vec<MacInfo> {
+        net::wake_cards(&self.lock().cards).into_iter().map(|(mac, name, kind)| MacInfo { mac, name, kind: kind.code().to_string() }).collect()
+    }
+
+    fn remember_macs(&self, id: &str, macs: Vec<MacInfo>) {
+        if macs.is_empty() {
+            return;
+        }
+        let mut s = self.lock();
+        if let Some(p) = s.store.data.peers.iter_mut().find(|p| p.id == id) {
+            if p.macs != macs {
+                p.macs = macs;
+                let _ = s.store.save();
+            }
+        }
     }
 
     // -- turning on and off --------------------------------------------------
@@ -366,6 +410,7 @@ impl Connect {
             s.nearby.clear();
             s.paths.clear();
             s.link_error = None;
+            s.wake = None;
             (s.run.take(), s.link.take(), s.pairing.take())
         };
         if let Some(l) = link {
@@ -466,12 +511,12 @@ impl Connect {
         let remote_key = est.remote_static.clone();
         let hash = est.hash.clone();
         let (mut tx, mut rx) = est.channel.split();
-        let Ok(Ok(Msg::Hello { id, name, os, version, intent })) = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await else { return };
+        let Ok(Ok(Msg::Hello { id, name, os, version, intent, macs })) = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await else { return };
         if version != VERSION {
             let _ = tx.send(&Msg::Refuse { code: "version".into() }).await;
             return;
         }
-        let hello = Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent };
+        let mut hello = Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent, macs: vec![] };
         match intent {
             Intent::Link => {
                 let known = self.lock().store.peer(&id).is_some_and(|p| p.public_key == hex(&remote_key));
@@ -495,6 +540,11 @@ impl Connect {
                     let _ = tx.send(&Msg::Refuse { code: "busy".into() }).await;
                     return;
                 };
+                // The other side is trusted now: swap the cards each can be woken through.
+                self.remember_macs(&id, macs);
+                if let Msg::Hello { macs, .. } = &mut hello {
+                    *macs = self.my_macs();
+                }
                 if tx.send(&hello).await.is_err() {
                     self.end_link(token);
                     return;
@@ -550,7 +600,7 @@ impl Connect {
                     }
                 }
                 self.publish();
-                self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs: vec![] }).await;
+                self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs: vec![], macs: vec![] }).await;
             }
         }
     }
@@ -609,7 +659,7 @@ impl Connect {
         let remote_key = est.remote_static.clone();
         let hash = est.hash.clone();
         let (mut tx, mut rx) = est.channel.split();
-        tx.send(&Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent: Intent::Pair }).await.map_err(|_| "connection_lost".to_string())?;
+        tx.send(&Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent: Intent::Pair, macs: vec![] }).await.map_err(|_| "connection_lost".to_string())?;
         let reply = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await.map_err(|_| "connect_timeout".to_string())?.map_err(|_| "connection_lost".to_string())?;
         let (id, name, os) = match reply {
             Msg::Hello { id, name, os, version, .. } if version == VERSION => (id, name, os),
@@ -641,7 +691,7 @@ impl Connect {
         }
         self.publish();
         let manual_addrs = if manual { vec![used.to_string()] } else { vec![] };
-        self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs }).await;
+        self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs, macs: vec![] }).await;
         Ok(())
     }
 
@@ -657,17 +707,21 @@ impl Connect {
                 d = decide.recv() => match d {
                     Some(ok) => {
                         local = Some(ok);
-                        let _ = tx.send(&Msg::PairConfirm { ok }).await;
+                        let macs = if ok { self.my_macs() } else { vec![] };
+                        let _ = tx.send(&Msg::PairConfirm { ok, macs }).await;
                         if !ok { break "declined".to_string(); }
                     }
                     None => {
-                        let _ = tx.send(&Msg::PairConfirm { ok: false }).await;
+                        let _ = tx.send(&Msg::PairConfirm { ok: false, macs: vec![] }).await;
                         break "aborted".to_string();
                     }
                 },
                 m = msgs.recv() => match m {
-                    Some(Msg::PairConfirm { ok }) => {
+                    Some(Msg::PairConfirm { ok, macs }) => {
                         remote = Some(ok);
+                        if ok {
+                            peer.macs = macs;
+                        }
                         if !ok { break "declined".to_string(); }
                     }
                     Some(Msg::Ping { .. } | Msg::Pong { .. }) => {}
@@ -777,6 +831,78 @@ impl Connect {
         Ok(())
     }
 
+    // -- waking a paired machine ------------------------------------------------
+
+    /// Broadcast a magic packet for each card the machine told us about, then
+    /// wait for it to show up on the network. Nothing here proves the machine
+    /// can be woken: that depends on its firmware and settings.
+    pub fn wake(&self, id: &str) -> AppResult<()> {
+        let (macs, cards, name, token) = {
+            let mut s = self.lock();
+            let peer = s.store.peer(id).ok_or_else(|| AppError::new("peer_not_found"))?.clone();
+            if peer.macs.is_empty() {
+                return Err(AppError::new("no_mac"));
+            }
+            if s.cards.is_empty() {
+                return Err(AppError::new("connect_off"));
+            }
+            let token = s.next_token;
+            s.next_token += 1;
+            (peer.macs, s.cards.clone(), peer.name, token)
+        };
+        let mut sent = 0;
+        for m in &macs {
+            if let Some(mac) = net::parse_mac(&m.mac) {
+                sent += net::send_wake(&cards, mac);
+            }
+        }
+        if sent == 0 {
+            return Err(AppError::new("wake_failed"));
+        }
+        self.lock().wake = Some(Wake { token, peer_id: id.to_string(), stage: "waiting", sent, since: now_ms() });
+        self.audit("wake", &name, true, Some(format!("{sent} packets")));
+        self.publish();
+        let this = self.clone();
+        let id = id.to_string();
+        tauri::async_runtime::spawn(async move { this.wait_for_wake(token, &id).await });
+        Ok(())
+    }
+
+    async fn wait_for_wake(&self, token: u64, id: &str) {
+        let deadline = Instant::now() + WAKE_WAIT;
+        let stage = loop {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            let s = self.lock();
+            if s.wake.as_ref().is_none_or(|w| w.token != token) {
+                return;
+            }
+            if is_online(&s, id) {
+                break "up";
+            }
+            if Instant::now() >= deadline {
+                break "timeout";
+            }
+        };
+        if let Some(w) = self.lock().wake.as_mut().filter(|w| w.token == token) {
+            w.stage = stage;
+        }
+        self.publish();
+        // Leave the result on screen for a moment, then clear it.
+        tokio::time::sleep(Duration::from_secs(if stage == "up" { 6 } else { 20 })).await;
+        {
+            let mut s = self.lock();
+            if s.wake.as_ref().is_some_and(|w| w.token == token) {
+                s.wake = None;
+            }
+        }
+        self.publish();
+    }
+
+    pub fn dismiss_wake(&self) {
+        self.lock().wake = None;
+        self.publish();
+    }
+
     // -- a live link ------------------------------------------------------------
 
     /// Connect to a paired machine, over the way that answers fastest.
@@ -834,9 +960,10 @@ impl Connect {
             return Err("key_changed".into());
         }
         let (mut tx, mut rx) = est.channel.split();
-        tx.send(&Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent: Intent::Link }).await.map_err(|_| "connection_lost".to_string())?;
+        let macs = self.my_macs();
+        tx.send(&Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent: Intent::Link, macs }).await.map_err(|_| "connection_lost".to_string())?;
         match tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await.map_err(|_| "connect_timeout".to_string())?.map_err(|_| "connection_lost".to_string())? {
-            Msg::Hello { id: remote_id, version, .. } if remote_id == id && version == VERSION => {}
+            Msg::Hello { id: remote_id, version, macs, .. } if remote_id == id && version == VERSION => self.remember_macs(id, macs),
             Msg::Refuse { code } => return Err(format!("refused_{code}")),
             _ => return Err("handshake_failed".into()),
         }
@@ -951,6 +1078,12 @@ async fn connect_any(targets: &[SocketAddrV4]) -> Result<(Stream, SocketAddrV4),
     Err(last)
 }
 
+/// A paired machine that is on the network right now: announced over mDNS or
+/// answering on one of its paths.
+fn is_online(s: &State, id: &str) -> bool {
+    s.nearby.contains_key(id) || s.paths.get(id).is_some_and(|v| v.iter().any(|p| p.result.is_ok()))
+}
+
 fn build_view(s: &State) -> View {
     let cards = &s.cards;
     let device = (!s.store.data.id.is_empty() && !s.name.is_empty()).then(|| DeviceView {
@@ -997,7 +1130,7 @@ fn build_view(s: &State) -> View {
             // Reachable first, fastest first.
             paths.sort_by(|a, b| a.rtt_ms.unwrap_or(f64::MAX).total_cmp(&b.rtt_ms.unwrap_or(f64::MAX)));
             let online = s.nearby.contains_key(&p.id) || paths.iter().any(|x| x.rtt_ms.is_some());
-            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone() }
+            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty() }
         })
         .collect();
     View {
@@ -1020,5 +1153,6 @@ fn build_view(s: &State) -> View {
         }),
         link: s.link.as_ref().map(|l| LinkView { peer_id: l.peer_id.clone(), addr: l.addr.clone(), stage: if l.up { "up" } else { "connecting" }, since: l.since, rtt_ms: l.rtt.map(|d| (d.as_secs_f64() * 10_000.0).round() / 10.0) }),
         link_error: s.link_error.as_ref().map(|(peer_id, code)| LinkErrorView { peer_id: peer_id.clone(), code: code.clone() }),
+        wake: s.wake.as_ref().map(|w| WakeView { peer_id: w.peer_id.clone(), stage: w.stage, sent: w.sent, since: w.since }),
     }
 }

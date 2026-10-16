@@ -95,7 +95,8 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 - **Ghép đôi** một lần: Noise XX (khoá công khai trao qua kênh mã hoá), sau đó hai màn hình hiện cùng mã 6 số và cả hai người bấm Khớp. Mã chỉ hiện sau khi hai bên đã trao số ngẫu nhiên theo kiểu cam kết rồi mới tiết lộ, để máy ở giữa không dò được mã. Khoá riêng nằm trong Keychain hoặc Credential Manager.
 - **Kết nối** tới máy đã ghép đôi qua đường nhanh nhất trong các đường tìm được (cáp, Wi-Fi hoặc IP nhập tay), đo độ trễ mỗi 5 giây. Mỗi máy một kết nối.
 - Khi lỗi, Portway chỉ gợi ý cách xử lý theo loại lỗi (xem bên dưới), không tự sửa tường lửa.
-- Gửi tệp, clipboard và đánh thức (WOL) chưa làm.
+- **Đánh thức (WOL)**: sau khi ghép đôi (hoặc kết nối lần đầu với máy đã ghép từ bản cũ), hai máy trao cho nhau địa chỉ MAC của các card cáp và Wi-Fi thật. Nút "Đánh thức" gửi magic packet (UDP broadcast cổng 9 và 7, qua từng card đang có địa chỉ), rồi đợi tối đa 2 phút để máy kia hiện lại trong mạng. Máy kia cần bật Wake-on-LAN (BIOS/UEFI, card mạng, tắt Fast Startup trên Windows); Mac chỉ dậy từ trạng thái ngủ qua cáp.
+- Gửi tệp và clipboard chưa làm.
 
 ### Khác
 
@@ -227,7 +228,7 @@ Khi tải tệp từ server về Windows, những tên Linux cho phép nhưng Wi
 
 ## Ghi chú khi làm Portway Connect
 
-Portway Connect cho hai bản Portway trong cùng LAN tự nhận ra nhau, ghép đôi rồi gửi tệp, đồng bộ clipboard và đánh thức nhau (WOL). Mới có phát hiện, ghép đôi và kết nối (code ở `src-tauri/src/connect/`); phần còn lại chưa làm. Các điều dưới đây rút ra từ bản thử `scripts/connect-probe` trên một Mac và một PC Windows nối cả cáp Ethernet lẫn Wi-Fi (16/10/2026).
+Portway Connect cho hai bản Portway trong cùng LAN tự nhận ra nhau, ghép đôi rồi gửi tệp, đồng bộ clipboard và đánh thức nhau (WOL). Mới có phát hiện, ghép đôi, kết nối và đánh thức (code ở `src-tauri/src/connect/`); phần còn lại chưa làm. Các điều dưới đây rút ra từ bản thử `scripts/connect-probe` trên một Mac và một PC Windows nối cả cáp Ethernet lẫn Wi-Fi (16/10/2026).
 
 ### Chạy probe
 
@@ -261,6 +262,10 @@ Nó in các card mạng (trên Windows kèm profile mạng Public/Private), mở
 - Các khoá `NSLocalNetworkUsageDescription` và `NSBonjourServices` không quyết định việc hộp thoại có hiện hay không. Vẫn nên khai để câu chữ trong hộp thoại có nghĩa.
 - `tccutil reset` không đặt lại được quyền này. Muốn thử lại phải đổi UUID.
 - UUID của file chạy đổi theo nội dung mỗi bản build (đã thấy: hai bản build liên tiếp có hai UUID khác nhau), và Info.plist có `NSLocalNetworkUsageDescription` cùng `NSBonjourServices` được Tauri gộp vào bản `.app`. Chưa kiểm chứng: quyền Mạng cục bộ có phải cấp lại sau cập nhật không. Apple khuyên ký bằng Developer ID để danh tính ổn định.
+
+### Địa chỉ MAC trên macOS
+
+Tiến trình chưa có quyền Mạng cục bộ chỉ nhận MAC giả `02:00:00:00:00:00` từ `getifaddrs` và cả `ifconfig` (đã gặp khi chạy test từ shell). Vì vậy trên macOS Portway đọc MAC thật bằng `networksetup -listallhardwareports`, thứ vẫn trả đúng. Windows không bị hạn chế này.
 
 ### Khi kết nối lỗi
 

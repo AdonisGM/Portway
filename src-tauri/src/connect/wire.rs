@@ -61,10 +61,31 @@ pub enum Intent {
     Link,
 }
 
+/// A network card another machine can wake this one through.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacInfo {
+    /// "aa:bb:cc:dd:ee:ff"
+    pub mac: String,
+    pub name: String,
+    /// "ethernet" or "wifi"
+    pub kind: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "camelCase")]
 pub enum Msg {
-    Hello { id: String, name: String, os: String, version: u32, intent: Intent },
+    /// `macs` is sent only once the other side is trusted (a link), and an older
+    /// peer that does not send it is read as having none.
+    Hello {
+        id: String,
+        name: String,
+        os: String,
+        version: u32,
+        intent: Intent,
+        #[serde(default)]
+        macs: Vec<MacInfo>,
+    },
     /// Why the receiver will not go on (`not_paired`, `busy`, `pairing_declined`…).
     Refuse { code: String },
     /// Pairing step 1, from the machine that was asked: a commitment to its random number.
@@ -73,7 +94,12 @@ pub enum Msg {
     Nonce { n: String },
     /// Pairing step 3: the number committed to in step 1.
     Reveal { n: String },
-    PairConfirm { ok: bool },
+    PairConfirm {
+        ok: bool,
+        /// Sent with a yes, so the machine just paired with can wake this one.
+        #[serde(default)]
+        macs: Vec<MacInfo>,
+    },
     Ping { seq: u64 },
     Pong { seq: u64 },
     Bye,
@@ -331,7 +357,7 @@ mod tests {
     async fn messages_flow_both_ways() {
         let (a, b, _, _) = pair().await;
         let ((mut sa, mut ra), (mut sb, mut rb)) = (a.channel.split(), b.channel.split());
-        let hello = Msg::Hello { id: "abc".into(), name: "Mac".into(), os: "macos".into(), version: VERSION, intent: Intent::Pair };
+        let hello = Msg::Hello { id: "abc".into(), name: "Mac".into(), os: "macos".into(), version: VERSION, intent: Intent::Pair, macs: vec![] };
         sa.send(&hello).await.ok().unwrap();
         sa.send(&Msg::Ping { seq: 7 }).await.ok().unwrap();
         assert_eq!(rb.recv().await.ok().unwrap(), hello);
@@ -356,5 +382,13 @@ mod tests {
         assert_eq!(unhex(&hex(&key)), Some(key));
         assert_eq!(unhex("abc"), None);
         assert_eq!(unhex("zz"), None);
+    }
+
+    #[test]
+    fn an_older_peer_without_macs_still_parses() {
+        let old = r#"{"t":"hello","id":"a","name":"n","os":"macos","version":1,"intent":"link"}"#;
+        assert!(matches!(serde_json::from_str::<Msg>(old), Ok(Msg::Hello { macs, .. }) if macs.is_empty()));
+        let old = r#"{"t":"pairConfirm","ok":true}"#;
+        assert!(matches!(serde_json::from_str::<Msg>(old), Ok(Msg::PairConfirm { ok: true, macs }) if macs.is_empty()));
     }
 }

@@ -82,6 +82,16 @@ export function hintFor(code: string, peerOs: string | null): Hint {
       return { title: t('Ghép đôi đã bị từ chối'), steps: [t('Một trong hai bên bấm “Không khớp”. Có thể thử lại.')] }
     case 'timeout':
       return { title: t('Hết thời gian chờ so mã'), steps: [t('Hai bên cần bấm Khớp trong vòng 2 phút. Có thể thử lại.')] }
+    case 'wake_timeout':
+      return {
+        title: t('Máy chưa lên sau 2 phút'),
+        steps: [
+          t('Wake-on-LAN phải được bật ở máy kia: trong BIOS/UEFI, và trong cài đặt card mạng (Windows: Wake on Magic Packet).'),
+          t('Windows: tắt Fast Startup, vì nó thường làm Wake-on-LAN không hoạt động khi máy tắt.'),
+          t('Mac chỉ thức dậy được từ trạng thái ngủ, qua cáp mạng, khi bật “Wake for network access”. Tắt hẳn hoặc qua Wi-Fi thường không được.'),
+          t('Máy kia cần nối cáp mạng vào cùng mạng với máy này.'),
+        ],
+      }
     case 'aborted':
       return { title: t('Đã huỷ'), steps: [] }
     case 'listen_failed':
@@ -115,6 +125,10 @@ export function commandError(e: unknown): string {
       return t('Địa chỉ IP không hợp lệ')
     case 'peer_not_found':
       return t('Không thấy máy này trong mạng')
+    case 'no_mac':
+      return t('Chưa có địa chỉ MAC của máy này. Kết nối với nó một lần để Portway ghi lại.')
+    case 'wake_failed':
+      return t('Không gửi được gói đánh thức: kiểm tra máy này đang nối mạng')
     default:
       return hintFor(e.code, null).title + (e.detail ? ` (${e.detail})` : '')
   }

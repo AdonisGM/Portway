@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useConnections } from './connections'
 
-export type RailId = 'conn' | 'server' | 'transfer' | 'tunnels' | 'settings'
+export type RailId = 'conn' | 'server' | 'transfer' | 'tunnels' | 'connect' | 'settings'
 export type ModuleId = 'overview' | 'files' | 'nginx' | 'http' | 'docker' | 'services' | 'firewall'
 export type DockerView = 'containers' | 'compose' | 'images' | 'volumes'
 export type ServicesView = 'services' | 'jobs'
@@ -10,6 +10,7 @@ export type Screen =
   | { kind: 'servers' }
   | { kind: 'keys' }
   | { kind: 'tunnels' }
+  | { kind: 'connect' }
   | { kind: 'transfer' }
   | { kind: 'settings' }
   | { kind: 'server'; serverId: string; user: string; module: ModuleId }
@@ -53,7 +54,7 @@ type Nav = {
 const NavContext = createContext<Nav | null>(null)
 
 export const railOf = (s: Screen): RailId =>
-  s.kind === 'server' ? 'server' : s.kind === 'tunnels' ? 'tunnels' : s.kind === 'transfer' ? 'transfer' : s.kind === 'settings' ? 'settings' : 'conn'
+  s.kind === 'server' ? 'server' : s.kind === 'tunnels' ? 'tunnels' : s.kind === 'connect' ? 'connect' : s.kind === 'transfer' ? 'transfer' : s.kind === 'settings' ? 'settings' : 'conn'
 
 const LOCAL_DOWNLOADS: PaneSpot = { src: { kind: 'local' }, path: '~/Downloads' }
 const sameSource = (a: PaneSource, b: PaneSource) =>
@@ -78,6 +79,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const goRail = (rail: RailId) => {
     if (rail === 'conn') return go({ kind: 'servers' })
     if (rail === 'tunnels') return go({ kind: 'tunnels' })
+    if (rail === 'connect') return go({ kind: 'connect' })
     if (rail === 'transfer') return go({ kind: 'transfer' })
     if (rail === 'settings') return go({ kind: 'settings' })
     // Server rail: back to the last session if it is still open, else the first one.

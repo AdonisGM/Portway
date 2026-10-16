@@ -10,6 +10,7 @@ import docker from './docker'
 import services from './services'
 import firewall from './firewall'
 import tunnels from './tunnels'
+import connect from './connect'
 import http from './http'
 import nginx from './nginx'
 import settings from './settings'
@@ -26,6 +27,7 @@ const all: Dict = {
   ...services,
   ...firewall,
   ...tunnels,
+  ...connect,
   ...http,
   ...nginx,
   ...settings,

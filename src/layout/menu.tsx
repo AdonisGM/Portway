@@ -16,6 +16,7 @@ import {
   KeyRound,
   Languages,
   Layers,
+  MonitorSmartphone,
   LayoutDashboard,
   List,
   Send,
@@ -26,6 +27,7 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useNav, type DockerView, type ModuleId, type ServicesView } from '../app/nav'
+import { useConnect } from '../app/connect'
 import { useConnections } from '../app/connections'
 import { useServers } from '../app/servers'
 import { useTransfers } from '../app/transfers'
@@ -43,6 +45,7 @@ export function Menu() {
       {nav.rail === 'server' && <ServerMenu />}
       {nav.rail === 'transfer' && <TransferMenu />}
       {nav.rail === 'tunnels' && <TunnelMenu />}
+      {nav.rail === 'connect' && <ConnectMenu />}
       {nav.rail === 'settings' && <SettingsMenu />}
     </aside>
   )
@@ -133,6 +136,17 @@ function TunnelMenu() {
         active={nav.screen.kind === 'tunnels'}
         onClick={() => nav.go({ kind: 'tunnels' })}
       />
+    </>
+  )
+}
+
+function ConnectMenu() {
+  const nav = useNav()
+  const { peers } = useConnect()
+  return (
+    <>
+      <MenuTitle>Connect</MenuTitle>
+      <MenuItem icon={MonitorSmartphone} label={t('Máy trong mạng')} count={peers.length} active={nav.screen.kind === 'connect'} onClick={() => nav.go({ kind: 'connect' })} />
     </>
   )
 }

@@ -1,4 +1,5 @@
-import { ArrowLeftRight, Bug, FolderSync, LayoutGrid, Server, Settings, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, Bug, FolderSync, LayoutGrid, MonitorSmartphone, Server, Settings, type LucideIcon } from 'lucide-react'
+import { useConnect } from '../app/connect'
 import { useTrace } from '../app/trace'
 import { useTransfers } from '../app/transfers'
 import { useTunnels } from '../app/tunnels'
@@ -12,12 +13,14 @@ const items = (): { id: RailId; label: string; icon: LucideIcon }[] => [
   { id: 'server', label: t('Server đang kết nối'), icon: Server },
   { id: 'transfer', label: t('Chuyển tệp'), icon: FolderSync },
   { id: 'tunnels', label: 'Tunnel', icon: ArrowLeftRight },
+  { id: 'connect', label: 'Connect', icon: MonitorSmartphone },
 ]
 
 /** Leftmost column: switches between the areas of the app. */
 export function Rail() {
   const nav = useNav()
   const tunnels = useTunnels()
+  const connect = useConnect()
   const moving = useTransfers().list.filter((x) => x.status === 'running' || x.status === 'queued').length
 
   return (
@@ -41,6 +44,7 @@ export function Rail() {
                 {moving}
               </span>
             )}
+            {id === 'connect' && connect.link?.stage === 'up' && <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-rail bg-success" />}
             {id === 'tunnels' && tunnels.running > 0 && (
               <span className="num absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-success px-1 text-[10px] leading-none font-semibold text-bg">
                 {tunnels.running}

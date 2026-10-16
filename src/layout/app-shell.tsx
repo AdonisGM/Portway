@@ -5,6 +5,8 @@ import { ServerListScreen } from '../screens/servers/server-list'
 import { SettingsScreen } from '../screens/settings/settings-screen'
 import { TransferScreen } from '../screens/transfer/transfer-screen'
 import { TunnelsScreen } from '../screens/tunnels/tunnels-screen'
+import { ConnectScreen } from '../screens/connect/connect-screen'
+import { PairingDialog } from '../screens/connect/pairing-dialog'
 import { EditsDock } from './edits-dock'
 import { Menu } from './menu'
 import { Rail } from './rail'
@@ -36,11 +38,14 @@ export function AppShell() {
               <TransferScreen />
             ) : screen.kind === 'settings' ? (
               <SettingsScreen />
+            ) : screen.kind === 'connect' ? (
+              <ConnectScreen />
             ) : (
               <TunnelsScreen />
             )}
           </main>
           <EditsDock />
+          <PairingDialog />
         </div>
       </div>
     </div>

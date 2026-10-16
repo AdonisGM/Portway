@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Shown in the macOS "find devices on local networks" prompt of Portway Connect. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Portway Connect finds your other computers running Portway on this network.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_portway._tcp</string>
+  </array>
+</dict>
+</plist>

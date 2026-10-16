@@ -1,6 +1,7 @@
 #[cfg(windows)]
 mod askpass;
 mod audit;
+mod connect;
 mod disks;
 mod docker;
 mod editing;
@@ -116,6 +117,17 @@ pub fn run() {
             ssh::ssh_sudo,
             ssh::ssh_sudo_off,
             audit::audit_list,
+            connect::connect_state,
+            connect::connect_set_enabled,
+            connect::connect_pair,
+            connect::connect_pair_decide,
+            connect::connect_pair_close,
+            connect::connect_unpair,
+            connect::connect_link,
+            connect::connect_unlink,
+            connect::connect_dismiss_link_error,
+            connect::connect_add_address,
+            connect::connect_remove_address,
             files::sftp_list,
             files::sftp_as_root,
             files::sftp_mkdir,
@@ -211,6 +223,9 @@ pub fn run() {
             app.manage(edits);
             app.manage(std::sync::Arc::new(logtail::LogTails::default()));
             app.manage(audit::AuditLog::load(data_dir.join("audit.jsonl")));
+            let connect = connect::Connect::load(app.handle().clone(), data_dir.join("connect.json"));
+            app.manage(connect.clone());
+            tauri::async_runtime::spawn(async move { connect.resume().await });
             app.manage(std::sync::Arc::new(transfers::Transfers::new(app.handle().clone())));
             trace::init(app.handle().clone());
             let tunnels = std::sync::Arc::new(tunnels::Tunnels::load(app.handle().clone(), data_dir.join("tunnels.json"))

@@ -572,6 +572,57 @@ export type Stats = {
   uptimeSecs: number
 }
 
+/** Portway Connect: other Portways on the same network. Mirrors src-tauri/src/connect. */
+export type ConnectFail = 'timeout' | 'noRoute' | 'refused' | 'other'
+export type ConnectPath = {
+  /** "10.10.10.2:47615" */
+  addr: string
+  /** The network card this machine reaches it through, when one matches. */
+  card: string | null
+  network: string | null
+  rttMs: number | null
+  fail: ConnectFail | null
+  manual: boolean
+}
+export type ConnectPeer = {
+  id: string
+  name: string
+  /** "macos", "windows"… */
+  os: string
+  pairedAt: number
+  online: boolean
+  /** Reachable first, fastest first. */
+  paths: ConnectPath[]
+  manualAddrs: string[]
+}
+export type ConnectNearby = { id: string; addrs: string[] }
+export type ConnectPairing = {
+  role: 'initiator' | 'responder'
+  stage: 'connecting' | 'compare' | 'done'
+  peerId: string
+  peerName: string
+  peerOs: string
+  /** "123 456" */
+  code: string
+  localOk: boolean | null
+  remoteOk: boolean | null
+  /** Once stage is "done": "paired", "declined", "timeout" or an error code. */
+  outcome: string | null
+}
+export type ConnectLink = { peerId: string; addr: string; stage: 'connecting' | 'up'; since: number; rttMs: number | null }
+export type ConnectView = {
+  enabled: boolean
+  device: { id: string; name: string; os: string; version: string; port: number | null; fingerprint: string } | null
+  error: string | null
+  /** This machine's own announcement came back over mDNS. */
+  selfSeen: boolean
+  nearby: ConnectNearby[]
+  peers: ConnectPeer[]
+  pairing: ConnectPairing | null
+  link: ConnectLink | null
+  linkError: { peerId: string; code: string } | null
+}
+
 export function isAppError(e: unknown): e is AppError {
   return typeof e === 'object' && e !== null && 'code' in e
 }
@@ -624,6 +675,19 @@ type Api = {
   servicesJournal(serverId: string, user: string, unit: string, tail: number, cursor?: string | null): Promise<JournalPage>
   servicesUnitFile(serverId: string, user: string, unit: string): Promise<string>
   servicesAction(serverId: string, user: string, unit: string, action: ServiceAction): Promise<void>
+  connectState(): Promise<ConnectView>
+  connectSetEnabled(enabled: boolean): Promise<ConnectView>
+  /** Ask a nearby machine (by id) or the one at an address to pair; progress comes as `connect` events. */
+  connectPair(id: string | null, addr: string | null): Promise<void>
+  /** The user's answer to "do both screens show this code?". */
+  connectPairDecide(ok: boolean): Promise<void>
+  connectPairClose(): Promise<void>
+  connectUnpair(id: string): Promise<void>
+  connectLink(id: string): Promise<void>
+  connectUnlink(): Promise<void>
+  connectDismissLinkError(): Promise<void>
+  connectAddAddress(id: string, addr: string): Promise<void>
+  connectRemoveAddress(id: string, addr: string): Promise<void>
   tunnels(): Promise<Tunnel[]>
   saveTunnel(spec: TunnelSpec): Promise<Tunnel>
   deleteTunnel(id: string): Promise<void>
@@ -728,6 +792,17 @@ const tauriApi: Api = {
   servicesJournal: (serverId, user, unit, tail, cursor) => invoke('services_journal', { serverId, user, unit, tail, cursor }),
   servicesUnitFile: (serverId, user, unit) => invoke('services_unit_file', { serverId, user, unit }),
   servicesAction: (serverId, user, unit, action) => invoke('services_action', { serverId, user, unit, action }),
+  connectState: () => invoke('connect_state'),
+  connectSetEnabled: (enabled) => invoke('connect_set_enabled', { enabled }),
+  connectPair: (id, addr) => invoke('connect_pair', { id, addr }),
+  connectPairDecide: (ok) => invoke('connect_pair_decide', { ok }),
+  connectPairClose: () => invoke('connect_pair_close'),
+  connectUnpair: (id) => invoke('connect_unpair', { id }),
+  connectLink: (id) => invoke('connect_link', { id }),
+  connectUnlink: () => invoke('connect_unlink'),
+  connectDismissLinkError: () => invoke('connect_dismiss_link_error'),
+  connectAddAddress: (id, addr) => invoke('connect_add_address', { id, addr }),
+  connectRemoveAddress: (id, addr) => invoke('connect_remove_address', { id, addr }),
   tunnels: () => invoke('tunnels_list'),
   saveTunnel: (spec) => invoke('tunnel_save', { spec }),
   deleteTunnel: (id) => invoke('tunnel_delete', { id }),
@@ -931,6 +1006,17 @@ function browserApi(): Api {
     servicesJournal: async () => fail('needs_app'),
     servicesUnitFile: async () => fail('needs_app'),
     servicesAction: async () => fail('needs_app'),
+    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null }),
+    connectSetEnabled: async () => fail('needs_app'),
+    connectPair: async () => fail('needs_app'),
+    connectPairDecide: async () => fail('needs_app'),
+    connectPairClose: async () => {},
+    connectUnpair: async () => fail('needs_app'),
+    connectLink: async () => fail('needs_app'),
+    connectUnlink: async () => {},
+    connectDismissLinkError: async () => {},
+    connectAddAddress: async () => fail('needs_app'),
+    connectRemoveAddress: async () => fail('needs_app'),
     tunnels: async () => [],
     saveTunnel: async () => fail('needs_app'),
     deleteTunnel: async () => fail('needs_app'),

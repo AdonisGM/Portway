@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ConnectProvider } from './app/connect'
 import { ConnectionsProvider } from './app/connections'
 import { EditsProvider } from './app/edits'
 import { NavProvider } from './app/nav'
@@ -30,10 +31,12 @@ export default function App() {
               <TransfersProvider>
                 <TraceProvider>
                   <TunnelsProvider>
-                    <EditsProvider>
-                      <AppShell />
-                      <SplashScreen ready={ready} />
-                    </EditsProvider>
+                    <ConnectProvider>
+                      <EditsProvider>
+                        <AppShell />
+                        <SplashScreen ready={ready} />
+                      </EditsProvider>
+                    </ConnectProvider>
                   </TunnelsProvider>
                 </TraceProvider>
               </TransfersProvider>

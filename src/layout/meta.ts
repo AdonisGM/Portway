@@ -38,6 +38,8 @@ export function screenTitle(s: Screen, serverName: (id: string) => string | unde
       return t('Khoá SSH')
     case 'tunnels':
       return 'Tunnel'
+    case 'connect':
+      return 'Connect'
     case 'transfer':
       return t('Chuyển tệp')
     case 'settings':

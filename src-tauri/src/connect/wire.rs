@@ -1,0 +1,360 @@
+//! The encrypted channel between two Portways: a Noise XX handshake over any
+//! byte stream, then length-prefixed JSON messages. Both sides learn each
+//! other's static key during the handshake; whether that key is trusted is
+//! decided above this layer (pairing, or the list of paired machines).
+
+use blake2::{Blake2s256, Digest};
+use serde::{Deserialize, Serialize};
+use snow::{Builder, StatelessTransportState};
+use std::io;
+use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
+
+const PATTERN: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
+/// A frame is a u16 length and that many bytes, so this is the most one can carry.
+const MAX_FRAME: usize = u16::MAX as usize;
+const TAG: usize = 16;
+/// Protocol version, sent in `Hello`; bumped when the messages change shape.
+pub const VERSION: u32 = 1;
+
+/// Callers map every variant to a stable error code; the payloads are there for
+/// `Debug` output when something has to be diagnosed.
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum WireError {
+    Io(io::Error),
+    Noise(snow::Error),
+    /// The other side sent something that is not a message of this protocol.
+    Protocol(&'static str),
+}
+
+impl From<io::Error> for WireError {
+    fn from(e: io::Error) -> Self {
+        WireError::Io(e)
+    }
+}
+
+impl From<snow::Error> for WireError {
+    fn from(e: snow::Error) -> Self {
+        WireError::Noise(e)
+    }
+}
+
+pub type WireResult<T> = Result<T, WireError>;
+
+pub struct Keypair {
+    pub private: Vec<u8>,
+    pub public: Vec<u8>,
+}
+
+pub fn generate_keypair() -> Keypair {
+    let kp = Builder::new(PATTERN.parse().expect("valid pattern")).generate_keypair().expect("keypair");
+    Keypair { private: kp.private, public: kp.public }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Intent {
+    /// First meeting: both users compare a code before either side trusts the other.
+    Pair,
+    /// Already paired: the key must be one the receiver knows.
+    Link,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "t", rename_all = "camelCase")]
+pub enum Msg {
+    Hello { id: String, name: String, os: String, version: u32, intent: Intent },
+    /// Why the receiver will not go on (`not_paired`, `busy`, `pairing_declined`…).
+    Refuse { code: String },
+    /// Pairing step 1, from the machine that was asked: a commitment to its random number.
+    Commit { digest: String },
+    /// Pairing step 2, from the machine that asked: its random number.
+    Nonce { n: String },
+    /// Pairing step 3: the number committed to in step 1.
+    Reveal { n: String },
+    PairConfirm { ok: bool },
+    Ping { seq: u64 },
+    Pong { seq: u64 },
+    Bye,
+}
+
+async fn write_frame<W: AsyncWrite + Unpin>(w: &mut W, bytes: &[u8]) -> io::Result<()> {
+    debug_assert!(bytes.len() <= MAX_FRAME);
+    let mut out = Vec::with_capacity(2 + bytes.len());
+    out.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+    out.extend_from_slice(bytes);
+    w.write_all(&out).await?;
+    w.flush().await
+}
+
+async fn read_frame<R: AsyncRead + Unpin>(r: &mut R) -> io::Result<Vec<u8>> {
+    let mut len = [0u8; 2];
+    r.read_exact(&mut len).await?;
+    let mut buf = vec![0u8; u16::from_be_bytes(len) as usize];
+    r.read_exact(&mut buf).await?;
+    Ok(buf)
+}
+
+/// What both sides know once the handshake is done.
+pub struct Established<S> {
+    pub channel: Channel<S>,
+    /// The other machine's static public key.
+    pub remote_static: Vec<u8>,
+    /// Same on both sides; pairing derives the code the users compare from it.
+    pub hash: Vec<u8>,
+}
+
+pub struct Channel<S> {
+    stream: S,
+    transport: StatelessTransportState,
+}
+
+async fn finish<S>(stream: S, hs: snow::HandshakeState) -> WireResult<Established<S>> {
+    let hash = hs.get_handshake_hash().to_vec();
+    let remote_static = hs.get_remote_static().ok_or(WireError::Protocol("no remote key"))?.to_vec();
+    let transport = hs.into_stateless_transport_mode()?;
+    Ok(Established { channel: Channel { stream, transport }, remote_static, hash })
+}
+
+/// Start the handshake (the side that connected).
+pub async fn initiate<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, key: &[u8]) -> WireResult<Established<S>> {
+    let mut hs = Builder::new(PATTERN.parse().expect("valid pattern")).local_private_key(key).build_initiator()?;
+    let mut buf = vec![0u8; MAX_FRAME];
+    let n = hs.write_message(&[], &mut buf)?; // -> e
+    write_frame(&mut stream, &buf[..n]).await?;
+    let m = read_frame(&mut stream).await?; // <- e, ee, s, es
+    hs.read_message(&m, &mut buf)?;
+    let n = hs.write_message(&[], &mut buf)?; // -> s, se
+    write_frame(&mut stream, &buf[..n]).await?;
+    finish(stream, hs).await
+}
+
+/// Answer the handshake (the side that accepted).
+pub async fn respond<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, key: &[u8]) -> WireResult<Established<S>> {
+    let mut hs = Builder::new(PATTERN.parse().expect("valid pattern")).local_private_key(key).build_responder()?;
+    let mut buf = vec![0u8; MAX_FRAME];
+    let m = read_frame(&mut stream).await?; // <- e
+    hs.read_message(&m, &mut buf)?;
+    let n = hs.write_message(&[], &mut buf)?; // -> e, ee, s, es
+    write_frame(&mut stream, &buf[..n]).await?;
+    let m = read_frame(&mut stream).await?; // <- s, se
+    hs.read_message(&m, &mut buf)?;
+    finish(stream, hs).await
+}
+
+pub struct Sender<S> {
+    half: WriteHalf<S>,
+    transport: Arc<StatelessTransportState>,
+    nonce: u64,
+}
+
+pub struct Receiver<S> {
+    half: ReadHalf<S>,
+    transport: Arc<StatelessTransportState>,
+    nonce: u64,
+}
+
+impl<S: AsyncRead + AsyncWrite> Channel<S> {
+    /// Separate sending from receiving, so one task can read while another writes.
+    pub fn split(self) -> (Sender<S>, Receiver<S>) {
+        let transport = Arc::new(self.transport);
+        let (r, w) = tokio::io::split(self.stream);
+        (Sender { half: w, transport: transport.clone(), nonce: 0 }, Receiver { half: r, transport, nonce: 0 })
+    }
+}
+
+impl<S: AsyncWrite> Sender<S> {
+    pub async fn send(&mut self, msg: &Msg) -> WireResult<()> {
+        let plain = serde_json::to_vec(msg).map_err(|_| WireError::Protocol("cannot encode"))?;
+        if plain.len() + TAG > MAX_FRAME {
+            return Err(WireError::Protocol("message too large"));
+        }
+        let mut out = vec![0u8; plain.len() + TAG];
+        let n = self.transport.write_message(self.nonce, &plain, &mut out)?;
+        self.nonce += 1;
+        let mut half = std::pin::Pin::new(&mut self.half);
+        write_frame(&mut half, &out[..n]).await?;
+        Ok(())
+    }
+}
+
+impl<S: AsyncRead> Receiver<S> {
+    pub async fn recv(&mut self) -> WireResult<Msg> {
+        let mut half = std::pin::Pin::new(&mut self.half);
+        let frame = read_frame(&mut half).await?;
+        let mut out = vec![0u8; frame.len()];
+        let n = self.transport.read_message(self.nonce, &frame, &mut out)?;
+        self.nonce += 1;
+        serde_json::from_slice(&out[..n]).map_err(|_| WireError::Protocol("unknown message"))
+    }
+}
+
+fn digest(parts: &[&[u8]]) -> [u8; 32] {
+    let mut h = Blake2s256::new();
+    for p in parts {
+        h.update(p);
+    }
+    h.finalize().into()
+}
+
+fn nonce() -> [u8; 32] {
+    let (a, b) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+    let mut n = [0u8; 32];
+    n[..16].copy_from_slice(a.as_bytes());
+    n[16..].copy_from_slice(b.as_bytes());
+    n
+}
+
+fn nonce_from(hex_text: &str) -> WireResult<Vec<u8>> {
+    unhex(hex_text).filter(|b| b.len() == 32).ok_or(WireError::Protocol("bad number"))
+}
+
+/// The six digits both users compare, "123 456". They come from the handshake
+/// hash (which covers both machines' keys) and from a random number each side
+/// contributed. See `code_as_initiator`.
+fn pairing_code(hash: &[u8], n_i: &[u8], n_r: &[u8]) -> String {
+    let d = digest(&[b"portway-pair-v1", hash, n_i, n_r]);
+    let n = u32::from_be_bytes([d[0], d[1], d[2], d[3]]) % 1_000_000;
+    format!("{:03} {:03}", n / 1000, n % 1000)
+}
+
+/// Agree on the code, as the machine that was asked. Neither side shows a code
+/// before both have given a number, and the asked side commits to its number
+/// before seeing the other's. Without that a machine in the middle could keep
+/// making new keys until the two sessions happen to give the same six digits:
+/// about a million tries, a second of work.
+pub async fn code_as_responder<S: AsyncRead + AsyncWrite>(tx: &mut Sender<S>, rx: &mut Receiver<S>, hash: &[u8]) -> WireResult<String> {
+    let n_r = nonce();
+    tx.send(&Msg::Commit { digest: hex(&digest(&[&n_r])) }).await?;
+    let n_i = match rx.recv().await? {
+        Msg::Nonce { n } => nonce_from(&n)?,
+        _ => return Err(WireError::Protocol("expected a number")),
+    };
+    tx.send(&Msg::Reveal { n: hex(&n_r) }).await?;
+    Ok(pairing_code(hash, &n_i, &n_r))
+}
+
+/// The same, as the machine that asked.
+pub async fn code_as_initiator<S: AsyncRead + AsyncWrite>(tx: &mut Sender<S>, rx: &mut Receiver<S>, hash: &[u8]) -> WireResult<String> {
+    let commit = match rx.recv().await? {
+        Msg::Commit { digest } => nonce_from(&digest)?,
+        _ => return Err(WireError::Protocol("expected a commitment")),
+    };
+    let n_i = nonce();
+    tx.send(&Msg::Nonce { n: hex(&n_i) }).await?;
+    let n_r = match rx.recv().await? {
+        Msg::Reveal { n } => nonce_from(&n)?,
+        _ => return Err(WireError::Protocol("expected a reveal")),
+    };
+    if digest(&[&n_r])[..] != commit[..] {
+        return Err(WireError::Protocol("number does not match its commitment"));
+    }
+    Ok(pairing_code(hash, &n_i, &n_r))
+}
+
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub fn unhex(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 || !s.is_ascii() {
+        return None;
+    }
+    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::duplex;
+
+    async fn pair() -> (Established<tokio::io::DuplexStream>, Established<tokio::io::DuplexStream>, Keypair, Keypair) {
+        let (a, b) = duplex(4096);
+        let (ka, kb) = (generate_keypair(), generate_keypair());
+        let (ra, rb) = tokio::join!(initiate(a, &ka.private), respond(b, &kb.private));
+        (ra.ok().unwrap(), rb.ok().unwrap(), ka, kb)
+    }
+
+    #[tokio::test]
+    async fn handshake_agrees_on_keys_and_code() {
+        let (a, b, ka, kb) = pair().await;
+        assert_eq!(a.remote_static, kb.public);
+        assert_eq!(b.remote_static, ka.public);
+        assert_eq!(a.hash, b.hash);
+    }
+
+    #[tokio::test]
+    async fn both_sides_get_the_same_six_digits() {
+        let (a, b, _, _) = pair().await;
+        let hash = a.hash.clone();
+        let ((mut sa, mut ra), (mut sb, mut rb)) = (a.channel.split(), b.channel.split());
+        let (asker, asked) = tokio::join!(code_as_initiator(&mut sa, &mut ra, &hash), code_as_responder(&mut sb, &mut rb, &hash));
+        let (asker, asked) = (asker.ok().unwrap(), asked.ok().unwrap());
+        assert_eq!(asker, asked);
+        assert_eq!(asker.len(), 7);
+        assert_eq!(asker.chars().filter(|c| c.is_ascii_digit()).count(), 6);
+    }
+
+    #[tokio::test]
+    async fn a_number_that_does_not_match_its_commitment_is_rejected() {
+        let (a, b, _, _) = pair().await;
+        let hash = a.hash.clone();
+        let ((mut sa, mut ra), (mut sb, mut rb)) = (a.channel.split(), b.channel.split());
+        // The other side commits to one number and reveals another.
+        let cheat = async {
+            sb.send(&Msg::Commit { digest: hex(&digest(&[&nonce()])) }).await.ok().unwrap();
+            rb.recv().await.ok().unwrap();
+            sb.send(&Msg::Reveal { n: hex(&nonce()) }).await.ok().unwrap();
+        };
+        let (asker, _) = tokio::join!(code_as_initiator(&mut sa, &mut ra, &hash), cheat);
+        assert!(matches!(asker, Err(WireError::Protocol(_))));
+    }
+
+    #[tokio::test]
+    async fn the_code_depends_on_both_numbers() {
+        let hash = [7u8; 32];
+        let (n1, n2, n3) = (nonce(), nonce(), nonce());
+        assert_eq!(pairing_code(&hash, &n1, &n2), pairing_code(&hash, &n1, &n2));
+        assert_ne!(pairing_code(&hash, &n1, &n2), pairing_code(&hash, &n1, &n3));
+        assert_ne!(pairing_code(&hash, &n1, &n2), pairing_code(&hash, &n3, &n2));
+    }
+
+    #[tokio::test]
+    async fn two_connections_get_different_hashes() {
+        let (a1, _, _, _) = pair().await;
+        let (a2, _, _, _) = pair().await;
+        assert_ne!(a1.hash, a2.hash);
+    }
+
+    #[tokio::test]
+    async fn messages_flow_both_ways() {
+        let (a, b, _, _) = pair().await;
+        let ((mut sa, mut ra), (mut sb, mut rb)) = (a.channel.split(), b.channel.split());
+        let hello = Msg::Hello { id: "abc".into(), name: "Mac".into(), os: "macos".into(), version: VERSION, intent: Intent::Pair };
+        sa.send(&hello).await.ok().unwrap();
+        sa.send(&Msg::Ping { seq: 7 }).await.ok().unwrap();
+        assert_eq!(rb.recv().await.ok().unwrap(), hello);
+        assert_eq!(rb.recv().await.ok().unwrap(), Msg::Ping { seq: 7 });
+        sb.send(&Msg::Pong { seq: 7 }).await.ok().unwrap();
+        sb.send(&Msg::Refuse { code: "busy".into() }).await.ok().unwrap();
+        assert_eq!(ra.recv().await.ok().unwrap(), Msg::Pong { seq: 7 });
+        assert_eq!(ra.recv().await.ok().unwrap(), Msg::Refuse { code: "busy".into() });
+    }
+
+    #[tokio::test]
+    async fn closed_stream_is_an_error_not_a_hang() {
+        let (a, b, _, _) = pair().await;
+        let (_sa, mut ra) = a.channel.split();
+        drop(b);
+        assert!(ra.recv().await.is_err());
+    }
+
+    #[test]
+    fn hex_round_trip() {
+        let key = generate_keypair().public;
+        assert_eq!(unhex(&hex(&key)), Some(key));
+        assert_eq!(unhex("abc"), None);
+        assert_eq!(unhex("zz"), None);
+    }
+}

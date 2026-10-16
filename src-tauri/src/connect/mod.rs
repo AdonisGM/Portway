@@ -6,6 +6,7 @@
 mod net;
 mod runtime;
 mod store;
+mod sys_clip;
 mod wire;
 
 pub use runtime::Connect;
@@ -104,4 +105,16 @@ pub fn connect_transfer_cancel(connect: State<'_, Connect>, id: String) {
 #[tauri::command]
 pub fn connect_transfers_clear(connect: State<'_, Connect>) {
     connect.transfers_clear()
+}
+
+/// Per machine: write its copied text here, and send ours to it as soon as it is copied.
+#[tauri::command]
+pub fn connect_set_clip(connect: State<'_, Connect>, id: String, receive: bool, send: bool) -> AppResult<()> {
+    connect.set_clip(&id, receive, send)
+}
+
+/// Send the text on the clipboard now to the machine linked with.
+#[tauri::command]
+pub fn connect_clip_send(connect: State<'_, Connect>, id: String) -> AppResult<()> {
+    connect.clip_send_now(&id)
 }

@@ -86,6 +86,10 @@ pub struct PeerView {
     pub can_wake: bool,
     /// It announced another protocol version: update Portway on both machines.
     pub version_mismatch: bool,
+    /// Text it sends is written into this machine's clipboard.
+    pub clip_receive: bool,
+    /// Text copied here is sent to it as soon as it is copied.
+    pub clip_send: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -151,6 +155,8 @@ pub struct View {
     pub link_error: Option<LinkErrorView>,
     pub wake: Option<WakeView>,
     pub transfers: Vec<TransferView>,
+    /// The last text sent or received, without its content.
+    pub clip: Option<ClipNote>,
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +204,10 @@ struct Link {
     since: u64,
     rtt: Option<Duration>,
     cancel: Arc<Notify>,
+    /// Messages for the other side from outside the session loop (copied text).
+    outbox: mpsc::UnboundedSender<Msg>,
+    /// Taken by the session when it starts.
+    outbox_rx: Option<mpsc::UnboundedReceiver<Msg>>,
 }
 
 struct Running {
@@ -223,6 +233,7 @@ struct State {
     last_pair_request: Option<Instant>,
     wake: Option<Wake>,
     transfers: Vec<Transfer>,
+    clip: ClipState,
     next_token: u64,
 }
 
@@ -252,7 +263,10 @@ struct Inner {
     state: Mutex<State>,
 }
 
+mod clip;
 mod transfer;
+use super::sys_clip;
+use clip::{ClipNote, ClipState};
 use transfer::{Transfer, TransferView};
 
 type Stream = TcpStream;
@@ -274,6 +288,7 @@ impl Connect {
             last_pair_request: None,
             wake: None,
             transfers: Vec::new(),
+            clip: ClipState::new(),
             next_token: 1,
         };
         Self { inner: Arc::new(Inner { app, state: Mutex::new(state) }) }
@@ -553,7 +568,8 @@ impl Connect {
                     } else {
                         let (token, cancel) = (s.next_token, Arc::new(Notify::new()));
                         s.next_token += 1;
-                        s.link = Some(Link { token, peer_id: id.clone(), addr: String::new(), up: true, since: now_ms(), rtt: None, cancel: cancel.clone() });
+                        let (outbox, outbox_rx) = mpsc::unbounded_channel();
+                        s.link = Some(Link { token, peer_id: id.clone(), addr: String::new(), up: true, since: now_ms(), rtt: None, cancel: cancel.clone(), outbox, outbox_rx: Some(outbox_rx) });
                         Some((token, cancel))
                     }
                 };
@@ -632,7 +648,7 @@ impl Connect {
                     }
                 }
                 self.publish();
-                self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs: vec![], macs: vec![] }).await;
+                self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs: vec![], macs: vec![], clip_receive: false, clip_send: false }).await;
             }
         }
     }
@@ -723,7 +739,7 @@ impl Connect {
         }
         self.publish();
         let manual_addrs = if manual { vec![used.to_string()] } else { vec![] };
-        self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs, macs: vec![] }).await;
+        self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs, macs: vec![], clip_receive: false, clip_send: false }).await;
         Ok(())
     }
 
@@ -756,7 +772,7 @@ impl Connect {
                         }
                         if !ok { break "declined".to_string(); }
                     }
-                    Some(Msg::Ping { .. } | Msg::Pong { .. }) => {}
+                    Some(Msg::Ping { .. } | Msg::Pong { .. } | Msg::Unknown) => {}
                     _ => break "connection_lost".to_string(),
                 },
                 _ = &mut deadline => break "timeout".to_string(),
@@ -955,7 +971,8 @@ impl Connect {
             s.link_error = None;
             let token = s.next_token;
             s.next_token += 1;
-            s.link = Some(Link { token, peer_id: id.to_string(), addr: String::new(), up: false, since: now_ms(), rtt: None, cancel: Arc::new(Notify::new()) });
+            let (outbox, outbox_rx) = mpsc::unbounded_channel();
+            s.link = Some(Link { token, peer_id: id.to_string(), addr: String::new(), up: false, since: now_ms(), rtt: None, cancel: Arc::new(Notify::new()), outbox, outbox_rx: Some(outbox_rx) });
             (targets, peer.name)
         };
         let me = self.me().ok_or_else(|| AppError::new("keychain"))?;
@@ -1032,12 +1049,28 @@ impl Connect {
     /// trip takes. Ends when either side closes, or `cancel` fires.
     async fn run_session(&self, token: u64, mut tx: Sender<Stream>, rx: Receiver<Stream>, cancel: Arc<Notify>) {
         let mut msgs = spawn_reader(rx);
+        let (mut outbox, peer_id) = {
+            let mut s = self.lock();
+            match s.link.as_mut().filter(|l| l.token == token) {
+                Some(l) => (l.outbox_rx.take(), l.peer_id.clone()),
+                None => (None, String::new()),
+            }
+        };
+        // Copied text can go out over this link while it is up.
+        let watcher = outbox.is_some().then(|| {
+            let this = self.clone();
+            let id = peer_id.clone();
+            tauri::async_runtime::spawn(async move { this.watch_clipboard(token, id).await })
+        });
         let mut tick = tokio::time::interval(PING_EVERY);
         let mut sent: HashMap<u64, Instant> = HashMap::new();
         let mut seq = 0u64;
         loop {
             tokio::select! {
                 m = msgs.recv() => match m {
+                    Some(Msg::Clip { text }) => self.on_clip(&peer_id, text),
+                    // From a newer Portway: nothing to do with it, and no reason to drop the link.
+                    Some(Msg::Unknown) => {}
                     Some(Msg::Ping { seq }) => { if tx.send(&Msg::Pong { seq }).await.is_err() { break; } }
                     Some(Msg::Pong { seq }) => {
                         if let Some(t0) = sent.remove(&seq) {
@@ -1050,6 +1083,12 @@ impl Connect {
                     }
                     _ => break,
                 },
+                out = async { match outbox.as_mut() { Some(rx) => rx.recv().await, None => std::future::pending().await } } => {
+                    match out {
+                        Some(m) => { if tx.send(&m).await.is_err() { break; } }
+                        None => outbox = None,
+                    }
+                }
                 _ = tick.tick() => {
                     seq += 1;
                     sent.insert(seq, Instant::now());
@@ -1061,6 +1100,9 @@ impl Connect {
                     break;
                 }
             }
+        }
+        if let Some(w) = watcher {
+            w.abort();
         }
         self.end_link(token);
     }
@@ -1174,7 +1216,7 @@ fn build_view(s: &State) -> View {
             // Reachable first, fastest first.
             paths.sort_by(|a, b| a.rtt_ms.unwrap_or(f64::MAX).total_cmp(&b.rtt_ms.unwrap_or(f64::MAX)));
             let online = is_online(s, &p.id);
-            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
+            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
         })
         .collect();
     View {
@@ -1199,6 +1241,7 @@ fn build_view(s: &State) -> View {
         link_error: s.link_error.as_ref().map(|(peer_id, code)| LinkErrorView { peer_id: peer_id.clone(), code: code.clone() }),
         wake: s.wake.as_ref().map(|w| WakeView { peer_id: w.peer_id.clone(), stage: w.stage, sent: w.sent, since: w.since }),
         transfers: s.transfers.iter().map(transfer::view).collect(),
+        clip: s.clip.note.clone(),
     }
 }
 
@@ -1221,6 +1264,7 @@ mod tests {
             last_pair_request: None,
             wake: None,
             transfers: Vec::new(),
+            clip: ClipState::new(),
             next_token: 1,
         }
     }

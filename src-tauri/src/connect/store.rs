@@ -29,6 +29,12 @@ pub struct Peer {
     /// Cards it can be woken through, as it last told us.
     #[serde(default)]
     pub macs: Vec<MacInfo>,
+    /// Write text it sends into this machine's clipboard. Off until the user turns it on.
+    #[serde(default)]
+    pub clip_receive: bool,
+    /// Send this machine's copied text to it as soon as it is copied (while linked).
+    #[serde(default)]
+    pub clip_send: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -96,7 +102,8 @@ impl Store {
                 let manual_addrs = std::mem::take(&mut old.manual_addrs);
                 // Pairing again may come without cards; keep the ones we had.
                 let macs = if peer.macs.is_empty() { std::mem::take(&mut old.macs) } else { peer.macs.clone() };
-                *old = Peer { manual_addrs, macs, ..peer };
+                let (clip_receive, clip_send) = (old.clip_receive, old.clip_send);
+                *old = Peer { manual_addrs, macs, clip_receive, clip_send, ..peer };
             }
             None => self.data.peers.push(peer),
         }
@@ -129,7 +136,7 @@ mod tests {
     use super::*;
 
     fn peer(id: &str, key: &str) -> Peer {
-        Peer { id: id.into(), name: format!("name-{id}"), os: "macos".into(), public_key: key.into(), paired_at: 1, manual_addrs: vec![], macs: vec![] }
+        Peer { id: id.into(), name: format!("name-{id}"), os: "macos".into(), public_key: key.into(), paired_at: 1, manual_addrs: vec![], macs: vec![], clip_receive: false, clip_send: false }
     }
 
     fn temp(name: &str) -> PathBuf {

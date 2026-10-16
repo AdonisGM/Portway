@@ -224,7 +224,8 @@ function PeerRow({
   onUnpair: () => void
   onError: (title: string) => (e: unknown) => void
 }) {
-  const { link, linkError, pairing, wake } = useConnect()
+  const { link, linkError, pairing, wake, clip } = useConnect()
+  const note = clip?.peerId === peer.id ? clip : null
   const waking = wake?.peerId === peer.id ? wake : null
   const mine = link?.peerId === peer.id ? link : null
   const otherBusy = !!link && !mine
@@ -266,6 +267,11 @@ function PeerRow({
               {t('Đánh thức')}
             </Button>
           )}
+          {mine?.stage === 'up' && (
+            <Button size="sm" onClick={() => void api.connectClipSend(peer.id).catch(onError(t('Không gửi được clipboard')))}>
+              {t('Gửi clipboard')}
+            </Button>
+          )}
           {mine ? (
             <Button size="sm" onClick={() => void api.connectUnlink()}>
               {mine.stage === 'up' ? t('Ngắt') : t('Huỷ')}
@@ -291,6 +297,14 @@ function PeerRow({
                 ok: peer.online,
                 why: t('Chỉ gửi được khi máy này đang thấy máy kia trong mạng.'),
               },
+              {
+                label: (peer.clipReceive ? '✓ ' : '') + t('Nhận clipboard từ máy này'),
+                run: () => void api.connectSetClip(peer.id, !peer.clipReceive, peer.clipSend).catch(onError(t('Không đổi được cài đặt'))),
+              },
+              {
+                label: (peer.clipSend ? '✓ ' : '') + t('Tự gửi clipboard sang máy này'),
+                run: () => void api.connectSetClip(peer.id, peer.clipReceive, !peer.clipSend).catch(onError(t('Không đổi được cài đặt'))),
+              },
               { label: t('Thêm địa chỉ IP…'), run: onAddAddress },
               { label: t('Bỏ ghép đôi'), run: onUnpair, danger: true },
             ]}
@@ -303,6 +317,17 @@ function PeerRow({
             <PathLine key={path.addr} path={path} inUse={mine?.stage === 'up' && mine.addr === path.addr} peerId={peer.id} />
           ))}
         </div>
+      )}
+      {(peer.clipReceive || peer.clipSend || note) && (
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[54px] pb-2 text-[11.5px] text-muted">
+          {peer.clipSend && <Chip tone={TONES.warn}>{t('Tự gửi clipboard')}</Chip>}
+          {peer.clipReceive && <Chip tone={TONES.info}>{t('Nhận clipboard')}</Chip>}
+          {note && (
+            <span>
+              {note.direction === 'out' ? t('Đã gửi clipboard') : t('Đã nhận clipboard')} · {t('{n} ký tự', { n: note.chars })} · {new Date(note.at).toLocaleTimeString()}
+            </span>
+          )}
+        </span>
       )}
       {waking?.stage === 'timeout' && <WakeTimeout />}
       {error && (

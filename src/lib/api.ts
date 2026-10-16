@@ -598,6 +598,10 @@ export type ConnectPeer = {
   canWake: boolean
   /** It runs another protocol version: update Portway on both machines. */
   versionMismatch: boolean
+  /** Text it sends is written into this machine's clipboard. */
+  clipReceive: boolean
+  /** Text copied here is sent to it as soon as it is copied (while linked). */
+  clipSend: boolean
 }
 export type ConnectNearby = { id: string; addrs: string[]; versionMismatch: boolean }
 export type ConnectPairing = {
@@ -637,6 +641,8 @@ export type ConnectTransfer = {
   savedTo: string | null
   since: number
 }
+/** The last text sent or received over a link, without its content. */
+export type ConnectClipNote = { peerId: string; direction: 'in' | 'out'; chars: number; at: number }
 export type ConnectView = {
   enabled: boolean
   device: { id: string; name: string; os: string; version: string; port: number | null; fingerprint: string } | null
@@ -650,6 +656,7 @@ export type ConnectView = {
   linkError: { peerId: string; code: string } | null
   wake: ConnectWake | null
   transfers: ConnectTransfer[]
+  clip: ConnectClipNote | null
 }
 
 export function isAppError(e: unknown): e is AppError {
@@ -726,6 +733,9 @@ type Api = {
   connectTransferCancel(id: string): Promise<void>
   /** Forget the transfers that are over. */
   connectTransfersClear(): Promise<void>
+  connectSetClip(id: string, receive: boolean, send: boolean): Promise<void>
+  /** Send the text on the clipboard now to the machine linked with. */
+  connectClipSend(id: string): Promise<void>
   tunnels(): Promise<Tunnel[]>
   saveTunnel(spec: TunnelSpec): Promise<Tunnel>
   deleteTunnel(id: string): Promise<void>
@@ -847,6 +857,8 @@ const tauriApi: Api = {
   connectTransferDecide: (id, accept) => invoke('connect_transfer_decide', { id, accept }),
   connectTransferCancel: (id) => invoke('connect_transfer_cancel', { id }),
   connectTransfersClear: () => invoke('connect_transfers_clear'),
+  connectSetClip: (id, receive, send) => invoke('connect_set_clip', { id, receive, send }),
+  connectClipSend: (id) => invoke('connect_clip_send', { id }),
   tunnels: () => invoke('tunnels_list'),
   saveTunnel: (spec) => invoke('tunnel_save', { spec }),
   deleteTunnel: (id) => invoke('tunnel_delete', { id }),
@@ -1050,7 +1062,7 @@ function browserApi(): Api {
     servicesJournal: async () => fail('needs_app'),
     servicesUnitFile: async () => fail('needs_app'),
     servicesAction: async () => fail('needs_app'),
-    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null, transfers: [] }),
+    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null, transfers: [], clip: null }),
     connectSetEnabled: async () => fail('needs_app'),
     connectPair: async () => fail('needs_app'),
     connectPairDecide: async () => fail('needs_app'),
@@ -1067,6 +1079,8 @@ function browserApi(): Api {
     connectTransferDecide: async () => fail('needs_app'),
     connectTransferCancel: async () => {},
     connectTransfersClear: async () => {},
+    connectSetClip: async () => fail('needs_app'),
+    connectClipSend: async () => fail('needs_app'),
     tunnels: async () => [],
     saveTunnel: async () => fail('needs_app'),
     deleteTunnel: async () => fail('needs_app'),

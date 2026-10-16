@@ -17,7 +17,9 @@ const TAG: usize = 16;
 /// Protocol version, sent in `Hello` and announced over mDNS; bumped whenever
 /// the bytes on the wire change, because an older peer cannot read a newer one
 /// at all. 2: every message carries a kind byte (file bytes share the channel).
-pub const VERSION: u32 = 2;
+/// 3: `Clip`, and a message this side does not know parses as `Unknown`
+/// (ignored) instead of ending the link, so adding a message needs no new version.
+pub const VERSION: u32 = 3;
 
 /// Callers map every variant to a stable error code; the payloads are there for
 /// `Debug` output when something has to be diagnosed.
@@ -120,6 +122,8 @@ pub enum Msg {
     FileOk { ok: bool },
     /// Either side stops the transfer.
     Cancel,
+    /// Text copied on the other machine, sent over the live link.
+    Clip { text: String },
     PairConfirm {
         ok: bool,
         /// Sent with a yes, so the machine just paired with can wake this one.
@@ -129,6 +133,9 @@ pub enum Msg {
     Ping { seq: u64 },
     Pong { seq: u64 },
     Bye,
+    /// A message from a newer Portway that this one has no name for: ignored.
+    #[serde(other)]
+    Unknown,
 }
 
 async fn write_frame<W: AsyncWrite + Unpin>(w: &mut W, bytes: &[u8]) -> io::Result<()> {
@@ -480,5 +487,13 @@ mod tests {
         let (a, _b, _, _) = pair().await;
         let (mut sa, _ra) = a.channel.split();
         assert!(sa.send_data(&vec![0u8; MAX_DATA + 1]).await.is_err());
+    }
+
+    #[test]
+    fn a_message_from_the_future_is_unknown_not_an_error() {
+        let m: Msg = serde_json::from_str(r#"{"t":"somethingNew","x":1}"#).unwrap();
+        assert_eq!(m, Msg::Unknown);
+        let c: Msg = serde_json::from_str(r#"{"t":"clip","text":"hi"}"#).unwrap();
+        assert_eq!(c, Msg::Clip { text: "hi".into() });
     }
 }

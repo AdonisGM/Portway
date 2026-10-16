@@ -133,6 +133,12 @@ export function commandError(e: unknown): string {
       return t('Địa chỉ IP không hợp lệ')
     case 'peer_not_found':
       return t('Không thấy máy này trong mạng')
+    case 'not_linked':
+      return t('Chỉ gửi clipboard được khi đang kết nối với máy đó')
+    case 'clip_empty':
+      return t('Clipboard không có văn bản để gửi')
+    case 'clip_too_large':
+      return t('Văn bản trong clipboard quá dài (tối đa khoảng 40.000 ký tự)')
     case 'no_files':
       return t('Chưa chọn tệp nào')
     case 'too_many_files':

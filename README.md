@@ -97,7 +97,8 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 - Khi lỗi, Portway chỉ gợi ý cách xử lý theo loại lỗi (xem bên dưới), không tự sửa tường lửa.
 - **Đánh thức (WOL)**: sau khi ghép đôi (hoặc kết nối lần đầu với máy đã ghép từ bản cũ), hai máy trao cho nhau địa chỉ MAC của các card cáp và Wi-Fi thật. Nút "Đánh thức" gửi magic packet (UDP broadcast cổng 9 và 7, qua từng card đang có địa chỉ), rồi đợi tối đa 2 phút để máy kia hiện lại trong mạng. Máy kia cần bật Wake-on-LAN (BIOS/UEFI, card mạng, tắt Fast Startup trên Windows); Mac chỉ dậy từ trạng thái ngủ qua cáp.
 - **Gửi tệp** tới máy đã ghép đôi (nút "Gửi tệp…" ở dòng máy đang thấy trong mạng). Mỗi lần gửi mở một kết nối mã hoá riêng, không cần đang "Kết nối". Người nhận luôn được hỏi Nhận hay Từ chối; tệp lưu vào thư mục tải xuống mặc định, không ghi đè tệp trùng tên (thêm " (1)"), được ghi dưới tên tạm và chỉ đổi tên sau khi BLAKE2s khớp. Tên tệp từ máy kia được làm sạch (không có đường dẫn, không có ký tự Windows cấm). Gửi được cả thư mục (menu ⋯ › "Gửi thư mục…"): cả cây được gửi, nhận về nằm gọn trong một thư mục (đổi tên "Tên (1)" nếu trùng, không gộp vào thư mục có sẵn), thư mục rỗng và liên kết (symlink) bị bỏ qua, tối đa 20.000 tệp một lần. Đường dẫn từ máy kia bị từ chối nếu có `..`. Chưa tiếp tục được khi đứt giữa chừng.
-- Clipboard chưa làm.
+- **Clipboard văn bản** giữa hai máy đang kết nối (menu ⋯ của máy đã ghép): nút "Gửi clipboard" gửi ngay văn bản đang copy; "Nhận clipboard từ máy này" cho phép máy kia ghi vào clipboard ở đây; "Tự gửi clipboard sang máy này" gửi mỗi khi bạn copy. Cả hai công tắc tắt mặc định và theo từng máy. Văn bản được đánh dấu nhạy cảm bởi ứng dụng đã copy (trình quản lý mật khẩu: `org.nspasteboard.ConcealedType` trên macOS, `ExcludeClipboardContentFromMonitorProcessing` trên Windows) không bao giờ được tự gửi. Nội dung không được ghi vào nhật ký; văn bản dài quá khoảng 40.000 ký tự bị từ chối kèm thông báo, không cắt âm thầm. Tin nhắn mà bản này chưa biết được bỏ qua thay vì làm đứt kết nối, nên thêm loại tin mới không cần tăng `VERSION`.
+- Tệp trong clipboard chưa làm.
 
 ### Khác
 
@@ -229,7 +230,7 @@ Khi tải tệp từ server về Windows, những tên Linux cho phép nhưng Wi
 
 ## Ghi chú khi làm Portway Connect
 
-Portway Connect cho hai bản Portway trong cùng LAN tự nhận ra nhau, ghép đôi rồi gửi tệp, đồng bộ clipboard và đánh thức nhau (WOL). Mới có phát hiện, ghép đôi, kết nối, đánh thức và gửi tệp (code ở `src-tauri/src/connect/`); phần còn lại chưa làm. Các điều dưới đây rút ra từ bản thử `scripts/connect-probe` trên một Mac và một PC Windows nối cả cáp Ethernet lẫn Wi-Fi (16/10/2026).
+Portway Connect cho hai bản Portway trong cùng LAN tự nhận ra nhau, ghép đôi rồi gửi tệp, đồng bộ clipboard và đánh thức nhau (WOL). Mới có phát hiện, ghép đôi, kết nối, đánh thức, gửi tệp và clipboard văn bản (code ở `src-tauri/src/connect/`); phần còn lại chưa làm. Các điều dưới đây rút ra từ bản thử `scripts/connect-probe` trên một Mac và một PC Windows nối cả cáp Ethernet lẫn Wi-Fi (16/10/2026).
 
 ### Chạy probe
 
@@ -270,7 +271,7 @@ Tiến trình chưa có quyền Mạng cục bộ chỉ nhận MAC giả `02:00:
 
 ### Phiên bản giao thức
 
-Mỗi lần byte trên đường truyền đổi (ví dụ mỗi tin nhắn có thêm một byte loại từ 0.10.0), `wire::VERSION` phải tăng: bản cũ không đọc được tin của bản mới, nên nếu không tăng thì lỗi hiện ra như "timeout" và dễ bị đổ cho tường lửa. Phiên bản được báo qua mDNS (`v`) nên dòng máy hiện "Khác phiên bản Portway" và khoá các nút trước khi ai bấm. Hiện là 2. Kết nối bị cắt sau khi đã bắt tay xong mà không có trả lời được báo là `no_reply`, còn `connect_timeout` chỉ dành cho TCP không nối được.
+Mỗi lần byte trên đường truyền đổi (ví dụ mỗi tin nhắn có thêm một byte loại từ 0.10.0), `wire::VERSION` phải tăng: bản cũ không đọc được tin của bản mới, nên nếu không tăng thì lỗi hiện ra như "timeout" và dễ bị đổ cho tường lửa. Phiên bản được báo qua mDNS (`v`) nên dòng máy hiện "Khác phiên bản Portway" và khoá các nút trước khi ai bấm. Hiện là 3. Kết nối bị cắt sau khi đã bắt tay xong mà không có trả lời được báo là `no_reply`, còn `connect_timeout` chỉ dành cho TCP không nối được.
 
 ### Chạy hai bản Portway trên một máy
 

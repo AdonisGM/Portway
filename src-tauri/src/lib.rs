@@ -138,6 +138,8 @@ pub fn run() {
             connect::connect_transfer_decide,
             connect::connect_transfer_cancel,
             connect::connect_transfers_clear,
+            connect::connect_set_clip,
+            connect::connect_clip_send,
             files::sftp_list,
             files::sftp_as_root,
             files::sftp_mkdir,

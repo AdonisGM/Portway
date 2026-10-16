@@ -178,6 +178,20 @@ const en: Dict = {
   'Máy kia đang có quá nhiều yêu cầu nhận tệp': 'The other machine has too many requests to receive files',
   'Máy kia không nhận danh sách tệp này': "The other machine didn't accept this list of files",
   'Không làm được': "Couldn't do that",
+  // Clipboard
+  'Gửi clipboard': 'Send clipboard',
+  'Không gửi được clipboard': "Couldn't send the clipboard",
+  'Không đổi được cài đặt': "Couldn't change the setting",
+  'Nhận clipboard từ máy này': 'Receive its clipboard here',
+  'Tự gửi clipboard sang máy này': 'Send my clipboard to it automatically',
+  'Tự gửi clipboard': 'Auto-sending clipboard',
+  'Nhận clipboard': 'Receiving clipboard',
+  'Đã gửi clipboard': 'Clipboard sent',
+  'Đã nhận clipboard': 'Clipboard received',
+  '{n} ký tự': (v) => `${v.n} ${Number(v.n) === 1 ? 'character' : 'characters'}`,
+  'Chỉ gửi clipboard được khi đang kết nối với máy đó': 'The clipboard can only be sent while connected to that machine',
+  'Clipboard không có văn bản để gửi': 'The clipboard has no text to send',
+  'Văn bản trong clipboard quá dài (tối đa khoảng 40.000 ký tự)': 'The text on the clipboard is too long (about 40,000 characters at most)',
 }
 
 export default en

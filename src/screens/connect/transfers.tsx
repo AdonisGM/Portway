@@ -11,9 +11,9 @@ import { formatBytes } from '../server/format'
 import { commandError, hintFor, transferError } from './hints'
 import { HintSteps } from './pairing-dialog'
 
-/** Pick files on this machine and offer them to a paired one. */
-export async function pickAndSend(peerId: string, onError: (e: unknown) => void) {
-  const picked = await open({ multiple: true, directory: false })
+/** Pick files (or a folder) on this machine and offer them to a paired one. */
+export async function pickAndSend(peerId: string, onError: (e: unknown) => void, folder = false) {
+  const picked = await open(folder ? { multiple: false, directory: true } : { multiple: true, directory: false })
   if (!picked) return
   const paths = Array.isArray(picked) ? picked : [picked]
   if (!paths.length) return
@@ -26,7 +26,12 @@ export async function pickAndSend(peerId: string, onError: (e: unknown) => void)
 
 const isOver = (x: ConnectTransfer) => ['done', 'failed', 'declined', 'canceled'].includes(x.stage)
 
-const title = (x: ConnectTransfer) => (x.fileCount > 1 ? t('{name} và {n} tệp khác', { name: x.files[0]?.name ?? '', n: x.fileCount - 1 }) : (x.files[0]?.name ?? ''))
+/** A name that holds a "/" belongs to a folder that was picked whole. */
+const title = (x: ConnectTransfer) => {
+  const first = x.files[0]?.name ?? ''
+  if (first.includes('/')) return t('{name} ({n} tệp)', { name: first.split('/')[0], n: x.fileCount })
+  return x.fileCount > 1 ? t('{name} và {n} tệp khác', { name: first, n: x.fileCount - 1 }) : first
+}
 
 function status(x: ConnectTransfer): { tone: { fg: string; bg: string }; text: string } {
   switch (x.stage) {

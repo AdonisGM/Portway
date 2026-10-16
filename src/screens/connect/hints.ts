@@ -128,9 +128,11 @@ export function commandError(e: unknown): string {
     case 'no_files':
       return t('Chưa chọn tệp nào')
     case 'too_many_files':
-      return t('Quá nhiều tệp một lần (tối đa 1000)')
+      return t('Quá nhiều tệp một lần (tối đa 20.000)')
+    case 'empty_folder':
+      return t('{path} không có tệp nào để gửi', { path: e.detail ?? '' })
     case 'not_a_file':
-      return t('{path} không phải một tệp. Chưa gửi được thư mục.', { path: e.detail ?? '' })
+      return t('{path} không phải tệp hay thư mục thường', { path: e.detail ?? '' })
     case 'no_offer':
       return t('Yêu cầu nhận tệp này đã hết hạn')
     case 'no_mac':

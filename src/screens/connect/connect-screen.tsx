@@ -283,6 +283,12 @@ function PeerRow({
                 ok: peer.canWake,
                 why: t('Chưa có địa chỉ MAC của máy này. Kết nối với nó một lần để Portway ghi lại.'),
               },
+              {
+                label: t('Gửi thư mục…'),
+                run: () => void pickAndSend(peer.id, onError(t('Không gửi được tệp')), true),
+                ok: peer.online,
+                why: t('Chỉ gửi được khi máy này đang thấy máy kia trong mạng.'),
+              },
               { label: t('Thêm địa chỉ IP…'), run: onAddAddress },
               { label: t('Bỏ ghép đôi'), run: onUnpair, danger: true },
             ]}

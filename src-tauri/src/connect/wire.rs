@@ -103,8 +103,14 @@ pub enum Msg {
     Nonce { n: String },
     /// Pairing step 3: the number committed to in step 1.
     Reveal { n: String },
-    /// Sending files: what is on offer. The receiver answers `Accept` or `Refuse`.
-    Offer { files: Vec<OfferFile> },
+    /// Sending files: what is on offer, in as many messages as the list needs
+    /// (`more` is set on all but the last). The receiver then answers `Accept`
+    /// or `Refuse`. A name is a path relative to what was picked, with `/`.
+    Offer {
+        files: Vec<OfferFile>,
+        #[serde(default)]
+        more: bool,
+    },
     Accept,
     /// After a file's bytes: its BLAKE2s hash, hex.
     FileEnd { hash: String },
@@ -457,7 +463,7 @@ mod tests {
         let (a, b, _, _) = pair().await;
         let ((mut sa, _ra), (_sb, mut rb)) = (a.channel.split(), b.channel.split());
         let chunk = vec![0xABu8; MAX_DATA];
-        sa.send(&Msg::Offer { files: vec![OfferFile { name: "a.bin".into(), size: 3 }] }).await.ok().unwrap();
+        sa.send(&Msg::Offer { files: vec![OfferFile { name: "a.bin".into(), size: 3 }], more: false }).await.ok().unwrap();
         sa.send_data(&chunk).await.ok().unwrap();
         sa.send_data(&[1, 2, 3]).await.ok().unwrap();
         sa.send(&Msg::FileEnd { hash: "00".into() }).await.ok().unwrap();

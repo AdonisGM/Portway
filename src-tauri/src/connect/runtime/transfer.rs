@@ -16,7 +16,9 @@ use wire::{Frame, OfferFile, MAX_DATA};
 const KEEP: usize = 30;
 /// Offers waiting for the user at once; more are refused as busy.
 const MAX_PENDING_OFFERS: usize = 3;
-const MAX_FILES: usize = 1000;
+const MAX_FILES: usize = 20_000;
+/// A frame holds about 64 KB; an offer message stays well under that.
+const OFFER_BATCH_BYTES: usize = 40_000;
 const OFFER_WAIT: Duration = Duration::from_secs(120);
 
 pub struct Transfer {
@@ -134,6 +136,61 @@ pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
         .expect("an unused name")
 }
 
+/// A path received from the other machine, made safe: every part cleaned the
+/// way a file name is, and refused outright when it tries to climb out (`..`)
+/// or is empty or absurdly deep.
+pub fn sanitize_rel(path: &str) -> Option<String> {
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.is_empty() || parts.len() > 32 || parts.iter().any(|p| p.is_empty() || *p == "." || *p == "..") {
+        return None;
+    }
+    Some(parts.iter().map(|p| sanitize_name(p)).collect::<Vec<_>>().join("/"))
+}
+
+/// The offer cut into messages that each fit in a frame.
+pub fn offer_batches(files: &[OfferFile]) -> Vec<Vec<OfferFile>> {
+    let mut out: Vec<Vec<OfferFile>> = vec![Vec::new()];
+    let mut used = 0;
+    for f in files {
+        let cost = 2 * f.name.len() + 60;
+        if used + cost > OFFER_BATCH_BYTES && !out.last().unwrap().is_empty() {
+            out.push(Vec::new());
+            used = 0;
+        }
+        used += cost;
+        out.last_mut().unwrap().push(f.clone());
+    }
+    out
+}
+
+/// Every regular file under `root`, named `root_name/relative/path`. Links
+/// and special files are skipped, and so are empty folders (nothing to send).
+fn walk_dir(root: &Path) -> std::io::Result<Vec<(PathBuf, OfferFile)>> {
+    let base = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "folder".into());
+    let mut out = Vec::new();
+    let mut stack = vec![(root.to_path_buf(), base)];
+    while let Some((dir, rel)) = stack.pop() {
+        let mut entries: Vec<_> = std::fs::read_dir(&dir)?.filter_map(Result::ok).collect();
+        entries.sort_by_key(|e| e.file_name());
+        for e in entries {
+            let Ok(kind) = e.file_type() else { continue };
+            let name = format!("{rel}/{}", e.file_name().to_string_lossy());
+            if kind.is_dir() {
+                stack.push((e.path(), name));
+            } else if kind.is_file() {
+                if let Ok(meta) = e.metadata() {
+                    out.push((e.path(), OfferFile { name, size: meta.len() }));
+                }
+            }
+            if out.len() > MAX_FILES {
+                return Ok(out);
+            }
+        }
+    }
+    out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+    Ok(out)
+}
+
 /// Frames on their own task into a bounded queue: waiting for one never cuts a
 /// frame in half when another event wins a `select!`, and a slow disk slows the
 /// sender down instead of piling bytes up in memory.
@@ -214,8 +271,23 @@ async fn pull_files<S: AsyncRead + AsyncWrite>(
 ) -> Result<Option<String>, String> {
     tokio::fs::create_dir_all(dir).await.map_err(|_| "io".to_string())?;
     let mut first = None;
+    // A picked folder lands in one folder of its own, renamed when that name is taken.
+    let mut roots: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for (index, offer) in files.iter().enumerate() {
-        let part = unique_path(dir, &format!("{}.portway-part", offer.name));
+        let mut parts: Vec<&str> = offer.name.split('/').collect();
+        let leaf = parts.pop().unwrap_or("file").to_string();
+        let mut target = dir.to_path_buf();
+        let mut root_dir = None;
+        if let Some(top) = parts.first() {
+            let mapped = roots.entry((*top).to_string()).or_insert_with(|| unique_path(dir, top).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| (*top).to_string())).clone();
+            target = dir.join(&mapped);
+            root_dir = Some(target.clone());
+            for p in &parts[1..] {
+                target.push(p);
+            }
+            tokio::fs::create_dir_all(&target).await.map_err(|_| "io".to_string())?;
+        }
+        let part = unique_path(&target, &format!("{leaf}.portway-part"));
         let mut file = tokio::fs::File::create(&part).await.map_err(|_| "io".to_string())?;
         let result = pull_one(tx, msgs, offer, index, &mut file, cancel, &mut progress).await;
         if let Err(code) = result {
@@ -225,10 +297,10 @@ async fn pull_files<S: AsyncRead + AsyncWrite>(
         }
         file.flush().await.map_err(|_| "io".to_string())?;
         drop(file);
-        let final_path = unique_path(dir, &offer.name);
+        let final_path = unique_path(&target, &leaf);
         tokio::fs::rename(&part, &final_path).await.map_err(|_| "io".to_string())?;
         if index == 0 {
-            first = Some(final_path.to_string_lossy().into_owned());
+            first = Some(root_dir.unwrap_or(final_path).to_string_lossy().into_owned());
         }
         tx.send(&Msg::FileOk { ok: true }).await.map_err(|_| "connection_lost".to_string())?;
     }
@@ -381,11 +453,18 @@ impl Connect {
         for p in &paths {
             let path = crate::paths::expand_tilde(p);
             let meta = std::fs::metadata(&path).map_err(|e| AppError::detail("io", format!("{p}: {e}")))?;
-            if !meta.is_file() {
+            if meta.is_dir() {
+                let found = walk_dir(&path).map_err(|e| AppError::detail("io", format!("{p}: {e}")))?;
+                if found.is_empty() {
+                    return Err(AppError::detail("empty_folder", p));
+                }
+                files.extend(found);
+            } else if meta.is_file() {
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
+                files.push((path, OfferFile { name, size: meta.len() }));
+            } else {
                 return Err(AppError::detail("not_a_file", p));
             }
-            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
-            files.push((path, OfferFile { name, size: meta.len() }));
         }
         if files.len() > MAX_FILES {
             return Err(AppError::new("too_many_files"));
@@ -446,7 +525,12 @@ impl Connect {
             _ => return Err("handshake_failed".into()),
         }
         let mut msgs = spawn_frame_reader(rx);
-        tx.send(&Msg::Offer { files: files.iter().map(|(_, f)| f.clone()).collect() }).await.map_err(|_| "connection_lost".to_string())?;
+        let offered: Vec<OfferFile> = files.iter().map(|(_, f)| f.clone()).collect();
+        let batches = offer_batches(&offered);
+        let last = batches.len() - 1;
+        for (i, batch) in batches.into_iter().enumerate() {
+            tx.send(&Msg::Offer { files: batch, more: i < last }).await.map_err(|_| "connection_lost".to_string())?;
+        }
 
         // The receiver's user decides; wait for the answer.
         tokio::select! {
@@ -474,15 +558,21 @@ impl Connect {
 
     /// A paired machine wants to hand over files. Ask the user, then take them.
     pub(super) async fn accept_send(&self, mut tx: Sender<Stream>, mut rx: Receiver<Stream>, peer: Peer) {
-        let Ok(Ok(Msg::Offer { files })) = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await else { return };
-        let sane = !files.is_empty() && files.len() <= MAX_FILES && files.iter().all(|f| f.size < (1u64 << 50));
+        let Ok(Ok(Msg::Offer { files: mut offered, mut more })) = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await else { return };
+        while more && offered.len() <= MAX_FILES {
+            let Ok(Ok(Msg::Offer { files: next, more: again })) = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await else { return };
+            offered.extend(next);
+            more = again;
+        }
+        // Names are the sender's to choose, never ours to trust.
+        let cleaned: Vec<Option<OfferFile>> = offered.into_iter().map(|f| sanitize_rel(&f.name).map(|name| OfferFile { name, size: f.size })).collect();
+        let sane = !more && !cleaned.is_empty() && cleaned.len() <= MAX_FILES && cleaned.iter().all(|f| f.as_ref().is_some_and(|f| f.size < (1u64 << 50)));
         let pending = self.lock().transfers.iter().filter(|t| t.receiving && t.stage == "offering").count();
         if !sane || pending >= MAX_PENDING_OFFERS {
             let _ = tx.send(&Msg::Refuse { code: if sane { "busy" } else { "bad_offer" }.into() }).await;
             return;
         }
-        // Names are the sender's to choose, never ours to trust.
-        let files: Vec<OfferFile> = files.into_iter().map(|f| OfferFile { name: sanitize_name(&f.name), size: f.size }).collect();
+        let files: Vec<OfferFile> = cleaned.into_iter().flatten().collect();
         let (decide_tx, decide_rx) = oneshot::channel();
         let (tid, mut t) = Self::new_transfer(&peer.id, &peer.name, true, files.clone(), "offering");
         t.decide = Some(decide_tx);
@@ -573,6 +663,44 @@ mod tests {
         assert_eq!(sanitize_name("trailing. "), "trailing");
         assert_eq!(sanitize_name("line\nbreak.txt"), "line_break.txt");
         assert_eq!(sanitize_name(&"x".repeat(300)).chars().count(), 200);
+    }
+
+    #[test]
+    fn received_paths_cannot_climb_out() {
+        assert_eq!(sanitize_rel("Photos/2024/a.jpg").as_deref(), Some("Photos/2024/a.jpg"));
+        assert_eq!(sanitize_rel("a.txt").as_deref(), Some("a.txt"));
+        assert_eq!(sanitize_rel("Photos/b:c/a?.jpg").as_deref(), Some("Photos/b_c/a_.jpg"));
+        for bad in ["../x", "a/../x", "a//b", "", "/abs", ".", "a/./b"] {
+            assert_eq!(sanitize_rel(bad), None, "{bad}");
+        }
+        assert_eq!(sanitize_rel(&vec!["d"; 33].join("/")), None);
+    }
+
+    #[test]
+    fn a_long_offer_is_cut_into_frames_that_fit() {
+        let files: Vec<OfferFile> = (0..5000).map(|i| OfferFile { name: format!("folder/sub{}/file-number-{i}.dat", i % 7), size: i }).collect();
+        let batches = offer_batches(&files);
+        assert!(batches.len() > 1);
+        assert_eq!(batches.iter().map(Vec::len).sum::<usize>(), files.len());
+        for b in &batches {
+            let json = serde_json::to_vec(&Msg::Offer { files: b.clone(), more: true }).unwrap();
+            assert!(json.len() < 60_000, "{}", json.len());
+        }
+        assert_eq!(offer_batches(&[]).len(), 1);
+    }
+
+    #[test]
+    fn walking_a_folder_names_files_from_its_root() {
+        let root = temp_dir("walk").join("Photos");
+        std::fs::create_dir_all(root.join("2024/trip")).unwrap();
+        std::fs::create_dir_all(root.join("empty")).unwrap();
+        std::fs::write(root.join("a.jpg"), b"1").unwrap();
+        std::fs::write(root.join("2024/b.jpg"), b"22").unwrap();
+        std::fs::write(root.join("2024/trip/c.jpg"), b"333").unwrap();
+        let found = walk_dir(&root).unwrap();
+        let names: Vec<(&str, u64)> = found.iter().map(|(_, f)| (f.name.as_str(), f.size)).collect();
+        assert_eq!(names, vec![("Photos/2024/b.jpg", 2), ("Photos/2024/trip/c.jpg", 3), ("Photos/a.jpg", 1)]);
+        std::fs::remove_dir_all(root.parent().unwrap()).ok();
     }
 
     #[test]
@@ -741,6 +869,31 @@ mod tests {
         let (a, b) = tokio::join!(push_files(&mut stx, &mut smsgs, &files, &cancel, |_, _| {}), pull_files(&mut rtx, &mut rmsgs, &offers, &dst, &cancel, |_, _| {}));
         assert!(a.is_ok() && b.is_ok());
         println!("{} MB in {:.2?} = {:.0} MB/s", size >> 20, t.elapsed(), (size >> 20) as f64 / t.elapsed().as_secs_f64());
+        std::fs::remove_dir_all(src).ok();
+        std::fs::remove_dir_all(dst).ok();
+    }
+
+    #[tokio::test]
+    async fn a_folder_arrives_as_one_folder_and_never_merges_into_an_existing_one() {
+        let (src, dst) = (temp_dir("src6"), temp_dir("dst6"));
+        let root = src.join("Photos");
+        std::fs::create_dir_all(root.join("2024")).unwrap();
+        std::fs::write(root.join("a.jpg"), b"aaa").unwrap();
+        std::fs::write(root.join("2024/b.jpg"), vec![9u8; 100_000]).unwrap();
+        let files = walk_dir(&root).unwrap();
+        let offers: Vec<OfferFile> = files.iter().map(|(_, f)| f.clone()).collect();
+        // A folder with that name is already there.
+        std::fs::create_dir_all(dst.join("Photos")).unwrap();
+        std::fs::write(dst.join("Photos/keep.txt"), b"mine").unwrap();
+        let ((mut stx, mut smsgs), (mut rtx, mut rmsgs)) = channel().await;
+        let cancel = Notify::new();
+        let (a, b) = tokio::join!(push_files(&mut stx, &mut smsgs, &files, &cancel, |_, _| {}), pull_files(&mut rtx, &mut rmsgs, &offers, &dst, &cancel, |_, _| {}));
+        assert_eq!(a, Ok(()));
+        let first = b.unwrap().unwrap();
+        assert!(first.ends_with("Photos (1)"), "{first}");
+        assert_eq!(std::fs::read(dst.join("Photos/keep.txt")).unwrap(), b"mine");
+        assert_eq!(std::fs::read(dst.join("Photos (1)/a.jpg")).unwrap(), b"aaa");
+        assert_eq!(std::fs::read(dst.join("Photos (1)/2024/b.jpg")).unwrap().len(), 100_000);
         std::fs::remove_dir_all(src).ok();
         std::fs::remove_dir_all(dst).ok();
     }

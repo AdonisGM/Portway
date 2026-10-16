@@ -25,3 +25,4 @@ dist-ssr
 
 # Bản build đã gom (scripts/build-mac.sh)
 release
+scripts/connect-probe/target

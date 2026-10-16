@@ -1,0 +1,13 @@
+[package]
+name = "connect-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Throwaway probe for Portway Connect: what does the LAN actually do on this machine?"
+
+[dependencies]
+mdns-sd = "0.21"
+if-addrs = "0.15"
+uuid = { version = "1", features = ["v4"] }
+
+[workspace]

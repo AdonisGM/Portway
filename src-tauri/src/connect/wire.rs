@@ -14,8 +14,10 @@ const PATTERN: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 /// A frame is a u16 length and that many bytes, so this is the most one can carry.
 const MAX_FRAME: usize = u16::MAX as usize;
 const TAG: usize = 16;
-/// Protocol version, sent in `Hello`; bumped when the messages change shape.
-pub const VERSION: u32 = 1;
+/// Protocol version, sent in `Hello` and announced over mDNS; bumped whenever
+/// the bytes on the wire change, because an older peer cannot read a newer one
+/// at all. 2: every message carries a kind byte (file bytes share the channel).
+pub const VERSION: u32 = 2;
 
 /// Callers map every variant to a stable error code; the payloads are there for
 /// `Debug` output when something has to be diagnosed.

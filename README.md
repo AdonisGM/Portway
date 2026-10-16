@@ -268,6 +268,14 @@ Nó in các card mạng (trên Windows kèm profile mạng Public/Private), mở
 
 Tiến trình chưa có quyền Mạng cục bộ chỉ nhận MAC giả `02:00:00:00:00:00` từ `getifaddrs` và cả `ifconfig` (đã gặp khi chạy test từ shell). Vì vậy trên macOS Portway đọc MAC thật bằng `networksetup -listallhardwareports`, thứ vẫn trả đúng. Windows không bị hạn chế này.
 
+### Phiên bản giao thức
+
+Mỗi lần byte trên đường truyền đổi (ví dụ mỗi tin nhắn có thêm một byte loại từ 0.10.0), `wire::VERSION` phải tăng: bản cũ không đọc được tin của bản mới, nên nếu không tăng thì lỗi hiện ra như "timeout" và dễ bị đổ cho tường lửa. Phiên bản được báo qua mDNS (`v`) nên dòng máy hiện "Khác phiên bản Portway" và khoá các nút trước khi ai bấm. Hiện là 2. Kết nối bị cắt sau khi đã bắt tay xong mà không có trả lời được báo là `no_reply`, còn `connect_timeout` chỉ dành cho TCP không nối được.
+
+### Chạy hai bản Portway trên một máy
+
+Đặt `PORTWAY_PROFILE=b` khi chạy bản thứ hai (`PORTWAY_PROFILE=b src-tauri/target/debug/portway`, khi `./scripts/dev.sh` đang chạy) để nó dùng thư mục dữ liệu `profiles/b` và các mục Keychain riêng (`tên@b`). Nhờ đó thử được ghép đôi, kết nối và gửi tệp giữa hai bản ngay trên một Mac. Bản thứ hai chiếm cổng ngẫu nhiên vì 47615 đã có bản đầu giữ.
+
 ### Khi kết nối lỗi
 
 Portway chỉ chẩn đoán và gợi ý, không tự sửa tường lửa hay profile mạng.

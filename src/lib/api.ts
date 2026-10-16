@@ -596,8 +596,10 @@ export type ConnectPeer = {
   manualAddrs: string[]
   /** A card to wake it through is known. */
   canWake: boolean
+  /** It runs another protocol version: update Portway on both machines. */
+  versionMismatch: boolean
 }
-export type ConnectNearby = { id: string; addrs: string[] }
+export type ConnectNearby = { id: string; addrs: string[]; versionMismatch: boolean }
 export type ConnectPairing = {
   role: 'initiator' | 'responder'
   stage: 'connecting' | 'compare' | 'done'

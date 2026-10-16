@@ -24,8 +24,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const PAIRING_TIMEOUT: Duration = Duration::from_secs(120);
 const PROBE_EVERY: Duration = Duration::from_secs(5);
 const PING_EVERY: Duration = Duration::from_secs(2);
-/// A machine that announced itself this long ago and has not since counts as gone.
-const NEARBY_TTL: Duration = Duration::from_secs(120);
 /// Incoming pairing requests closer together than this are refused, so one
 /// machine on the network cannot keep popping the dialog up.
 const PAIR_COOLDOWN: Duration = Duration::from_secs(5);
@@ -69,6 +67,8 @@ pub struct PathView {
 pub struct NearbyView {
     pub id: String,
     pub addrs: Vec<String>,
+    /// It announced another protocol version: it cannot talk to this one.
+    pub version_mismatch: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,6 +84,8 @@ pub struct PeerView {
     pub manual_addrs: Vec<String>,
     /// We know a card to wake it through.
     pub can_wake: bool,
+    /// It announced another protocol version: update Portway on both machines.
+    pub version_mismatch: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -163,7 +165,8 @@ enum Role {
 struct Nearby {
     addrs: BTreeSet<Ipv4Addr>,
     port: u16,
-    seen: Instant,
+    /// Protocol version it announced, when it did.
+    version: Option<u32>,
 }
 
 #[derive(Clone)]
@@ -367,7 +370,8 @@ impl Connect {
 
         let daemon = ServiceDaemon::new().map_err(|e| AppError::detail("mdns_failed", e))?;
         let host = format!("portway-{}.local.", me.id);
-        let props = [("id", me.id.as_str()), ("v", "1")];
+        let version = VERSION.to_string();
+        let props = [("id", me.id.as_str()), ("v", version.as_str())];
         let info = ServiceInfo::new(SERVICE, &me.id, &host, "", port, &props[..]).map_err(|e| AppError::detail("mdns_failed", e))?.enable_addr_auto();
         daemon.register(info).map_err(|e| AppError::detail("mdns_failed", e))?;
         let events = daemon.browse(SERVICE).map_err(|e| AppError::detail("mdns_failed", e))?;
@@ -448,10 +452,11 @@ impl Connect {
                         r.self_seen = true;
                     }
                 } else {
-                    let e = s.nearby.entry(id).or_insert_with(|| Nearby { addrs: BTreeSet::new(), port: info.get_port(), seen: Instant::now() });
+                    let version = info.get_property_val_str("v").and_then(|v| v.parse::<u32>().ok());
+                    let e = s.nearby.entry(id).or_insert_with(|| Nearby { addrs: BTreeSet::new(), port: info.get_port(), version });
+                    e.version = version;
                     e.addrs.extend(addrs);
                     e.port = info.get_port();
-                    e.seen = Instant::now();
                 }
             }
             ServiceEvent::ServiceRemoved(_, fullname) => {
@@ -469,8 +474,7 @@ impl Connect {
     async fn probe_loop(&self) {
         loop {
             let jobs: Vec<(String, SocketAddrV4, bool)> = {
-                let mut s = self.lock();
-                s.nearby.retain(|_, n| n.seen.elapsed() < NEARBY_TTL);
+                let s = self.lock();
                 let mut jobs = Vec::new();
                 for p in &s.store.data.peers {
                     let mut seen = BTreeSet::new();
@@ -520,7 +524,15 @@ impl Connect {
         let remote_key = est.remote_static.clone();
         let hash = est.hash.clone();
         let (mut tx, mut rx) = est.channel.split();
-        let Ok(Ok(Msg::Hello { id, name, os, version, intent, macs })) = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await else { return };
+        let hello = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await;
+        let Ok(Ok(Msg::Hello { id, name, os, version, intent, macs })) = hello else {
+            // Something spoke after the handshake but not our protocol: most likely
+            // another version. Say so, in case the other side can read it.
+            if matches!(hello, Ok(Err(wire::WireError::Protocol(_)))) {
+                let _ = tx.send(&Msg::Refuse { code: "version".into() }).await;
+            }
+            return;
+        };
         if version != VERSION {
             let _ = tx.send(&Msg::Refuse { code: "version".into() }).await;
             return;
@@ -675,12 +687,12 @@ impl Connect {
 
     async fn pair_initiate(&self, me: Me, expected: Option<String>, targets: Vec<SocketAddrV4>, manual: bool) -> Result<(), String> {
         let (stream, used) = connect_any(&targets).await.map_err(|f| f.code().to_string())?;
-        let est = tokio::time::timeout(HANDSHAKE_TIMEOUT, wire::initiate(stream, &me.key)).await.map_err(|_| "connect_timeout".to_string())?.map_err(|_| "handshake_failed".to_string())?;
+        let est = tokio::time::timeout(HANDSHAKE_TIMEOUT, wire::initiate(stream, &me.key)).await.map_err(|_| "no_reply".to_string())?.map_err(|_| "handshake_failed".to_string())?;
         let remote_key = est.remote_static.clone();
         let hash = est.hash.clone();
         let (mut tx, mut rx) = est.channel.split();
         tx.send(&Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent: Intent::Pair, macs: vec![] }).await.map_err(|_| "connection_lost".to_string())?;
-        let reply = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await.map_err(|_| "connect_timeout".to_string())?.map_err(|_| "connection_lost".to_string())?;
+        let reply = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await.map_err(|_| "no_reply".to_string())?.map_err(|_| "connection_lost".to_string())?;
         let (id, name, os) = match reply {
             Msg::Hello { id, name, os, version, .. } if version == VERSION => (id, name, os),
             Msg::Hello { .. } => return Err("version".into()),
@@ -692,7 +704,7 @@ impl Connect {
         }
         let code = tokio::time::timeout(HANDSHAKE_TIMEOUT, wire::code_as_initiator(&mut tx, &mut rx, &hash))
             .await
-            .map_err(|_| "connect_timeout".to_string())?
+            .map_err(|_| "no_reply".to_string())?
             .map_err(|_| "handshake_failed".to_string())?;
         let (decide_tx, decide_rx) = mpsc::unbounded_channel();
         {
@@ -967,14 +979,14 @@ impl Connect {
     async fn link_initiate(&self, me: Me, id: &str, name: &str, targets: Vec<SocketAddrV4>) -> Result<(), String> {
         let expected_key = self.lock().store.peer(id).map(|p| p.public_key.clone()).ok_or("peer_not_found")?;
         let (stream, used) = connect_any(&targets).await.map_err(|f| f.code().to_string())?;
-        let est = tokio::time::timeout(HANDSHAKE_TIMEOUT, wire::initiate(stream, &me.key)).await.map_err(|_| "connect_timeout".to_string())?.map_err(|_| "handshake_failed".to_string())?;
+        let est = tokio::time::timeout(HANDSHAKE_TIMEOUT, wire::initiate(stream, &me.key)).await.map_err(|_| "no_reply".to_string())?.map_err(|_| "handshake_failed".to_string())?;
         if hex(&est.remote_static) != expected_key {
             return Err("key_changed".into());
         }
         let (mut tx, mut rx) = est.channel.split();
         let macs = self.my_macs();
         tx.send(&Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent: Intent::Link, macs }).await.map_err(|_| "connection_lost".to_string())?;
-        match tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await.map_err(|_| "connect_timeout".to_string())?.map_err(|_| "connection_lost".to_string())? {
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await.map_err(|_| "no_reply".to_string())?.map_err(|_| "connection_lost".to_string())? {
             Msg::Hello { id: remote_id, version, macs, .. } if remote_id == id && version == VERSION => self.remember_macs(id, macs),
             Msg::Refuse { code } => return Err(format!("refused_{code}")),
             _ => return Err("handshake_failed".into()),
@@ -1104,10 +1116,16 @@ fn targets_for(s: &State, id: &str, peer: &Peer) -> Vec<SocketAddrV4> {
     targets.into_iter().map(|(_, a)| a).collect()
 }
 
-/// A paired machine that is on the network right now: announced over mDNS or
-/// answering on one of its paths.
+/// A paired machine that is on the network right now: it answered on one of
+/// its paths, or, before any path has been tried, announced itself over mDNS.
+/// A machine is dropped from `nearby` only when mDNS says it left: announcements
+/// are not repeated often, so "not heard lately" proves nothing, while a path
+/// that stops answering does.
 fn is_online(s: &State, id: &str) -> bool {
-    s.nearby.contains_key(id) || s.paths.get(id).is_some_and(|v| v.iter().any(|p| p.result.is_ok()))
+    match s.paths.get(id) {
+        Some(v) if !v.is_empty() => v.iter().any(|p| p.result.is_ok()),
+        _ => s.nearby.contains_key(id),
+    }
 }
 
 fn build_view(s: &State) -> View {
@@ -1125,7 +1143,7 @@ fn build_view(s: &State) -> View {
         .nearby
         .iter()
         .filter(|(id, _)| !paired(id))
-        .map(|(id, n)| NearbyView { id: id.clone(), addrs: n.addrs.iter().map(|a| a.to_string()).collect() })
+        .map(|(id, n)| NearbyView { id: id.clone(), addrs: n.addrs.iter().map(|a| a.to_string()).collect(), version_mismatch: n.version.is_some_and(|v| v != VERSION) })
         .collect();
     nearby.sort_by(|a, b| a.id.cmp(&b.id));
     let peers = s
@@ -1155,8 +1173,8 @@ fn build_view(s: &State) -> View {
                 .unwrap_or_default();
             // Reachable first, fastest first.
             paths.sort_by(|a, b| a.rtt_ms.unwrap_or(f64::MAX).total_cmp(&b.rtt_ms.unwrap_or(f64::MAX)));
-            let online = s.nearby.contains_key(&p.id) || paths.iter().any(|x| x.rtt_ms.is_some());
-            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty() }
+            let online = is_online(s, &p.id);
+            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
         })
         .collect();
     View {
@@ -1181,5 +1199,61 @@ fn build_view(s: &State) -> View {
         link_error: s.link_error.as_ref().map(|(peer_id, code)| LinkErrorView { peer_id: peer_id.clone(), code: code.clone() }),
         wake: s.wake.as_ref().map(|w| WakeView { peer_id: w.peer_id.clone(), stage: w.stage, sent: w.sent, since: w.since }),
         transfers: s.transfers.iter().map(transfer::view).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state() -> State {
+        State {
+            store: Store::load(std::env::temp_dir().join(format!("portway-runtime-{}.json", std::process::id()))),
+            name: String::new(),
+            cards: Vec::new(),
+            run: None,
+            error: None,
+            nearby: HashMap::new(),
+            paths: HashMap::new(),
+            pairing: None,
+            link: None,
+            link_error: None,
+            last_pair_request: None,
+            wake: None,
+            transfers: Vec::new(),
+            next_token: 1,
+        }
+    }
+
+    fn path(ok: bool) -> PathInfo {
+        PathInfo { addr: "10.0.0.2:47615".parse().unwrap(), manual: false, result: if ok { Ok(Duration::from_millis(1)) } else { Err(Fail::Timeout) } }
+    }
+
+    fn announced(s: &mut State, id: &str) {
+        s.nearby.insert(id.to_string(), Nearby { addrs: BTreeSet::new(), port: 47615, version: None });
+    }
+
+    #[test]
+    fn a_machine_stays_online_while_it_answers_however_long_ago_it_announced() {
+        let mut s = state();
+        announced(&mut s, "a");
+        s.paths.insert("a".into(), vec![path(true)]);
+        assert!(is_online(&s, "a"));
+    }
+
+    #[test]
+    fn announced_but_not_answering_is_not_online() {
+        let mut s = state();
+        announced(&mut s, "a");
+        s.paths.insert("a".into(), vec![path(false)]);
+        assert!(!is_online(&s, "a"));
+    }
+
+    #[test]
+    fn before_any_path_is_tried_the_announcement_counts() {
+        let mut s = state();
+        assert!(!is_online(&s, "a"));
+        announced(&mut s, "a");
+        assert!(is_online(&s, "a"));
     }
 }

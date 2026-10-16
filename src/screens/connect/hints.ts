@@ -40,6 +40,14 @@ export function hintFor(code: string, peerOs: string | null): Hint {
               t('Nếu vẫn lỗi, kiểm tra hai máy cùng một mạng.'),
             ],
           }
+    case 'no_reply':
+      return {
+        title: t('Máy kia nhận kết nối nhưng không trả lời'),
+        steps: [
+          t('Thường là máy kia chạy một bản Portway khác phiên bản. Cập nhật Portway ở cả hai máy.'),
+          t('Hoặc một chương trình khác đang dùng cổng này trên máy kia.'),
+        ],
+      }
     case 'connect_refused':
       return {
         title: t('Máy kia không nhận kết nối'),

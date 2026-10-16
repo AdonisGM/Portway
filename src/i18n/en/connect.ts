@@ -136,6 +136,11 @@ const en: Dict = {
   'Máy kia cần nối cáp mạng vào cùng mạng với máy này.': 'The other machine needs its network cable plugged into the same network as this Mac.',
   // Sending files
   'Gửi tệp…': 'Send files…',
+  'Khác phiên bản Portway': 'Different Portway version',
+  'Cập nhật Portway ở cả hai máy': 'Update Portway on both machines',
+  'Máy kia nhận kết nối nhưng không trả lời': 'The other machine accepts the connection but does not answer',
+  'Thường là máy kia chạy một bản Portway khác phiên bản. Cập nhật Portway ở cả hai máy.': 'Usually the other machine runs a different Portway version. Update Portway on both machines.',
+  'Hoặc một chương trình khác đang dùng cổng này trên máy kia.': 'Or another program is using this port on the other machine.',
   'Không gửi được tệp': "Couldn't send the files",
   'Truyền tệp': 'File transfers',
   'Xoá những việc đã xong': 'Clear finished',

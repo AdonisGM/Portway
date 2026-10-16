@@ -513,13 +513,13 @@ impl Connect {
             r = connect_any(&targets) => r.map_err(|f| f.code().to_string())?,
             _ = cancel.notified() => return Err("canceled".into()),
         };
-        let est = tokio::time::timeout(HANDSHAKE_TIMEOUT, wire::initiate(stream, &me.key)).await.map_err(|_| "connect_timeout".to_string())?.map_err(|_| "handshake_failed".to_string())?;
+        let est = tokio::time::timeout(HANDSHAKE_TIMEOUT, wire::initiate(stream, &me.key)).await.map_err(|_| "no_reply".to_string())?.map_err(|_| "handshake_failed".to_string())?;
         if hex(&est.remote_static) != peer.public_key {
             return Err("key_changed".into());
         }
         let (mut tx, mut rx) = est.channel.split();
         tx.send(&Msg::Hello { id: me.id.clone(), name: me.name.clone(), os: std::env::consts::OS.into(), version: VERSION, intent: Intent::Send, macs: vec![] }).await.map_err(|_| "connection_lost".to_string())?;
-        match tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await.map_err(|_| "connect_timeout".to_string())?.map_err(|_| "connection_lost".to_string())? {
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await.map_err(|_| "no_reply".to_string())?.map_err(|_| "connection_lost".to_string())? {
             Msg::Hello { id, version, .. } if id == peer.id && version == VERSION => {}
             Msg::Refuse { code } => return Err(format!("refused_{code}")),
             _ => return Err("handshake_failed".into()),

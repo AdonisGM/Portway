@@ -152,8 +152,8 @@ export function ConnectScreen() {
                   </span>
                   <span className="num truncate text-[11.5px] text-muted">{n.addrs.join(' · ') || '…'}</span>
                 </span>
-                <span />
-                <Button size="sm" variant="primary" disabled={!!view.pairing && view.pairing.outcome === null} onClick={() => void pair(n.id, null)}>
+                {n.versionMismatch ? <Chip tone={TONES.warn}>{t('Khác phiên bản Portway')}</Chip> : <span />}
+                <Button size="sm" variant="primary" disabled={n.versionMismatch || (!!view.pairing && view.pairing.outcome === null)} title={n.versionMismatch ? t('Cập nhật Portway ở cả hai máy') : undefined} onClick={() => void pair(n.id, null)}>
                   {t('Ghép đôi')}
                 </Button>
               </div>
@@ -230,7 +230,9 @@ function PeerRow({
   const otherBusy = !!link && !mine
   const error = linkError?.peerId === peer.id ? hintFor(linkError.code, peer.os) : null
 
-  const status = waking?.stage === 'waiting'
+  const status = peer.versionMismatch
+    ? { tone: TONES.warn, text: t('Khác phiên bản Portway') }
+    : waking?.stage === 'waiting'
     ? { tone: TONES.info, text: t('Đang đợi máy lên…') }
     : waking?.stage === 'up'
       ? { tone: TONES.success, text: t('Máy đã lên') }
@@ -254,7 +256,7 @@ function PeerRow({
         </span>
         <Chip tone={status.tone}>{status.text}</Chip>
         <span className="flex items-center gap-1.5">
-          {peer.online && (
+          {peer.online && !peer.versionMismatch && (
             <Button size="sm" onClick={() => void pickAndSend(peer.id, onError(t('Không gửi được tệp')))}>
               {t('Gửi tệp…')}
             </Button>
@@ -269,7 +271,7 @@ function PeerRow({
               {mine.stage === 'up' ? t('Ngắt') : t('Huỷ')}
             </Button>
           ) : (
-            <Button size="sm" variant="primary" disabled={otherBusy || !!pairing} onClick={() => void api.connectLink(peer.id).catch(onError(t('Không kết nối được')))}>
+            <Button size="sm" variant="primary" disabled={otherBusy || !!pairing || peer.versionMismatch} onClick={() => void api.connectLink(peer.id).catch(onError(t('Không kết nối được')))}>
               {t('Kết nối')}
             </Button>
           )}

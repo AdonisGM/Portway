@@ -11,8 +11,23 @@ const LIMIT: usize = if cfg!(windows) { 1200 } else { usize::MAX };
 /// Starts the main entry of a split value; no real secret starts with U+0001.
 const MARK: &str = "\u{1}portway-parts:";
 
+/// A second copy of the app run side by side (`PORTWAY_PROFILE=b`, for trying
+/// Connect between two instances on one computer) keeps its secrets apart.
+static PROFILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub fn set_profile(profile: &str) {
+    let _ = PROFILE.set(profile.to_string());
+}
+
+fn account_name(account: &str) -> String {
+    match PROFILE.get() {
+        Some(p) => format!("{account}@{p}"),
+        None => account.to_string(),
+    }
+}
+
 fn entry(account: &str) -> Option<keyring::Entry> {
-    keyring::Entry::new(SERVICE, account).ok()
+    keyring::Entry::new(SERVICE, &account_name(account)).ok()
 }
 
 fn part_account(account: &str, i: usize) -> String {
@@ -48,7 +63,7 @@ pub fn get(account: &str) -> Option<String> {
 /// or failed" (`Err`): a locked Keychain or a denied prompt must not look like
 /// a secret that was never saved. Only for a value that is split over no parts.
 pub fn get_checked(account: &str) -> AppResult<Option<String>> {
-    let entry = keyring::Entry::new(SERVICE, account).map_err(|e| AppError::detail("keychain", e))?;
+    let entry = keyring::Entry::new(SERVICE, &account_name(account)).map_err(|e| AppError::detail("keychain", e))?;
     match entry.get_password() {
         Ok(v) => Ok(Some(v)),
         Err(keyring::Error::NoEntry) => Ok(None),

@@ -96,6 +96,10 @@ mod macos {
 pub fn run() {
     #[cfg(windows)]
     askpass::run_if_requested();
+    let profile = std::env::var("PORTWAY_PROFILE").ok().map(|p| p.trim().to_string()).filter(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    if let Some(p) = &profile {
+        secrets::set_profile(p);
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -216,8 +220,12 @@ pub fn run() {
             servers::servers_export,
             servers::servers_import_file,
         ])
-        .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
+        .setup(move |app| {
+            let mut data_dir = app.path().app_data_dir()?;
+            if let Some(p) = &profile {
+                // Own files, own secrets: a second copy never touches the first one's data.
+                data_dir = data_dir.join("profiles").join(p);
+            }
             let store = servers::ServerStore::load(data_dir.join("servers.json"))
                 .map_err(|e| format!("cannot load servers.json: {} {}", e.code, e.detail.unwrap_or_default()))?;
             app.manage(store);
@@ -241,6 +249,9 @@ pub fn run() {
 
             // Hidden from the first frame; the splash shows them again when it fades.
             if let Some(window) = app.get_webview_window("main") {
+                if let Some(p) = &profile {
+                    let _ = window.set_title(&format!("Portway [{p}]"));
+                }
                 #[cfg(target_os = "macos")]
                 macos::set_window_controls_visible(&window, false);
                 #[cfg(not(target_os = "macos"))]

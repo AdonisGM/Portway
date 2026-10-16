@@ -25,6 +25,7 @@ Kết nối, duyệt tệp, truyền dữ liệu, mở tunnel và quản trị d
 - [Phát triển](#phát-triển)
 - [Server thử nghiệm](#server-thử-nghiệm)
 - [Đóng gói](#đóng-gói)
+- [Ghi chú khi làm Portway Connect](#ghi-chú-khi-làm-portway-connect)
 - [Quy ước của dự án](#quy-ước-của-dự-án)
 - [Cấu trúc thư mục](#cấu-trúc-thư-mục)
 - [Công nghệ sử dụng](#công-nghệ-sử-dụng)
@@ -204,6 +205,54 @@ cd src-tauri && cargo check --target x86_64-pc-windows-gnu --lib --tests
 
 Khi tải tệp từ server về Windows, những tên Linux cho phép nhưng Windows không cho (chứa `\ : * ? " < > |`, kết thúc bằng dấu chấm, hoặc trùng tên thiết bị như `CON`) được bỏ qua và tính vào số mục bị bỏ qua.
 
+## Ghi chú khi làm Portway Connect
+
+Portway Connect là ý tưởng cho hai bản Portway trong cùng LAN tự nhận ra nhau, ghép đôi rồi gửi tệp, đồng bộ clipboard và đánh thức nhau (WOL). Chưa có code Connect trong app. Các điều dưới đây rút ra từ bản thử `scripts/connect-probe` trên một Mac và một PC Windows nối cả cáp Ethernet lẫn Wi-Fi (16/10/2026).
+
+### Chạy probe
+
+Probe là một crate Rust riêng, vứt đi được, không nằm trong app. Chạy cùng một binary trên cả hai máy:
+
+```sh
+cd scripts/connect-probe
+cargo run --release -- [--peer <ip>] [--port <n>]
+```
+
+Nó in các card mạng (trên Windows kèm profile mạng Public/Private), mở một cổng TCP, quảng bá và dò mDNS rồi đo kết nối TCP tới từng địa chỉ của máy kia mỗi 4 giây. Không ghi gì ra đĩa.
+
+### Phát hiện và đường mạng
+
+- mDNS thấy nhau trong vài giây trên cả cáp lẫn Wi-Fi, không cần hộp thoại nào.
+- Một máy hiện với 6 đến 13 địa chỉ (IPv4 của từng card, cộng nhiều IPv6 link-local gắn scope lẫn lộn). Định danh máy bằng ID cố định, gom địa chỉ về một dòng, bản đầu chỉ dùng IPv4.
+- Cáp trễ 0,5 đến 1,1 ms, Wi-Fi 2,5 đến 4 ms, thỉnh thoảng một lần vọt lên hàng trăm ms. Đo nhiều lần rồi mới chọn đường.
+- Thấy nhau qua mDNS không có nghĩa là kết nối được. Phải thử kết nối TCP thật.
+
+### Windows
+
+- Windows xếp cả card cáp nối thẳng lẫn Wi-Fi vào mạng **Public**.
+- Lần đầu mở cổng có hộp thoại tường lửa, mặc định chỉ tích Private. Chỉ cho Private thì kết nối vào bị bỏ gói và **timeout** trên cả hai đường, trong khi mDNS vẫn thấy nhau.
+- Cách sửa (chỉ gợi ý, không tự làm): Allow cho cả Public, hoặc đổi card sang Private: `Set-NetConnectionProfile -InterfaceAlias "Ethernet" -NetworkCategory Private` (cần quyền quản trị).
+
+### macOS: quyền Mạng cục bộ (Local Network)
+
+- Kiểm tra ở Cài đặt hệ thống › Privacy & Security › Local Network. Mỗi app một công tắc, danh sách chỉ có app đã từng được hỏi.
+- Chưa có quyền thì kết nối tới máy khác trong LAN lỗi ngay `No route to host` (errno 65), không timeout. Lỗi này nằm ở máy gọi, không liên quan đến máy kia. mDNS của hệ thống (`dns-sd`) vẫn thấy máy kia.
+- **macOS nhận diện app bằng UUID của file chạy** (Mach-O `LC_UUID`), không phải bundle ID, tên file hay đường dẫn. Nhiều bản build từ cùng một binary có chung UUID, nên macOS chỉ hỏi một lần rồi chặn im lặng các bản còn lại, không có hộp thoại nào. Build với UUID khác (ví dụ `-C link-arg=-Wl,-random_uuid`) thì hộp thoại hiện lại. Kiểm tra bằng `dwarfdump --uuid <file chạy>`.
+- Các khoá `NSLocalNetworkUsageDescription` và `NSBonjourServices` không quyết định việc hộp thoại có hiện hay không. Vẫn nên khai để câu chữ trong hộp thoại có nghĩa.
+- `tccutil reset` không đặt lại được quyền này. Muốn thử lại phải đổi UUID.
+- Chưa kiểm chứng: UUID của Portway đổi theo từng bản build nên quyền có thể phải cấp lại sau cập nhật, nhất là với bản ký tạm. Apple khuyên ký bằng Developer ID. Cần thử bằng bản Portway thật, mở từ Finder.
+
+### Khi kết nối lỗi
+
+Portway chỉ chẩn đoán và gợi ý, không tự sửa tường lửa hay profile mạng.
+
+| Dấu hiệu | Có thể là | Gợi ý |
+|---|---|---|
+| Thấy qua mDNS, TCP timeout | Tường lửa máy kia chặn (thường là Windows, mạng Public) | Allow cho đúng loại mạng, hoặc đổi sang Private |
+| `No route to host` ngay trên Mac | Mac chưa cho Portway quyền Mạng cục bộ | Bật trong Privacy & Security › Local Network |
+| Connection refused | Máy kia chưa mở Portway hoặc Connect đang tắt | Mở Portway ở máy kia |
+| Không thấy qua mDNS | Khác mạng, chặn multicast, máy kia tắt | Nhập IP tay |
+
 ## Quy ước của dự án
 
 ### Version
@@ -247,6 +296,7 @@ portway/
 │   ├── capabilities/       # Quyền của webview
 │   └── tauri.conf.json
 ├── scripts/                # dev, build, bump version, kiểm tra i18n, server thử
+│   └── connect-probe/      # Probe LAN tạm cho Portway Connect (crate riêng)
 └── dev/test-servers/       # Dockerfile và cấu hình của server thử nghiệm
 ```
 

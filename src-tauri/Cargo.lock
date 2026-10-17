@@ -4224,7 +4224,7 @@ dependencies = [
 
 [[package]]
 name = "portway"
-version = "0.20.2"
+version = "0.20.3"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",

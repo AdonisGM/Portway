@@ -132,6 +132,19 @@ pub enum Msg {
     Info { info: MachineInfo },
     /// CPU and memory use right now, every few seconds while linked; not stored.
     Stats { stats: LiveStats },
+    /// What this machine does with clipboard text for the other one, sent when
+    /// a link comes up and whenever it changes: `receive` is "I write the text
+    /// you send into my clipboard", `send` is "I send mine to you as soon as I
+    /// copy". It lets the other side show the whole picture; it is not stored.
+    ClipPrefs { receive: bool, send: bool },
+    /// The answer to a `Clip`: `reason` is empty when the text was written
+    /// here, else why not (`off`: this machine does not take clipboard text
+    /// from that one; `too_large`; `failed`). Machines older than this never answer.
+    ClipAck {
+        ok: bool,
+        #[serde(default)]
+        reason: String,
+    },
     /// Speed test, step 1: the sender's bytes follow as data frames, then `SpeedEnd`.
     SpeedUp,
     /// Speed test, step 2: send data frames for this many milliseconds, then `SpeedEnd`.
@@ -510,6 +523,10 @@ mod tests {
         assert_eq!(m, Msg::Unknown);
         let c: Msg = serde_json::from_str(r#"{"t":"clip","text":"hi"}"#).unwrap();
         assert_eq!(c, Msg::Clip { text: "hi".into() });
+        let ack: Msg = serde_json::from_str(r#"{"t":"clipAck","ok":false,"reason":"off"}"#).unwrap();
+        assert_eq!(ack, Msg::ClipAck { ok: false, reason: "off".into() });
+        let bare: Msg = serde_json::from_str(r#"{"t":"clipAck","ok":true}"#).unwrap();
+        assert_eq!(bare, Msg::ClipAck { ok: true, reason: String::new() });
     }
 
     /// Protocol 3 (0.12.0) has no `Info`; it must read one, whole with its

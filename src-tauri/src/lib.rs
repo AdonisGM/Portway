@@ -1,6 +1,7 @@
 #[cfg(windows)]
 mod askpass;
 mod audit;
+mod background;
 mod connect;
 mod disks;
 mod docker;
@@ -100,7 +101,16 @@ pub fn run() {
     if let Some(p) = &profile {
         secrets::set_profile(p);
     }
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // One copy only: a second launch (a double click, or the login item while one
+    // is running) brings the first one to the front. Not for a test profile, which
+    // is meant to run next to the real one.
+    if profile.is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| background::show_main(app)));
+    }
+    builder
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![background::HIDDEN_FLAG])))
+        .on_window_event(|window, event| background::on_window_event(window, event))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -217,6 +227,8 @@ pub fn run() {
             nginx::nginx_action,
             nginx::nginx_action_preview,
             logtail::log_tail_stop,
+            background::background_state,
+            background::background_set_autostart,
             settings::settings_get,
             settings::settings_set,
             settings::app_data_path,
@@ -250,6 +262,11 @@ pub fn run() {
             app.manage(tunnels.clone());
             tunnels.start_auto();
 
+            app.manage(background::Background::default());
+            background::refresh(app.handle());
+            // Started by the login item: no window, only the tray (unless the tray is
+            // not there, when the app would be invisible).
+            let hidden = background::started_hidden() && app.tray_by_id("portway").is_some();
             // Hidden from the first frame; the splash shows them again when it fades.
             if let Some(window) = app.get_webview_window("main") {
                 if let Some(p) = &profile {
@@ -257,11 +274,21 @@ pub fn run() {
                 }
                 #[cfg(target_os = "macos")]
                 macos::set_window_controls_visible(&window, false);
-                #[cfg(not(target_os = "macos"))]
-                let _ = window;
+                if !hidden {
+                    let _ = window.show();
+                }
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // A click on the Dock icon while the window is hidden brings it back.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows: false, .. } = event {
+                background::show_main(app);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

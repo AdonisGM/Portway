@@ -77,6 +77,17 @@ export type Settings = {
   editor: string | null
   /** App per file extension ("docx" → path), learnt the first time a type is opened. */
   openWith: Record<string, string>
+  /** Keep running in the tray when the window is closed. */
+  background: boolean
+}
+
+/** Running without a window: what the OS says about starting at login, and the user's own choice. */
+export type BackgroundState = {
+  /** The OS starts Portway when the user logs in. */
+  autostart: boolean
+  background: boolean
+  /** False in a dev build. */
+  canAutostart: boolean
 }
 
 /** A server file open in an app on this Mac, uploaded again on each save. */
@@ -610,11 +621,21 @@ export type ConnectPeer = {
   speed: ConnectSpeed | null
   /** Its load now; null unless linked with it. */
   live: ConnectLive | null
+  /** What it does with clipboard text for this machine (it takes what is sent / it sends as soon as it copies); null unless linked with a machine new enough to say. */
+  remoteClip: { receive: boolean; send: boolean } | null
 }
 /** A machine as the other side of a link sees it. */
 export type ConnectGpu = { name: string; /** Bytes; 0 when shared with the system or unknown. */ vram: number; cores: number | null }
 /** CPU and memory use right now. */
-export type ConnectLive = { /** 0 to 100 */ cpu: number; /** Bytes */ ramUsed: number }
+export type ConnectLive = {
+  /** 0 to 100 */
+  cpu: number
+  /** Bytes */
+  ramUsed: number
+  /** Bytes per second over all network interfaces. */
+  netRx: number
+  netTx: number
+}
 export type ConnectMachine = {
   /** "Mac mini (Mac14,12)"; empty when unknown. */
   model: string
@@ -685,7 +706,8 @@ export type ConnectTransfer = {
   since: number
 }
 /** The last text sent or received over a link, without its content. */
-export type ConnectClipNote = { peerId: string; direction: 'in' | 'out'; chars: number; at: number }
+/** For "out": "sent" until the other machine answers, then "delivered" or why it was not taken ("off", "too_large", "failed"). */
+export type ConnectClipNote = { peerId: string; direction: 'in' | 'out'; chars: number; at: number; status: string }
 export type ConnectView = {
   enabled: boolean
   device: { id: string; name: string; os: string; version: string; port: number | null; fingerprint: string } | null
@@ -719,6 +741,8 @@ type Api = {
   importServersFile(path: string): Promise<ImportReport>
   settings(): Promise<Settings>
   setSettings(settings: Settings): Promise<Settings>
+  backgroundState(): Promise<BackgroundState>
+  backgroundSetAutostart(on: boolean): Promise<BackgroundState>
   appDataPath(): Promise<string>
   listKeys(): Promise<SshKey[]>
   publicKey(path: string): Promise<string>
@@ -858,6 +882,8 @@ const tauriApi: Api = {
   importServersFile: (path) => invoke('servers_import_file', { path }),
   settings: () => invoke('settings_get'),
   setSettings: (settings) => invoke('settings_set', { settings }),
+  backgroundState: () => invoke('background_state'),
+  backgroundSetAutostart: (on) => invoke('background_set_autostart', { on }),
   appDataPath: () => invoke('app_data_path'),
   listKeys: () => invoke('ssh_keys_list'),
   publicKey: (path) => invoke('ssh_key_public', { path }),
@@ -1026,11 +1052,13 @@ function browserApi(): Api {
     exportServers: async () => fail('needs_app'),
     importServersFile: async () => fail('needs_app'),
     async settings() {
-      return { language: 'vi', downloadDir: null, askDownload: null, theme: 'dark', editor: null, openWith: {} }
+      return { language: 'vi', downloadDir: null, askDownload: null, theme: 'dark', editor: null, openWith: {}, background: false }
     },
     async setSettings(s) {
       return s
     },
+    backgroundState: async () => ({ autostart: false, background: false, canAutostart: false }),
+    backgroundSetAutostart: async () => fail('needs_app'),
     appDataPath: async () => fail('needs_app'),
     async listKeys() {
       return [...keys]

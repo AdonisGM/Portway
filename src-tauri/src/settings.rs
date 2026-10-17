@@ -47,6 +47,8 @@ pub struct Settings {
     /// this Mac. Learnt the first time a type is opened (the system's app for
     /// it, or the one picked with "Mở bằng app khác…"); changed in Cài đặt.
     pub open_with: BTreeMap<String, String>,
+    /// Keep running in the tray when the window is closed (see `background`).
+    pub background: bool,
 }
 
 /// A key of `open_with`: a lowercase extension without the dot.
@@ -133,6 +135,8 @@ pub fn settings_set(app: AppHandle, store: tauri::State<'_, SettingsStore>, sett
     }
     let saved = store.save(next)?;
     let _ = app.emit("settings", saved.clone());
+    // The tray follows this setting, and its menu the language.
+    crate::background::refresh(&app);
     Ok(saved)
 }
 

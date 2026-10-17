@@ -4,7 +4,7 @@
 //! trusted; never announced over mDNS and never written to the audit log.
 
 use serde::{Deserialize, Serialize};
-use sysinfo::{Disks, System};
+use sysinfo::{Disks, Networks, System};
 
 use super::net::Card;
 
@@ -34,12 +34,21 @@ pub struct GpuInfo {
 
 /// What changes by the second: sent as `Stats`, never stored.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct LiveStats {
     /// Percent of all cores, 0 to 100.
     pub cpu: f32,
     /// Bytes of memory in use.
     pub ram_used: u64,
+    /// Bytes per second received and sent over all the network interfaces.
+    pub net_rx: u64,
+    pub net_tx: u64,
+}
+
+impl Default for LiveStats {
+    fn default() -> Self {
+        Self { cpu: 0.0, ram_used: 0, net_rx: 0, net_tx: 0 }
+    }
 }
 
 /// Read once per run: they do not change, and reading them runs a program (macOS)
@@ -114,20 +123,36 @@ pub fn collect(cards: &[Card], statics: &Statics) -> MachineInfo {
 
 /// CPU and memory use. Keep one `System` for the whole run: the CPU figure is
 /// the change since the previous call, so a fresh one always says 0.
-pub struct Sampler(System);
+pub struct Sampler {
+    sys: System,
+    nets: Networks,
+    at: std::time::Instant,
+}
 
 impl Sampler {
     pub fn new() -> Self {
         let mut sys = System::new();
         sys.refresh_cpu_usage();
         sys.refresh_memory();
-        Self(sys)
+        Self { sys, nets: Networks::new_with_refreshed_list(), at: std::time::Instant::now() }
     }
 
     pub fn sample(&mut self) -> LiveStats {
-        self.0.refresh_cpu_usage();
-        self.0.refresh_memory();
-        LiveStats { cpu: self.0.global_cpu_usage().clamp(0.0, 100.0), ram_used: self.0.used_memory() }
+        self.sys.refresh_cpu_usage();
+        self.sys.refresh_memory();
+        // `received()` is what arrived since the last refresh, so it divides by the time since.
+        self.nets.refresh(true);
+        let secs = self.at.elapsed().as_secs_f64().max(0.1);
+        self.at = std::time::Instant::now();
+        let (mut rx, mut tx) = (0u64, 0u64);
+        for (name, data) in self.nets.iter() {
+            if name.starts_with("lo") {
+                continue;
+            }
+            rx += data.received();
+            tx += data.transmitted();
+        }
+        LiveStats { cpu: self.sys.global_cpu_usage().clamp(0.0, 100.0), ram_used: self.sys.used_memory(), net_rx: (rx as f64 / secs) as u64, net_tx: (tx as f64 / secs) as u64 }
     }
 }
 

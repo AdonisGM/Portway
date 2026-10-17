@@ -100,6 +100,8 @@ pub struct PeerView {
     pub speed: Option<SpeedView>,
     /// Its CPU and memory use now; only while linked with it.
     pub live: Option<LiveStats>,
+    /// What it does with clipboard text for this machine; only while linked with it.
+    pub remote_clip: Option<ClipPrefs>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -260,6 +262,8 @@ struct State {
     stats: Option<LiveStats>,
     /// What the linked machine last said about its load, in memory only.
     peer_stats: Option<(String, LiveStats)>,
+    /// What the linked machine does with clipboard text for this one, in memory only.
+    peer_clip: Option<(String, ClipPrefs)>,
     /// Speed tests, the last one per machine.
     speeds: HashMap<String, SpeedState>,
     /// A machine is measuring the speed to this one right now.
@@ -299,7 +303,7 @@ mod clip;
 mod speed;
 mod transfer;
 use super::sys_clip;
-use clip::{ClipNote, ClipState};
+use clip::{ClipNote, ClipPrefs, ClipState};
 use speed::{SpeedState, SpeedView};
 use transfer::{Transfer, TransferView};
 
@@ -327,6 +331,7 @@ impl Connect {
             statics: None,
             stats: None,
             peer_stats: None,
+            peer_clip: None,
             speeds: HashMap::new(),
             speed_serving: false,
             next_token: 1,
@@ -1186,13 +1191,24 @@ impl Connect {
                 return;
             }
         }
+        if let Some(prefs) = self.my_clip_prefs(&peer_id) {
+            if tx.send(&prefs).await.is_err() {
+                self.end_link(token);
+                return;
+            }
+        }
         let mut tick = tokio::time::interval(PING_EVERY);
         let mut sent: HashMap<u64, Instant> = HashMap::new();
         let mut seq = 0u64;
         loop {
             tokio::select! {
                 m = msgs.recv() => match m {
-                    Some(Msg::Clip { text }) => self.on_clip(&peer_id, text),
+                    Some(Msg::Clip { text }) => {
+                        let reason = self.on_clip(&peer_id, text);
+                        if tx.send(&Msg::ClipAck { ok: reason.is_empty(), reason: reason.into() }).await.is_err() { break; }
+                    }
+                    Some(Msg::ClipPrefs { receive, send }) => self.on_clip_prefs(&peer_id, receive, send),
+                    Some(Msg::ClipAck { ok, reason }) => self.on_clip_ack(&peer_id, ok, reason),
                     Some(Msg::Info { info }) => self.on_info(&peer_id, info),
                     Some(Msg::Stats { stats }) => self.on_stats(&peer_id, stats),
                     // From a newer Portway: nothing to do with it, and no reason to drop the link.
@@ -1262,6 +1278,7 @@ impl Connect {
             if s.link.as_ref().is_some_and(|l| l.token == token) {
                 s.link = None;
                 s.peer_stats = None;
+                s.peer_clip = None;
             }
         }
         self.publish();
@@ -1366,7 +1383,7 @@ fn build_view(s: &State) -> View {
             // Reachable first, fastest first.
             paths.sort_by(|a, b| a.rtt_ms.unwrap_or(f64::MAX).total_cmp(&b.rtt_ms.unwrap_or(f64::MAX)));
             let online = is_online(s, &p.id);
-            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), live: s.peer_stats.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
+            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), live: s.peer_stats.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), remote_clip: s.peer_clip.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
         })
         .collect();
     View {
@@ -1421,6 +1438,7 @@ mod tests {
             statics: None,
             stats: None,
             peer_stats: None,
+            peer_clip: None,
             speeds: HashMap::new(),
             speed_serving: false,
             next_token: 1,

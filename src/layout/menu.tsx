@@ -12,6 +12,7 @@ import {
   Globe,
   Info,
   Palette,
+  Power,
   FolderSync,
   KeyRound,
   Languages,
@@ -101,6 +102,7 @@ function TransferMenu() {
 export const settingsSections = () =>
   [
     { id: 'language', label: t('Ngôn ngữ'), icon: Languages },
+    { id: 'startup', label: t('Khởi động#section'), icon: Power },
     { id: 'download', label: t('Tải xuống#section'), icon: Download },
     { id: 'editor', label: t('Sửa tệp#section'), icon: FilePen },
     { id: 'appearance', label: t('Giao diện'), icon: Palette },

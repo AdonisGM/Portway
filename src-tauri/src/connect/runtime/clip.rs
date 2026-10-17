@@ -39,6 +39,18 @@ pub struct ClipNote {
     pub direction: &'static str,
     pub chars: usize,
     pub at: u64,
+    /// For "out": "sent" until the other machine answers, then "delivered" or
+    /// why it was not taken ("off", "too_large", "failed"). Machines older than
+    /// the answer stay at "sent". For "in" always "delivered".
+    pub status: String,
+}
+
+/// What the linked machine does with clipboard text for this one.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipPrefs {
+    pub receive: bool,
+    pub send: bool,
 }
 
 pub struct ClipState {
@@ -61,6 +73,10 @@ impl Connect {
             peer.clip_receive = receive;
             peer.clip_send = send;
             s.store.save()?;
+        }
+        // The other side shows these, so tell it at once if it is listening.
+        if let Some(outbox) = self.link_outbox(id) {
+            let _ = outbox.send(Msg::ClipPrefs { receive, send });
         }
         self.publish();
         Ok(())
@@ -85,15 +101,16 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip.last = Some(hash_of(&text));
-            s.clip.note = Some(ClipNote { peer_id: id.to_string(), direction: "out", chars, at: now_ms() });
+            s.clip.note = Some(ClipNote { peer_id: id.to_string(), direction: "out", chars, at: now_ms(), status: "sent".into() });
         }
         let _ = outbox.send(Msg::Clip { text });
         self.audit("clipSend", &name, true, Some(format!("{chars} chars")));
         self.publish();
     }
 
-    /// Text arrived from the machine linked with.
-    pub(super) fn on_clip(&self, peer_id: &str, text: String) {
+    /// Text arrived from the machine linked with. Gives back why it was not
+    /// written here, or "" when it was, to tell the sender.
+    pub(super) fn on_clip(&self, peer_id: &str, text: String) -> &'static str {
         let (allowed, name) = {
             let s = self.lock();
             match s.store.peer(peer_id) {
@@ -101,23 +118,50 @@ impl Connect {
                 None => (false, String::new()),
             }
         };
-        if !allowed || check_text(&text).is_err() {
-            return;
+        if !allowed {
+            return "off";
+        }
+        if check_text(&text).is_err() {
+            return "too_large";
         }
         let h = hash_of(&text);
         if self.lock().clip.last == Some(h) {
-            return;
+            return "";
         }
         let chars = text.chars().count();
         if self.inner.app.clipboard().write_text(text).is_err() {
-            return;
+            return "failed";
         }
         {
             let mut s = self.lock();
             s.clip.last = Some(h);
-            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars, at: now_ms() });
+            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars, at: now_ms(), status: "delivered".into() });
         }
         self.audit("clipReceive", &name, true, Some(format!("{chars} chars")));
+        self.publish();
+        ""
+    }
+
+    /// What the linked machine does with clipboard text for this one.
+    pub(super) fn on_clip_prefs(&self, peer_id: &str, receive: bool, send: bool) {
+        self.lock().peer_clip = Some((peer_id.to_string(), ClipPrefs { receive, send }));
+        self.publish();
+    }
+
+    /// What this machine does with clipboard text for that one.
+    pub(super) fn my_clip_prefs(&self, peer_id: &str) -> Option<Msg> {
+        self.lock().store.peer(peer_id).map(|p| Msg::ClipPrefs { receive: p.clip_receive, send: p.clip_send })
+    }
+
+    /// The other machine's answer to the text just sent.
+    pub(super) fn on_clip_ack(&self, peer_id: &str, ok: bool, reason: String) {
+        {
+            let mut s = self.lock();
+            match s.clip.note.as_mut() {
+                Some(n) if n.direction == "out" && n.peer_id == peer_id => n.status = if ok { "delivered".into() } else if reason.is_empty() { "failed".into() } else { reason },
+                _ => return,
+            }
+        }
         self.publish();
     }
 

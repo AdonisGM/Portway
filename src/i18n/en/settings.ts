@@ -63,6 +63,17 @@ const en: Dict = {
   'Bỏ': 'Remove',
   'Lần sau mở tệp .{ext}, Portway lại dùng app mặc định của máy': 'Next time a .{ext} file is opened, Portway uses this Mac’s default app again',
   '{ext} không phải đuôi tệp hợp lệ': '{ext} is not a valid file extension',
+  'Chỉ dùng được với bản đã cài, không dùng được ở bản dev': 'Only available in an installed build, not in a dev build',
+  'Không bật được việc mở cùng máy: hệ điều hành không ghi nhận. Thử lại, hoặc kiểm tra quyền của Portway.': "Couldn't turn on starting at login: the system didn't register it. Try again, or check Portway's permissions.",
+  'Mở Portway khi đăng nhập': 'Open Portway at login',
+  'Portway mở ẩn ở khay hệ thống, không hiện cửa sổ. Connect chỉ trả lời các máy khác khi Portway đang chạy.': 'Portway starts hidden in the tray, without a window. Connect answers other machines only while Portway is running.',
+  'Không đổi được việc mở cùng máy': "Couldn't change starting at login",
+  'Giữ chạy nền khi đóng cửa sổ': 'Keep running when the window is closed',
+  'Đang bật vì Portway mở cùng máy.': 'On because Portway starts at login.',
+  'Đóng cửa sổ chỉ ẩn nó. Portway vẫn chạy ở khay hệ thống; thoát bằng chuột phải vào biểu tượng rồi chọn Thoát Portway.': 'Closing the window only hides it. Portway keeps running in the tray; quit by right-clicking its icon and choosing Quit Portway.',
+  'Đóng cửa sổ chỉ ẩn nó. Portway vẫn chạy ở thanh menu; thoát bằng Thoát Portway ở biểu tượng đó hoặc Cmd+Q.': 'Closing the window only hides it. Portway keeps running in the menu bar; quit with Quit Portway from its icon, or Cmd+Q.',
+  'Windows mở Portway khi bạn đăng nhập, không phải khi máy vừa bật. Sau khi đánh thức bằng Wake-on-LAN, máy dừng ở màn hình đăng nhập nên Portway chưa trả lời cho tới khi có người đăng nhập, trừ khi bật tự đăng nhập Windows.': 'Windows opens Portway when you sign in, not when the PC starts. After a Wake-on-LAN wake the PC waits at the sign-in screen, so Portway does not answer until someone signs in, unless Windows automatic sign-in is on.',
+  'Khởi động#section': 'Startup',
 }
 
 export default en

@@ -1,17 +1,18 @@
-import { ArrowLeft, ArrowRight, ClipboardCopy, FolderUp, Gauge, Power, Send, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Cpu, FolderUp, Gauge, MemoryStick, Microchip, Network as NetworkIcon, Power, Send, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
-import { useConnect } from '../../app/connect'
+import { useConnect, useConnectHistory, type Sample } from '../../app/connect'
 import { useNav } from '../../app/nav'
 import { useToast } from '../../components/toast'
 import { ConfirmModal } from '../../components/ui/modal'
 import { Button, Chip, TONES } from '../../components/ui/primitives'
 import { RowMenu } from '../../components/ui/row-menu'
 import { t } from '../../i18n'
-import { api, type ConnectLive, type ConnectMachine, type ConnectPeer, type ConnectSpeed } from '../../lib/api'
+import { api, type ConnectMachine, type ConnectPeer, type ConnectSpeed } from '../../lib/api'
 import { formatBytes, formatUptime } from '../server/format'
 import { commandError, hintFor, speedError } from './hints'
 import { HintSteps } from './pairing-dialog'
 import { AddAddressDialog, ipOf, OsIcon, PathLine, Switch, WakeTimeout, ms, osLabel } from './shared'
+import { LiveChart, niceMax } from './charts'
 import { pickAndSend, TransfersSection } from './transfers'
 
 const FEATURE_SPEED = 'speed'
@@ -119,7 +120,12 @@ export function ConnectPeerScreen({ peerId }: { peerId: string }) {
         <Network peer={peer} />
       </div>
 
-      <Features peer={peer} linked={up} onError={fail} />
+      <Performance peer={peer} linked={up} />
+
+      <div className="grid items-start gap-3 min-[1000px]:grid-cols-2">
+        <ClipboardPanel peer={peer} linked={up} onError={fail} />
+        <Features peer={peer} onError={fail} />
+      </div>
 
       <TransfersSection peerId={peer.id} />
 
@@ -177,31 +183,13 @@ const gpuText = (m: ConnectMachine) =>
     ? m.gpus.map((g) => [g.name, g.vram > 0 ? formatBytes(g.vram) : null, g.cores ? t('{n} nhân GPU', { n: g.cores }) : null].filter(Boolean).join(' · ')).join(', ')
     : '—'
 
-/** A bar with its figure beside it, for what changes by the second. */
-function Meter({ pct, label }: { pct: number; label: string }) {
-  const hot = pct >= 85
-  return (
-    <span className="flex items-center gap-2">
-      <span className="h-1.5 w-16 flex-none overflow-hidden rounded-full bg-sunken">
-        <span className="block h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.max(2, Math.min(100, pct))}%`, background: hot ? 'var(--warn)' : 'var(--info)' }} />
-      </span>
-      <span className="num">{label}</span>
-    </span>
-  )
-}
-
-type SpecRowDef = { label: () => string; value: (m: ConnectMachine, live: ConnectLive | null) => React.ReactNode }
+type SpecRowDef = { label: () => string; value: (m: ConnectMachine) => string }
 
 const SPEC_ROWS: SpecRowDef[] = [
   { label: () => t('Hệ điều hành'), value: (m) => [m.osVersion, m.arch].filter(Boolean).join(' · ') || '—' },
   { label: () => t('Mẫu máy'), value: (m) => m.model || '—' },
   { label: () => t('CPU'), value: cpuText },
-  { label: () => t('CPU đang dùng'), value: (_, l) => (l ? <Meter pct={l.cpu} label={`${Math.round(l.cpu)}%`} /> : '—') },
-  {
-    label: () => t('RAM'),
-    value: (m, l) =>
-      m.ram <= 0 ? '—' : l ? <Meter pct={(l.ramUsed / m.ram) * 100} label={`${formatBytes(l.ramUsed)} / ${formatBytes(m.ram)}`} /> : formatBytes(m.ram),
-  },
+  { label: () => t('RAM'), value: (m) => (m.ram > 0 ? formatBytes(m.ram) : '—') },
   { label: () => t('GPU'), value: gpuText },
   { label: () => t('Ổ đĩa'), value: diskText },
   { label: () => t('Card mạng'), value: cardsText },
@@ -210,7 +198,6 @@ const SPEC_ROWS: SpecRowDef[] = [
 ]
 
 function Specs({ peer, mine, linked }: { peer: ConnectPeer; mine: ConnectMachine | null; linked: boolean }) {
-  const { live: myLive } = useConnect()
   const theirs = peer.info
   const note = !theirs
     ? linked
@@ -226,14 +213,14 @@ function Specs({ peer, mine, linked }: { peer: ConnectPeer; mine: ConnectMachine
         <span className="border-b border-line px-3 py-2 font-semibold text-ink2">{t('Máy này')}</span>
         <span className="truncate border-b border-line px-3 py-2 font-semibold text-ink2">{peer.name}</span>
         {SPEC_ROWS.map((row) => (
-          <SpecRow key={row.label()} label={row.label()} mine={mine ? row.value(mine, myLive) : '—'} theirs={theirs ? row.value(theirs, linked ? peer.live : null) : '—'} />
+          <SpecRow key={row.label()} label={row.label()} mine={mine ? row.value(mine) : '—'} theirs={theirs ? row.value(theirs) : '—'} />
         ))}
       </div>
     </Panel>
   )
 }
 
-function SpecRow({ label, mine, theirs }: { label: string; mine: React.ReactNode; theirs: React.ReactNode }) {
+function SpecRow({ label, mine, theirs }: { label: string; mine: string; theirs: string }) {
   return (
     <>
       <span className="border-t border-line px-3 py-2 text-muted">{label}</span>
@@ -348,6 +335,96 @@ function SpeedTest({ peer, linked }: { peer: ConnectPeer; linked: boolean }) {
   )
 }
 
+// -- performance --------------------------------------------------------------
+
+type Cell = { value: string; chart: React.ReactNode } | null
+
+const rate = (bytesPerSec: number) => `${formatBytes(bytesPerSec)}/s`
+
+/** CPU, memory and network use of both machines over the last few minutes. The
+ *  other machine's side is only there while linked; GPU load is not measured. */
+function Performance({ peer, linked }: { peer: ConnectPeer; linked: boolean }) {
+  const view = useConnect()
+  // Nothing to draw yet: this machine's first reading takes a few seconds; the
+  // other one is not linked, or is too old to send its load.
+  const empty = [t('Đang đo…'), linked ? t('Máy kia chưa gửi số liệu. Cập nhật Portway ở máy đó.') : t('Chỉ có khi đang kết nối')]
+  const hist = useConnectHistory()
+  const sides = [
+    { info: view.machine, live: view.live, h: hist.self },
+    { info: peer.info, live: linked ? peer.live : null, h: linked ? (hist.peers[peer.id] ?? []) : [] },
+  ]
+  const pick = (h: (Sample | null)[], f: (s: Sample) => number) => h.map((x) => (x ? f(x) : null))
+
+  const cpu = sides.map((x): Cell => (x.live ? { value: `${Math.round(x.live.cpu)}%`, chart: <LiveChart max={100} series={[{ values: pick(x.h, (v) => v.cpu), color: 'var(--info)', fill: true }]} /> } : null))
+  const ram = sides.map((x): Cell => {
+    if (!x.live) return null
+    const total = x.info?.ram || Math.max(x.live.ramUsed, ...x.h.map((v) => v?.ram ?? 0))
+    return { value: `${formatBytes(x.live.ramUsed)} / ${formatBytes(total)}`, chart: <LiveChart max={total} series={[{ values: pick(x.h, (v) => v.ram), color: 'var(--success)', fill: true }]} /> }
+  })
+  const net = sides.map((x): Cell => {
+    if (!x.live) return null
+    const max = niceMax(Math.max(0, ...x.h.map((v) => Math.max(v?.rx ?? 0, v?.tx ?? 0))))
+    return {
+      value: `↓ ${rate(x.live.netRx)}  ↑ ${rate(x.live.netTx)}`,
+      chart: (
+        <LiveChart
+          max={max}
+          series={[
+            { values: pick(x.h, (v) => v.rx), color: 'var(--info)', fill: true },
+            { values: pick(x.h, (v) => v.tx), color: 'var(--warn)' },
+          ]}
+        />
+      ),
+    }
+  })
+
+  return (
+    <Panel title={t('Hiệu năng')} note={linked ? undefined : t('Máy kia chỉ hiện khi đang kết nối')}>
+      <div className="grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] text-[12px]">
+        <span />
+        <span className="border-b border-line px-3 py-2 font-semibold text-ink2">{t('Máy này')}</span>
+        <span className="truncate border-b border-line px-3 py-2 font-semibold text-ink2">{peer.name}</span>
+        <MetricRow icon={Cpu} label={t('CPU')} cells={cpu} empty={empty} />
+        <MetricRow icon={MemoryStick} label={t('RAM')} cells={ram} empty={empty} />
+        <MetricRow icon={NetworkIcon} label={t('Mạng')} cells={net} empty={empty} />
+        <span className="flex items-start gap-1.5 border-t border-line px-3 py-2.5 text-muted">
+          <Microchip size={14} strokeWidth={1.75} className="mt-0.5 flex-none" />
+          {t('GPU')}
+        </span>
+        {sides.map((x, i) => (
+          <span key={i} className="flex flex-col gap-0.5 border-t border-line px-3 py-2.5">
+            <span className="select-text">{x.info ? gpuText(x.info) : '—'}</span>
+            <span className="text-[11px] text-muted">{t('Chưa đo được mức dùng GPU')}</span>
+          </span>
+        ))}
+      </div>
+    </Panel>
+  )
+}
+
+function MetricRow({ icon: Icon, label, cells, empty }: { icon: LucideIcon; label: string; cells: Cell[]; empty: string[] }) {
+  return (
+    <>
+      <span className="flex items-start gap-1.5 border-t border-line px-3 py-2.5 text-muted">
+        <Icon size={14} strokeWidth={1.75} className="mt-0.5 flex-none" />
+        {label}
+      </span>
+      {cells.map((c, i) => (
+        <span key={i} className="flex min-w-0 flex-col gap-1.5 border-t border-line px-3 py-2.5">
+          {c ? (
+            <>
+              <span className="num text-[13px] font-medium whitespace-nowrap">{c.value}</span>
+              {c.chart}
+            </>
+          ) : (
+            <span className="flex h-full min-h-[66px] items-center leading-normal text-muted">{empty[i]}</span>
+          )}
+        </span>
+      ))}
+    </>
+  )
+}
+
 // -- features -----------------------------------------------------------------
 
 type FeatureProps = {
@@ -375,7 +452,7 @@ function Feature({ icon: Icon, title, desc, why, children }: FeatureProps) {
   )
 }
 
-function Features({ peer, linked, onError }: { peer: ConnectPeer; linked: boolean; onError: (title: string) => (e: unknown) => void }) {
+function Features({ peer, onError }: { peer: ConnectPeer; onError: (title: string) => (e: unknown) => void }) {
   const reach = peer.versionMismatch ? t('Hai máy chạy khác phiên bản Portway. Cập nhật Portway ở cả hai máy.') : !peer.online ? t('Cần thấy máy này trong mạng.') : null
   const wakeWhy = peer.online ? t('Máy này đang bật.') : !peer.canWake ? t('Chưa có địa chỉ MAC của máy này. Kết nối với nó một lần để Portway ghi lại.') : null
 
@@ -390,7 +467,6 @@ function Features({ peer, linked, onError }: { peer: ConnectPeer; linked: boolea
           {t('Gửi thư mục…')}
         </Button>
       </Feature>
-      <ClipboardFlow peer={peer} linked={linked} onError={onError} />
       <Feature icon={Power} title={t('Đánh thức máy này')} desc={t('Gửi gói Wake-on-LAN qua mọi card mạng, rồi đợi máy lên.')} why={wakeWhy}>
         <Button size="sm" disabled={!!wakeWhy} onClick={() => void api.connectWake(peer.id).catch(onError(t('Không đánh thức được')))}>
           {t('Đánh thức')}
@@ -400,80 +476,121 @@ function Features({ peer, linked, onError }: { peer: ConnectPeer; linked: boolea
   )
 }
 
-/** Clipboard text between the two machines, drawn as the two machines with an
- *  arrow each way: the arrow lights up when that direction is on. */
-function ClipboardFlow({ peer, linked, onError }: { peer: ConnectPeer; linked: boolean; onError: (title: string) => (e: unknown) => void }) {
+type FlowState = 'flow' | 'blocked' | 'off'
+
+/** Clipboard text between the two machines. The picture is read-only and shows
+ *  both sides (what the other machine does is not ours to change); the
+ *  switches and the button are below it, apart, so the picture keeps its shape. */
+function ClipboardPanel({ peer, linked, onError }: { peer: ConnectPeer; linked: boolean; onError: (title: string) => (e: unknown) => void }) {
   const { clip, device } = useConnect()
   const note = clip?.peerId === peer.id ? clip : null
+  const remote = linked ? peer.remoteClip : null
   const setClip = (receive: boolean, send: boolean) => void api.connectSetClip(peer.id, receive, send).catch(onError(t('Không đổi được cài đặt')))
   const why = peer.versionMismatch ? t('Hai máy chạy khác phiên bản Portway.') : !linked ? t('Cần đang kết nối với máy này.') : null
-  const last = (dir: 'in' | 'out') => (note?.direction === dir ? [t('{n} ký tự', { n: note.chars }), new Date(note.at).toLocaleTimeString()].join(' · ') : null)
+  const when = (n: NonNullable<typeof note>) => [t('{n} ký tự', { n: n.chars }), new Date(n.at).toLocaleTimeString()].join(' · ')
+
+  // This machine to the other: needs our auto-send and, when it says, its Receive.
+  const out: FlowState = !peer.clipSend ? 'off' : remote && !remote.receive ? 'blocked' : 'flow'
+  // The other machine to this one: needs its auto-send and our Receive.
+  const inn: FlowState = !remote?.send ? 'off' : !peer.clipReceive ? 'blocked' : 'flow'
+
+  // What happened to the text last sent: the other machine says whether it took it.
+  const sent = note?.direction === 'out' ? note : null
+  const outLast = !sent ? null : sent.status === 'delivered' ? (
+    <span className="num flex items-center gap-1 text-[11px] text-success">
+      <Check size={12} strokeWidth={2.25} />
+      {t('Máy kia đã nhận')} · {when(sent)}
+    </span>
+  ) : sent.status === 'sent' ? (
+    <span className="num text-[11px] text-muted">
+      {t('Đã gửi')} · {when(sent)}
+    </span>
+  ) : (
+    <span className="flex items-center gap-1 text-[11px] text-warn">
+      <TriangleAlert size={12} strokeWidth={2} />
+      {sent.status === 'off' ? t('Máy kia chưa bật Nhận clipboard từ máy này') : sent.status === 'too_large' ? t('Văn bản quá dài cho máy kia') : t('Máy kia không ghi được vào clipboard')}
+    </span>
+  )
+  const received = note?.direction === 'in' ? note : null
 
   return (
-    <div className="flex flex-col gap-3 border-t border-line px-3.5 py-3.5 first:border-t-0">
-      <span className="flex items-center gap-2 font-medium">
-        <ClipboardCopy size={16} strokeWidth={1.75} className="text-ink2" />
-        {t('Clipboard')}
-        <span className="font-normal text-muted">{t('chỉ văn bản')}</span>
-      </span>
-      <div className="grid items-center gap-3" style={{ gridTemplateColumns: 'minmax(96px,140px) minmax(0,1fr) minmax(96px,140px)' }}>
-        <Endpoint os={device?.os ?? 'macos'} name={t('Máy này')} />
-        <div className="flex flex-col gap-3">
-          <Lane
-            dir="out"
-            label={t('Tự gửi')}
-            tip={t('Mỗi lần bạn copy văn bản, nó được gửi sang máy kia (trừ mật khẩu từ trình quản lý mật khẩu). Chỉ chạy khi đang kết nối.')}
-            on={peer.clipSend}
-            onChange={(v) => setClip(peer.clipReceive, v)}
-            last={last('out')}
-          />
-          <Lane
-            dir="in"
-            label={t('Nhận#clipboard')}
-            tip={t('Văn bản máy kia gửi sẽ được ghi vào clipboard của máy này.')}
-            on={peer.clipReceive}
-            onChange={(v) => setClip(v, peer.clipSend)}
-            last={last('in')}
-          />
+    <Panel title={t('Clipboard')} note={t('chỉ văn bản')}>
+      <div className="flex flex-col gap-3 px-3.5 py-3.5">
+        <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'minmax(96px,128px) minmax(0,1fr) minmax(96px,128px)' }}>
+          <Endpoint os={device?.os ?? 'macos'} name={t('Máy này')} sends={peer.clipSend} takes={peer.clipReceive} />
+          <div className="flex flex-col gap-4 pt-3">
+            <ArrowLane dir="out" state={out} last={outLast} />
+            <ArrowLane dir="in" state={inn} last={received ? <span className="num text-[11px] text-muted">{when(received)}</span> : null} />
+          </div>
+          <Endpoint os={peer.os} name={peer.name} sends={remote ? remote.send : null} takes={remote ? remote.receive : null} />
         </div>
-        <Endpoint os={peer.os} name={peer.name} />
+        <div className="flex flex-col gap-2.5 border-t border-line pt-3">
+          <SwitchLine label={t('Tự gửi sang máy kia')} tip={t('Mỗi lần bạn copy văn bản, nó được gửi sang máy kia (trừ mật khẩu từ trình quản lý mật khẩu). Chỉ chạy khi đang kết nối.')} on={peer.clipSend} onChange={(v) => setClip(peer.clipReceive, v)} />
+          <SwitchLine label={t('Nhận từ máy kia')} tip={t('Văn bản máy kia gửi sẽ được ghi vào clipboard của máy này.')} on={peer.clipReceive} onChange={(v) => setClip(v, peer.clipSend)} />
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button size="sm" disabled={!!why} title={why ?? undefined} onClick={() => void api.connectClipSend(peer.id).catch(onError(t('Không gửi được clipboard')))}>
+              <Send size={13} strokeWidth={1.75} className="mr-1.5" />
+              {t('Gửi ngay')}
+            </Button>
+            {why && <span className="text-[11.5px] text-muted">{why}</span>}
+          </div>
+        </div>
       </div>
-      <div className="flex items-center gap-2.5">
-        <Button size="sm" disabled={!!why} title={why ?? undefined} onClick={() => void api.connectClipSend(peer.id).catch(onError(t('Không gửi được clipboard')))}>
-          <Send size={13} strokeWidth={1.75} className="mr-1.5" />
-          {t('Gửi ngay')}
-        </Button>
-        {why && <span className="text-[11.5px] text-muted">{why}</span>}
-      </div>
-    </div>
+    </Panel>
   )
 }
 
-function Endpoint({ os, name }: { os: string; name: string }) {
+/** A machine in the picture with what it does with clipboard text: sends as soon
+ *  as it copies, takes what is sent. `null` is not known (not linked, or a
+ *  machine too old to say). */
+function Endpoint({ os, name, sends, takes }: { os: string; name: string; sends: boolean | null; takes: boolean | null }) {
   return (
-    <span className="flex min-w-0 flex-col items-center gap-1.5 rounded-lg border border-line bg-sunken/40 px-2 py-2.5 text-center">
+    <span className="flex min-w-0 flex-col items-center gap-2 rounded-lg border border-line bg-sunken/40 px-2 py-2.5 text-center">
       <OsIcon os={os} />
       <span className="max-w-full truncate text-[11.5px] font-medium">{name}</span>
+      <span className="flex flex-col gap-1 text-[10.5px]">
+        <Pill label={t('Tự gửi')} on={sends} />
+        <Pill label={t('Nhận#clipboard')} on={takes} />
+      </span>
     </span>
   )
 }
 
-/** One direction: a switch above an arrow that is solid when on and dashed when off. */
-function Lane({ dir, label, tip, on, onChange, last }: { dir: 'in' | 'out'; label: string; tip: string; on: boolean; onChange: (v: boolean) => void; last: string | null }) {
-  const Arrow = dir === 'out' ? ArrowRight : ArrowLeft
-  const line = <span className="h-0 flex-1 border-t-2" style={{ borderColor: on ? 'var(--accent)' : 'var(--line2)', borderStyle: on ? 'solid' : 'dashed' }} />
+function Pill({ label, on }: { label: string; on: boolean | null }) {
   return (
-    <div className="flex flex-col items-center gap-1" title={tip}>
-      <span className="flex items-center gap-2 text-[12px]">
-        <span className={on ? 'font-medium text-ink' : 'text-muted'}>{label}</span>
-        <Switch on={on} onChange={onChange} label={label} />
-      </span>
-      <span className="flex w-full items-center" style={{ color: on ? 'var(--accent)' : 'var(--line2)' }}>
+    <span className="flex items-center justify-center gap-1.5" style={{ color: on ? 'var(--success)' : 'var(--muted)' }}>
+      <span className="size-1.5 rounded-full" style={{ background: on ? 'var(--success)' : on === false ? 'var(--line2)' : 'transparent', border: on === null ? '1px dashed var(--line2)' : undefined }} />
+      {label}
+      {on === null && ' ?'}
+    </span>
+  )
+}
+
+/** One direction in the picture: solid when text can flow, amber when this side
+ *  is on but the other side would not take it, dashed when it is off. */
+function ArrowLane({ dir, state, last }: { dir: 'in' | 'out'; state: FlowState; last: React.ReactNode }) {
+  const Arrow = dir === 'out' ? ArrowRight : ArrowLeft
+  const color = state === 'flow' ? 'var(--accent)' : state === 'blocked' ? 'var(--warn)' : 'var(--line2)'
+  const line = <span className="h-0 flex-1 border-t-2" style={{ borderColor: color, borderStyle: state === 'flow' ? 'solid' : 'dashed' }} />
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <span className="flex w-full items-center" style={{ color }}>
         {dir === 'in' && <Arrow size={16} strokeWidth={2.25} className="-mr-1 flex-none" />}
         {line}
+        {state === 'blocked' && <X size={14} strokeWidth={2.5} className="mx-1 flex-none" />}
+        {state === 'blocked' && line}
         {dir === 'out' && <Arrow size={16} strokeWidth={2.25} className="-ml-1 flex-none" />}
       </span>
-      {last && <span className="num text-[11px] text-muted">{last}</span>}
+      {last}
+    </div>
+  )
+}
+
+function SwitchLine({ label, tip, on, onChange }: { label: string; tip: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center gap-3" title={tip}>
+      <span className="min-w-0 flex-1 text-[12.5px]">{label}</span>
+      <Switch on={on} onChange={onChange} label={label} />
     </div>
   )
 }

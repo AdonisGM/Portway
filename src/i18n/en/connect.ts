@@ -256,6 +256,17 @@ const en: Dict = {
   'Mỗi lần bạn copy văn bản, nó được gửi sang máy kia (trừ mật khẩu từ trình quản lý mật khẩu). Chỉ chạy khi đang kết nối.': 'Each time you copy text it is sent to the other machine (except passwords from a password manager). Works only while linked.',
   'Gửi ngay': 'Send now',
   'Nhận#clipboard': 'Receive',
+  'Hiệu năng': 'Performance',
+  'Máy kia chỉ hiện khi đang kết nối': 'The other machine shows only while linked',
+  'Chưa đo được mức dùng GPU': "GPU load isn't measured yet",
+  'Chỉ có khi đang kết nối': 'Only available while linked',
+  'Máy kia đã nhận': 'Delivered',
+  'Máy kia chưa bật Nhận clipboard từ máy này': "The other machine hasn't turned on receiving from this one",
+  'Văn bản quá dài cho máy kia': 'Text too long for the other machine',
+  'Máy kia không ghi được vào clipboard': "The other machine couldn't write it to its clipboard",
+  'Tự gửi sang máy kia': 'Auto-send to the other machine',
+  'Nhận từ máy kia': 'Receive from the other machine',
+  'Máy kia chưa gửi số liệu. Cập nhật Portway ở máy đó.': "The other machine doesn't send its figures yet. Update Portway there.",
 }
 
 export default en

@@ -11,10 +11,11 @@ import { useToast } from '../../components/toast'
 import { SelectField } from '../../components/ui/form-controls'
 import { Button } from '../../components/ui/primitives'
 import { SegmentedControl } from '../../components/ui/segmented'
-import { api, isAppError, type Theme } from '../../lib/api'
+import { api, isAppError, type BackgroundState, type Theme } from '../../lib/api'
 import { pickApp } from '../../lib/pick-app'
 import { t } from '../../i18n'
 import { isWindows, localBaseName } from '../../lib/platform'
+import { Switch } from '../connect/shared'
 
 /** Select value for "no app chosen" (the select treats '' as nothing chosen). */
 const DEFAULT_EDITOR = 'default'
@@ -32,7 +33,11 @@ const errText = (e: unknown) =>
         ? t('{ext} không phải đuôi tệp hợp lệ', { ext: e.detail ?? '' })
         : e.code === 'not_an_app'
           ? t('{path} không phải một ứng dụng (.app)', { path: e.detail ?? '' })
-          : (e.detail ?? e.code)
+          : e.code === 'autostart_dev'
+            ? t('Chỉ dùng được với bản đã cài, không dùng được ở bản dev')
+            : e.code === 'autostart_failed'
+              ? t('Không bật được việc mở cùng máy: hệ điều hành không ghi nhận. Thử lại, hoặc kiểm tra quyền của Portway.')
+              : (e.detail ?? e.code)
     : String(e)
 
 /** "Cài đặt": downloads, appearance, the server list as a file, version. */
@@ -48,10 +53,12 @@ export function SettingsScreen() {
   const [systemDownloads, setSystemDownloads] = useState('')
   const [home, setHome] = useState('')
   const ask = asksDownload(settings)
+  const [bg, setBg] = useState<BackgroundState | null>(null)
 
   useEffect(() => {
     if (!isTauri()) return
     void api.appDataPath().then(setDataPath).catch(() => {})
+    void api.backgroundState().then(setBg).catch(() => {})
     void getVersion().then(setVersion)
     void downloadDir().then((d) => setSystemDownloads(d.replace(/[\\/]+$/, '')))
     void homeDir().then((d) => setHome(d.replace(/[\\/]+$/, '')))
@@ -112,6 +119,36 @@ export function SettingsScreen() {
             ]}
           />
         </Row>
+      </Section>
+
+      <Section id="startup" title={t('Khởi động#section')}>
+        <Row
+          label={t('Mở Portway khi đăng nhập')}
+          hint={
+            bg && !bg.canAutostart
+              ? t('Chỉ dùng được với bản đã cài, không dùng được ở bản dev')
+              : t('Portway mở ẩn ở khay hệ thống, không hiện cửa sổ. Connect chỉ trả lời các máy khác khi Portway đang chạy.')
+          }
+        >
+          <Switch on={!!bg?.autostart} disabled={!bg || !bg.canAutostart} onChange={(on) => void run(async () => setBg(await api.backgroundSetAutostart(on)), t('Không đổi được việc mở cùng máy'))} label={t('Mở Portway khi đăng nhập')} />
+        </Row>
+        <Row
+          label={t('Giữ chạy nền khi đóng cửa sổ')}
+          hint={
+            bg?.autostart
+              ? t('Đang bật vì Portway mở cùng máy.')
+              : isWindows
+                ? t('Đóng cửa sổ chỉ ẩn nó. Portway vẫn chạy ở khay hệ thống; thoát bằng chuột phải vào biểu tượng rồi chọn Thoát Portway.')
+                : t('Đóng cửa sổ chỉ ẩn nó. Portway vẫn chạy ở thanh menu; thoát bằng Thoát Portway ở biểu tượng đó hoặc Cmd+Q.')
+          }
+        >
+          <Switch on={settings.background || !!bg?.autostart} disabled={!!bg?.autostart} onChange={(background) => void run(async () => { await update({ background }); setBg(await api.backgroundState()) }, t('Không lưu được'))} label={t('Giữ chạy nền khi đóng cửa sổ')} />
+        </Row>
+        {isWindows && (
+          <div className="border-t border-line px-4 py-3 text-[11.5px] leading-normal text-muted">
+            {t('Windows mở Portway khi bạn đăng nhập, không phải khi máy vừa bật. Sau khi đánh thức bằng Wake-on-LAN, máy dừng ở màn hình đăng nhập nên Portway chưa trả lời cho tới khi có người đăng nhập, trừ khi bật tự đăng nhập Windows.')}
+          </div>
+        )}
       </Section>
 
       <Section id="download" title={t('Tải xuống#section')}>

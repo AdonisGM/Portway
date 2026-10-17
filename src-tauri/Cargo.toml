@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.14.0"
+version = "0.16.0"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"
@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -26,6 +26,9 @@ uuid = { version = "1", features = ["v4"] }
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "encryption", "getrandom"] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
+# Start at login (a LaunchAgent on macOS, the Run key on Windows), and one copy only.
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 russh = "0.63"
 russh-sftp = "3"
 libc = "0.2"
@@ -41,7 +44,7 @@ mdns-sd = "0.21"
 blake2 = "0.10"
 netdev = "0.46.3"
 # Specs of this machine (CPU, memory, disk) that a linked machine shows.
-sysinfo = { version = "0.37", default-features = false, features = ["system", "disk"] }
+sysinfo = { version = "0.37", default-features = false, features = ["system", "disk", "network"] }
 
 # Hide/show the native traffic lights while the splash screen is up.
 [target.'cfg(target_os = "macos")'.dependencies]

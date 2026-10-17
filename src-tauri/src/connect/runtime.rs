@@ -5,7 +5,7 @@
 
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::Serialize;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Notify};
 
+use super::machine::{self, MachineInfo, FEATURE_SPEED};
 use super::net::{self, Fail, DEFAULT_PORT, SERVICE};
 use super::store::{Peer, Store};
 use super::wire::{self, hex, Intent, MacInfo, Msg, Receiver, Sender, VERSION};
@@ -29,6 +30,8 @@ const PING_EVERY: Duration = Duration::from_secs(2);
 const PAIR_COOLDOWN: Duration = Duration::from_secs(5);
 /// How long to wait for a machine to appear after waking it.
 const WAKE_WAIT: Duration = Duration::from_secs(120);
+/// Round trips of the live link kept for the graph: a minute at one ping per 2 s.
+const RTT_KEEP: usize = 30;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -90,6 +93,11 @@ pub struct PeerView {
     pub clip_receive: bool,
     /// Text copied here is sent to it as soon as it is copied.
     pub clip_send: bool,
+    /// What it last told us about itself over a link, and when (ms since epoch).
+    pub info: Option<MachineInfo>,
+    pub info_at: u64,
+    /// The last speed test with it.
+    pub speed: Option<SpeedView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,6 +137,8 @@ pub struct LinkView {
     pub stage: &'static str,
     pub since: u64,
     pub rtt_ms: Option<f64>,
+    /// The last round trips, oldest first.
+    pub rtt_history: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,6 +167,8 @@ pub struct View {
     pub transfers: Vec<TransferView>,
     /// The last text sent or received, without its content.
     pub clip: Option<ClipNote>,
+    /// This machine, as a linked machine sees it.
+    pub machine: Option<MachineInfo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +215,8 @@ struct Link {
     up: bool,
     since: u64,
     rtt: Option<Duration>,
+    /// The last round trips in ms, oldest first.
+    rtts: VecDeque<f64>,
     cancel: Arc<Notify>,
     /// Messages for the other side from outside the session loop (copied text).
     outbox: mpsc::UnboundedSender<Msg>,
@@ -234,6 +248,12 @@ struct State {
     wake: Option<Wake>,
     transfers: Vec<Transfer>,
     clip: ClipState,
+    /// This machine's specs, read when Connect starts and refreshed now and then.
+    machine: Option<MachineInfo>,
+    /// Speed tests, the last one per machine.
+    speeds: HashMap<String, SpeedState>,
+    /// A machine is measuring the speed to this one right now.
+    speed_serving: bool,
     next_token: u64,
 }
 
@@ -264,9 +284,11 @@ struct Inner {
 }
 
 mod clip;
+mod speed;
 mod transfer;
 use super::sys_clip;
 use clip::{ClipNote, ClipState};
+use speed::{SpeedState, SpeedView};
 use transfer::{Transfer, TransferView};
 
 type Stream = TcpStream;
@@ -289,6 +311,9 @@ impl Connect {
             wake: None,
             transfers: Vec::new(),
             clip: ClipState::new(),
+            machine: None,
+            speeds: HashMap::new(),
+            speed_serving: false,
             next_token: 1,
         };
         Self { inner: Arc::new(Inner { app, state: Mutex::new(state) }) }
@@ -376,6 +401,7 @@ impl Connect {
             s.cards = cards;
             s.store.ensure_identity()?;
         }
+        self.refresh_machine().await;
         let listener = match TcpListener::bind(("0.0.0.0", DEFAULT_PORT)).await {
             Ok(l) => l,
             Err(_) => TcpListener::bind(("0.0.0.0", 0)).await.map_err(|e| AppError::detail("listen_failed", e))?,
@@ -486,8 +512,22 @@ impl Connect {
 
     // -- measuring the ways to reach paired machines ---------------------------
 
+    /// Read this machine's specs again (off the async threads: listing disks blocks).
+    async fn refresh_machine(&self) {
+        let cards = self.lock().cards.clone();
+        if let Ok(info) = tokio::task::spawn_blocking(move || machine::collect(&cards)).await {
+            self.lock().machine = Some(info);
+        }
+    }
+
     async fn probe_loop(&self) {
+        let mut round = 0u32;
         loop {
+            // Free disk space and the like change slowly.
+            round += 1;
+            if round % 6 == 0 {
+                self.refresh_machine().await;
+            }
             let jobs: Vec<(String, SocketAddrV4, bool)> = {
                 let s = self.lock();
                 let mut jobs = Vec::new();
@@ -569,7 +609,7 @@ impl Connect {
                         let (token, cancel) = (s.next_token, Arc::new(Notify::new()));
                         s.next_token += 1;
                         let (outbox, outbox_rx) = mpsc::unbounded_channel();
-                        s.link = Some(Link { token, peer_id: id.clone(), addr: String::new(), up: true, since: now_ms(), rtt: None, cancel: cancel.clone(), outbox, outbox_rx: Some(outbox_rx) });
+                        s.link = Some(Link { token, peer_id: id.clone(), addr: String::new(), up: true, since: now_ms(), rtt: None, rtts: VecDeque::new(), cancel: cancel.clone(), outbox, outbox_rx: Some(outbox_rx) });
                         Some((token, cancel))
                     }
                 };
@@ -600,6 +640,17 @@ impl Connect {
                     return;
                 }
                 self.accept_send(tx, rx, peer).await;
+            }
+            Intent::Speed => {
+                let known = self.lock().store.peer(&id).is_some_and(|p| p.public_key == hex(&remote_key));
+                if !known {
+                    let _ = tx.send(&Msg::Refuse { code: "not_paired".into() }).await;
+                    return;
+                }
+                if tx.send(&hello).await.is_err() {
+                    return;
+                }
+                self.accept_speed(tx, rx).await;
             }
             Intent::Pair => {
                 let (decide_tx, decide_rx) = mpsc::unbounded_channel();
@@ -648,7 +699,7 @@ impl Connect {
                     }
                 }
                 self.publish();
-                self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs: vec![], macs: vec![], clip_receive: false, clip_send: false }).await;
+                self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs: vec![], macs: vec![], clip_receive: false, clip_send: false, info: None, info_at: 0 }).await;
             }
         }
     }
@@ -739,7 +790,7 @@ impl Connect {
         }
         self.publish();
         let manual_addrs = if manual { vec![used.to_string()] } else { vec![] };
-        self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs, macs: vec![], clip_receive: false, clip_send: false }).await;
+        self.run_pairing(tx, rx, decide_rx, Peer { id, name, os, public_key: hex(&remote_key), paired_at: 0, manual_addrs, macs: vec![], clip_receive: false, clip_send: false, info: None, info_at: 0 }).await;
         Ok(())
     }
 
@@ -972,7 +1023,7 @@ impl Connect {
             let token = s.next_token;
             s.next_token += 1;
             let (outbox, outbox_rx) = mpsc::unbounded_channel();
-            s.link = Some(Link { token, peer_id: id.to_string(), addr: String::new(), up: false, since: now_ms(), rtt: None, cancel: Arc::new(Notify::new()), outbox, outbox_rx: Some(outbox_rx) });
+            s.link = Some(Link { token, peer_id: id.to_string(), addr: String::new(), up: false, since: now_ms(), rtt: None, rtts: VecDeque::new(), cancel: Arc::new(Notify::new()), outbox, outbox_rx: Some(outbox_rx) });
             (targets, peer.name)
         };
         let me = self.me().ok_or_else(|| AppError::new("keychain"))?;
@@ -1062,6 +1113,14 @@ impl Connect {
             let id = peer_id.clone();
             tauri::async_runtime::spawn(async move { this.watch_clipboard(token, id).await })
         });
+        // Both sides are trusted by now: say what this machine is.
+        let mine = self.lock().machine.clone();
+        if let Some(info) = mine {
+            if tx.send(&Msg::Info { info }).await.is_err() {
+                self.end_link(token);
+                return;
+            }
+        }
         let mut tick = tokio::time::interval(PING_EVERY);
         let mut sent: HashMap<u64, Instant> = HashMap::new();
         let mut seq = 0u64;
@@ -1069,6 +1128,7 @@ impl Connect {
             tokio::select! {
                 m = msgs.recv() => match m {
                     Some(Msg::Clip { text }) => self.on_clip(&peer_id, text),
+                    Some(Msg::Info { info }) => self.on_info(&peer_id, info),
                     // From a newer Portway: nothing to do with it, and no reason to drop the link.
                     Some(Msg::Unknown) => {}
                     Some(Msg::Ping { seq }) => { if tx.send(&Msg::Pong { seq }).await.is_err() { break; } }
@@ -1077,6 +1137,10 @@ impl Connect {
                             let rtt = t0.elapsed();
                             if let Some(l) = self.lock().link.as_mut().filter(|l| l.token == token) {
                                 l.rtt = Some(rtt);
+                                l.rtts.push_back((rtt.as_secs_f64() * 10_000.0).round() / 10.0);
+                                while l.rtts.len() > RTT_KEEP {
+                                    l.rtts.pop_front();
+                                }
                             }
                             self.publish();
                         }
@@ -1105,6 +1169,18 @@ impl Connect {
             w.abort();
         }
         self.end_link(token);
+    }
+
+    /// What the linked machine says it is: kept, so it shows when it is off too.
+    fn on_info(&self, id: &str, info: MachineInfo) {
+        {
+            let mut s = self.lock();
+            let Some(p) = s.store.data.peers.iter_mut().find(|p| p.id == id) else { return };
+            p.info = Some(info);
+            p.info_at = now_ms();
+            let _ = s.store.save();
+        }
+        self.publish();
     }
 
     fn end_link(&self, token: u64) {
@@ -1216,7 +1292,7 @@ fn build_view(s: &State) -> View {
             // Reachable first, fastest first.
             paths.sort_by(|a, b| a.rtt_ms.unwrap_or(f64::MAX).total_cmp(&b.rtt_ms.unwrap_or(f64::MAX)));
             let online = is_online(s, &p.id);
-            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
+            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
         })
         .collect();
     View {
@@ -1237,11 +1313,12 @@ fn build_view(s: &State) -> View {
             remote_ok: p.remote_ok,
             outcome: p.outcome.clone(),
         }),
-        link: s.link.as_ref().map(|l| LinkView { peer_id: l.peer_id.clone(), addr: l.addr.clone(), stage: if l.up { "up" } else { "connecting" }, since: l.since, rtt_ms: l.rtt.map(|d| (d.as_secs_f64() * 10_000.0).round() / 10.0) }),
+        link: s.link.as_ref().map(|l| LinkView { peer_id: l.peer_id.clone(), addr: l.addr.clone(), stage: if l.up { "up" } else { "connecting" }, since: l.since, rtt_ms: l.rtt.map(|d| (d.as_secs_f64() * 10_000.0).round() / 10.0), rtt_history: l.rtts.iter().copied().collect() }),
         link_error: s.link_error.as_ref().map(|(peer_id, code)| LinkErrorView { peer_id: peer_id.clone(), code: code.clone() }),
         wake: s.wake.as_ref().map(|w| WakeView { peer_id: w.peer_id.clone(), stage: w.stage, sent: w.sent, since: w.since }),
         transfers: s.transfers.iter().map(transfer::view).collect(),
         clip: s.clip.note.clone(),
+        machine: s.machine.clone(),
     }
 }
 
@@ -1265,6 +1342,9 @@ mod tests {
             wake: None,
             transfers: Vec::new(),
             clip: ClipState::new(),
+            machine: None,
+            speeds: HashMap::new(),
+            speed_serving: false,
             next_token: 1,
         }
     }

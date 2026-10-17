@@ -3,6 +3,7 @@
 //! them. Off until the user turns it on: while it is off nothing listens and
 //! nothing is announced.
 
+mod machine;
 mod net;
 mod runtime;
 mod store;
@@ -117,4 +118,10 @@ pub fn connect_set_clip(connect: State<'_, Connect>, id: String, receive: bool, 
 #[tauri::command]
 pub fn connect_clip_send(connect: State<'_, Connect>, id: String) -> AppResult<()> {
     connect.clip_send_now(&id)
+}
+
+/// Measure how fast bytes go to this machine and back.
+#[tauri::command]
+pub fn connect_speed_test(connect: State<'_, Connect>, id: String) -> AppResult<()> {
+    connect.speed_test(&id)
 }

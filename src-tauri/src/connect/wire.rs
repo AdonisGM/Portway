@@ -3,6 +3,7 @@
 //! other's static key during the handshake; whether that key is trusted is
 //! decided above this layer (pairing, or the list of paired machines).
 
+use super::machine::MachineInfo;
 use blake2::{Blake2s256, Digest};
 use serde::{Deserialize, Serialize};
 use snow::{Builder, StatelessTransportState};
@@ -66,6 +67,9 @@ pub enum Intent {
     /// Already paired, and has files to hand over: the key must be known, and the
     /// receiver's user decides whether to take them.
     Send,
+    /// Already paired: measure how fast bytes go between the two machines.
+    /// Nothing is stored and nobody is asked.
+    Speed,
 }
 
 /// A network card another machine can wake this one through.
@@ -124,6 +128,15 @@ pub enum Msg {
     Cancel,
     /// Text copied on the other machine, sent over the live link.
     Clip { text: String },
+    /// What the other machine is, sent once when a link comes up.
+    Info { info: MachineInfo },
+    /// Speed test, step 1: the sender's bytes follow as data frames, then `SpeedEnd`.
+    SpeedUp,
+    /// Speed test, step 2: send data frames for this many milliseconds, then `SpeedEnd`.
+    SpeedDown { millis: u32 },
+    SpeedEnd,
+    /// What the receiver of step 1 counted, from its first data frame to `SpeedEnd`.
+    SpeedResult { bytes: u64, micros: u64 },
     PairConfirm {
         ok: bool,
         /// Sent with a yes, so the machine just paired with can wake this one.
@@ -495,5 +508,24 @@ mod tests {
         assert_eq!(m, Msg::Unknown);
         let c: Msg = serde_json::from_str(r#"{"t":"clip","text":"hi"}"#).unwrap();
         assert_eq!(c, Msg::Clip { text: "hi".into() });
+    }
+
+    /// Protocol 3 (0.12.0) has no `Info`; it must read one, whole with its
+    /// nested fields, as `Unknown` and keep the link.
+    #[test]
+    fn a_build_without_info_reads_a_full_info_message_as_unknown() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        #[serde(tag = "t", rename_all = "camelCase")]
+        enum V3 {
+            Ping { seq: u64 },
+            #[serde(other)]
+            Unknown,
+        }
+        let info = Msg::Info { info: MachineInfo { os_version: "macOS 27".into(), cpu: "Apple M4".into(), cores: 4, ram: 16 << 30, features: vec!["speed".into()], ..Default::default() } };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains(r#""t":"info""#));
+        assert_eq!(serde_json::from_str::<V3>(&json).unwrap(), V3::Unknown);
+        assert_eq!(serde_json::from_str::<V3>(r#"{"t":"ping","seq":3}"#).unwrap(), V3::Ping { seq: 3 });
+        assert_eq!(serde_json::from_str::<Msg>(&json).unwrap(), info);
     }
 }

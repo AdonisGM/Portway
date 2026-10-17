@@ -11,6 +11,8 @@ export type Screen =
   | { kind: 'keys' }
   | { kind: 'tunnels' }
   | { kind: 'connect' }
+  /** One paired machine: its specs, network speed and what it can do. */
+  | { kind: 'connectPeer'; peerId: string }
   | { kind: 'transfer' }
   | { kind: 'settings' }
   | { kind: 'server'; serverId: string; user: string; module: ModuleId }
@@ -54,7 +56,7 @@ type Nav = {
 const NavContext = createContext<Nav | null>(null)
 
 export const railOf = (s: Screen): RailId =>
-  s.kind === 'server' ? 'server' : s.kind === 'tunnels' ? 'tunnels' : s.kind === 'connect' ? 'connect' : s.kind === 'transfer' ? 'transfer' : s.kind === 'settings' ? 'settings' : 'conn'
+  s.kind === 'server' ? 'server' : s.kind === 'tunnels' ? 'tunnels' : s.kind === 'connect' || s.kind === 'connectPeer' ? 'connect' : s.kind === 'transfer' ? 'transfer' : s.kind === 'settings' ? 'settings' : 'conn'
 
 const LOCAL_DOWNLOADS: PaneSpot = { src: { kind: 'local' }, path: '~/Downloads' }
 const sameSource = (a: PaneSource, b: PaneSource) =>

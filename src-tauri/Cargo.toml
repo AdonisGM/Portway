@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.12.0"
+version = "0.13.0"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"
@@ -40,6 +40,8 @@ mdns-sd = "0.21"
 
 blake2 = "0.10"
 netdev = "0.46.3"
+# Specs of this machine (CPU, memory, disk) that a linked machine shows.
+sysinfo = { version = "0.37", default-features = false, features = ["system", "disk"] }
 
 # Hide/show the native traffic lights while the splash screen is up.
 [target.'cfg(target_os = "macos")'.dependencies]

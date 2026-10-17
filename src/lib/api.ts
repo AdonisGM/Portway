@@ -602,6 +602,41 @@ export type ConnectPeer = {
   clipReceive: boolean
   /** Text copied here is sent to it as soon as it is copied (while linked). */
   clipSend: boolean
+  /** What it last told this machine about itself over a link; null before the first. */
+  info: ConnectMachine | null
+  /** ms since epoch when `info` arrived. */
+  infoAt: number
+  /** The last speed test with it. */
+  speed: ConnectSpeed | null
+}
+/** A machine as the other side of a link sees it. */
+export type ConnectMachine = {
+  osVersion: string
+  arch: string
+  cpu: string
+  /** Physical cores; 0 when unknown. */
+  cores: number
+  threads: number
+  /** Bytes */
+  ram: number
+  diskTotal: number
+  diskFree: number
+  appVersion: string
+  /** Seconds since it started. */
+  uptime: number
+  cards: { name: string; kind: 'ethernet' | 'wifi' | 'other'; mbps: number | null }[]
+  /** Optional features its Portway has, e.g. "speed". */
+  features: string[]
+}
+export type ConnectSpeed = {
+  stage: 'up' | 'down' | 'done' | 'failed'
+  /** Bits per second, this machine to the other. */
+  upBps: number | null
+  /** Bits per second, the other machine to this. */
+  downBps: number | null
+  addr: string
+  at: number
+  error: string | null
 }
 export type ConnectNearby = { id: string; addrs: string[]; versionMismatch: boolean }
 export type ConnectPairing = {
@@ -617,7 +652,7 @@ export type ConnectPairing = {
   /** Once stage is "done": "paired", "declined", "timeout" or an error code. */
   outcome: string | null
 }
-export type ConnectLink = { peerId: string; addr: string; stage: 'connecting' | 'up'; since: number; rttMs: number | null }
+export type ConnectLink = { peerId: string; addr: string; stage: 'connecting' | 'up'; since: number; rttMs: number | null; rttHistory: number[] }
 /** Magic packets sent to a paired machine, and whether it has shown up since. */
 export type ConnectWake = { peerId: string; stage: 'waiting' | 'up' | 'timeout'; sent: number; since: number }
 export type ConnectTransfer = {
@@ -657,6 +692,8 @@ export type ConnectView = {
   wake: ConnectWake | null
   transfers: ConnectTransfer[]
   clip: ConnectClipNote | null
+  /** This machine, as a linked machine sees it. */
+  machine: ConnectMachine | null
 }
 
 export function isAppError(e: unknown): e is AppError {
@@ -736,6 +773,8 @@ type Api = {
   connectSetClip(id: string, receive: boolean, send: boolean): Promise<void>
   /** Send the text on the clipboard now to the machine linked with. */
   connectClipSend(id: string): Promise<void>
+  /** Measure the speed to a paired machine on the network; the result comes in the view. */
+  connectSpeedTest(id: string): Promise<void>
   tunnels(): Promise<Tunnel[]>
   saveTunnel(spec: TunnelSpec): Promise<Tunnel>
   deleteTunnel(id: string): Promise<void>
@@ -859,6 +898,7 @@ const tauriApi: Api = {
   connectTransfersClear: () => invoke('connect_transfers_clear'),
   connectSetClip: (id, receive, send) => invoke('connect_set_clip', { id, receive, send }),
   connectClipSend: (id) => invoke('connect_clip_send', { id }),
+  connectSpeedTest: (id) => invoke('connect_speed_test', { id }),
   tunnels: () => invoke('tunnels_list'),
   saveTunnel: (spec) => invoke('tunnel_save', { spec }),
   deleteTunnel: (id) => invoke('tunnel_delete', { id }),
@@ -1062,7 +1102,7 @@ function browserApi(): Api {
     servicesJournal: async () => fail('needs_app'),
     servicesUnitFile: async () => fail('needs_app'),
     servicesAction: async () => fail('needs_app'),
-    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null, transfers: [], clip: null }),
+    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null, transfers: [], clip: null, machine: null }),
     connectSetEnabled: async () => fail('needs_app'),
     connectPair: async () => fail('needs_app'),
     connectPairDecide: async () => fail('needs_app'),
@@ -1081,6 +1121,7 @@ function browserApi(): Api {
     connectTransfersClear: async () => {},
     connectSetClip: async () => fail('needs_app'),
     connectClipSend: async () => fail('needs_app'),
+    connectSpeedTest: async () => fail('needs_app'),
     tunnels: async () => [],
     saveTunnel: async () => fail('needs_app'),
     deleteTunnel: async () => fail('needs_app'),

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::machine::MachineInfo;
 use super::wire::{self, hex, unhex, MacInfo};
 use crate::error::AppResult;
 use crate::secrets;
@@ -35,6 +36,13 @@ pub struct Peer {
     /// Send this machine's copied text to it as soon as it is copied (while linked).
     #[serde(default)]
     pub clip_send: bool,
+    /// What it last told us about itself over a link, so an offline machine
+    /// still shows its specs.
+    #[serde(default)]
+    pub info: Option<MachineInfo>,
+    /// ms since epoch when `info` was received.
+    #[serde(default)]
+    pub info_at: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -103,7 +111,8 @@ impl Store {
                 // Pairing again may come without cards; keep the ones we had.
                 let macs = if peer.macs.is_empty() { std::mem::take(&mut old.macs) } else { peer.macs.clone() };
                 let (clip_receive, clip_send) = (old.clip_receive, old.clip_send);
-                *old = Peer { manual_addrs, macs, clip_receive, clip_send, ..peer };
+                let (info, info_at) = (old.info.take(), old.info_at);
+                *old = Peer { manual_addrs, macs, clip_receive, clip_send, info, info_at, ..peer };
             }
             None => self.data.peers.push(peer),
         }
@@ -136,7 +145,7 @@ mod tests {
     use super::*;
 
     fn peer(id: &str, key: &str) -> Peer {
-        Peer { id: id.into(), name: format!("name-{id}"), os: "macos".into(), public_key: key.into(), paired_at: 1, manual_addrs: vec![], macs: vec![], clip_receive: false, clip_send: false }
+        Peer { id: id.into(), name: format!("name-{id}"), os: "macos".into(), public_key: key.into(), paired_at: 1, manual_addrs: vec![], macs: vec![], clip_receive: false, clip_send: false, info: None, info_at: 0 }
     }
 
     fn temp(name: &str) -> PathBuf {

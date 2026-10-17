@@ -6,6 +6,7 @@ import { SettingsScreen } from '../screens/settings/settings-screen'
 import { TransferScreen } from '../screens/transfer/transfer-screen'
 import { TunnelsScreen } from '../screens/tunnels/tunnels-screen'
 import { ConnectScreen } from '../screens/connect/connect-screen'
+import { ConnectPeerScreen } from '../screens/connect/peer-screen'
 import { PairingDialog } from '../screens/connect/pairing-dialog'
 import { IncomingTransferDialog } from '../screens/connect/transfers'
 import { EditsDock } from './edits-dock'
@@ -41,6 +42,8 @@ export function AppShell() {
               <SettingsScreen />
             ) : screen.kind === 'connect' ? (
               <ConnectScreen />
+            ) : screen.kind === 'connectPeer' ? (
+              <ConnectPeerScreen key={screen.peerId} peerId={screen.peerId} />
             ) : (
               <TunnelsScreen />
             )}

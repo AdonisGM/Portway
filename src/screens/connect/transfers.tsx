@@ -53,9 +53,10 @@ function status(x: ConnectTransfer): { tone: { fg: string; bg: string }; text: s
 }
 
 /** "Truyền tệp": what is being sent or received, and what was. */
-export function TransfersSection() {
-  const { transfers } = useConnect()
+export function TransfersSection({ peerId }: { peerId?: string } = {}) {
+  const view = useConnect()
   const toast = useToast()
+  const transfers = peerId ? view.transfers.filter((x) => x.peerId === peerId) : view.transfers
   if (!transfers.length) return null
   const list = [...transfers].sort((a, b) => b.since - a.since)
   return (

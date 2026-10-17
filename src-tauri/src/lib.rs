@@ -140,6 +140,7 @@ pub fn run() {
             connect::connect_transfers_clear,
             connect::connect_set_clip,
             connect::connect_clip_send,
+            connect::connect_speed_test,
             files::sftp_list,
             files::sftp_as_root,
             files::sftp_mkdir,

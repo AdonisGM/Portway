@@ -149,6 +149,10 @@ export function commandError(e: unknown): string {
       return t('{path} không phải tệp hay thư mục thường', { path: e.detail ?? '' })
     case 'no_offer':
       return t('Yêu cầu nhận tệp này đã hết hạn')
+    case 'speed_unsupported':
+      return t('Portway ở máy kia chưa hỗ trợ đo tốc độ')
+    case 'speed_busy':
+      return t('Đang đo tốc độ với một máy khác')
     case 'no_mac':
       return t('Chưa có địa chỉ MAC của máy này. Kết nối với nó một lần để Portway ghi lại.')
     case 'wake_failed':
@@ -173,6 +177,18 @@ export function transferError(code: string): string {
       return t('Máy kia đang có quá nhiều yêu cầu nhận tệp')
     case 'refused_bad_offer':
       return t('Máy kia không nhận danh sách tệp này')
+    default:
+      return hintFor(code, null).title
+  }
+}
+
+/** Why a speed test ended badly. */
+export function speedError(code: string): string {
+  switch (code) {
+    case 'refused_busy':
+      return t('Máy kia đang đo tốc độ với máy khác')
+    case 'connection_lost':
+      return t('mất kết nối giữa chừng')
     default:
       return hintFor(code, null).title
   }

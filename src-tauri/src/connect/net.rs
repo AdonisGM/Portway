@@ -100,6 +100,8 @@ pub struct Card {
     pub kind: Kind,
     /// Real hardware, not a bridge, tunnel or virtual switch.
     pub physical: bool,
+    /// Negotiated link speed in Mbit/s, when the system reports one.
+    pub mbps: Option<u32>,
 }
 
 /// macOS hands the placeholder 02:00:00:00:00:00 to a process that has no
@@ -158,13 +160,14 @@ pub fn cards() -> Vec<Card> {
             _ => Kind::Other,
         };
         let physical = i.is_physical();
+        let mbps = i.transmit_speed.filter(|b| *b > 0).map(|b| (b / 1_000_000).min(u32::MAX as u64) as u32);
         let mac = real_mac(&i.name, i.mac_addr.map(|m| m.octets()));
         let name = i.friendly_name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| i.name.clone());
         for net in &i.ipv4 {
             if net.addr().is_loopback() {
                 continue;
             }
-            out.push(Card { name: name.clone(), ifname: i.name.clone(), ip: net.addr(), mask: net.netmask(), mac, kind, physical });
+            out.push(Card { name: name.clone(), ifname: i.name.clone(), ip: net.addr(), mask: net.netmask(), mac, kind, physical, mbps });
         }
     }
     out
@@ -286,7 +289,7 @@ mod tests {
     use super::*;
 
     fn card(name: &str, ip: [u8; 4], mask: [u8; 4]) -> Card {
-        Card { name: name.into(), ifname: name.into(), ip: ip.into(), mask: mask.into(), mac: None, kind: Kind::Other, physical: true }
+        Card { name: name.into(), ifname: name.into(), ip: ip.into(), mask: mask.into(), mac: None, kind: Kind::Other, physical: true, mbps: None }
     }
 
     #[test]

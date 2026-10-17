@@ -59,10 +59,16 @@ pub fn file_paths() -> Vec<std::path::PathBuf> {
         let Some(items) = pb.pasteboardItems() else { return Vec::new() };
         // SAFETY: the constant is a plain pasteboard type name.
         let kind = unsafe { NSPasteboardTypeFileURL };
+        // Finder puts a file reference ("file:///.file/id=6571367.6914124"), not a path:
+        // `filePathURL` turns either kind into the path of the file.
         return items
             .iter()
             .filter_map(|item| item.stringForType(kind))
-            .filter_map(|text| url::Url::parse(&text.to_string()).ok()?.to_file_path().ok())
+            .filter_map(|text| {
+                let url = objc2_foundation::NSURL::URLWithString(&text)?;
+                let path = url.filePathURL()?.path()?;
+                Some(std::path::PathBuf::from(path.to_string()))
+            })
             .collect();
     }
     #[cfg(windows)]
@@ -224,5 +230,21 @@ mod mac_lazy {
             pb.clearContents();
         }
         *KEPT.lock().unwrap() = None;
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    /// Run by hand with a file copied in Finder (Cmd+C): its pasteboard URL is a file
+    /// reference, which must come out as the real path.
+    #[test]
+    #[ignore]
+    fn a_finder_copy_comes_out_as_real_paths() {
+        let paths = super::file_paths();
+        assert!(!paths.is_empty(), "copy a file in Finder first");
+        for p in &paths {
+            assert!(p.exists(), "{} does not exist", p.display());
+            assert!(!p.starts_with("/.file"), "{}", p.display());
+        }
     }
 }

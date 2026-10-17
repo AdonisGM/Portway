@@ -26,4 +26,12 @@ if [ ! -d node_modules ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; t
   pnpm install --frozen-lockfile
 fi
 
+# On macOS the app is signed with the local certificate before it starts, so the
+# Keychain does not ask again after every rebuild (see scripts/dev-sign-run.sh).
+# Set through the environment, not .cargo/config.toml, so `cargo test` is not routed through it.
+if [ "$(uname -s)" = "Darwin" ]; then
+  triple="$(rustc -vV | sed -n 's/^host: //p' | tr 'a-z-' 'A-Z_')"
+  export "CARGO_TARGET_${triple}_RUNNER=$ROOT/scripts/dev-sign-run.sh"
+fi
+
 exec pnpm tauri dev

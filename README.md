@@ -210,6 +210,8 @@ Mặc định bản build chỉ được ký tạm (`adhoc`), mà chữ ký tạ
 2. Build: `APPLE_SIGNING_IDENTITY="Portway Local Signing" ./scripts/build-mac.sh`.
 3. Kiểm tra: `codesign -dr - release/<version>/Portway.app` phải in `identifier "com.portway.app" and certificate leaf = …`.
 
+Bản dev (`./scripts/dev.sh`) cũng được ký bằng chứng chỉ này: `scripts/dev-sign-run.sh` là runner của Cargo (đặt qua biến môi trường trong `dev.sh`, nên `cargo test` không đi qua nó) ký lại `target/debug/portway` với `--identifier com.portway.app` trước mỗi lần chạy. Nhờ đó danh tính giống bản release và giống giữa các lần build, Keychain chỉ hỏi một lượt sau khi đổi sang cách này (mỗi mục một lần: khoá Connect, khoá `@b`, mật khẩu server), rồi thôi. Máy không có chứng chỉ thì chạy như cũ, không ký. Kiểm tra: `codesign -dr - src-tauri/target/debug/portway`.
+
 Biến môi trường được dùng thay cho `tauri.conf.json`, để máy không có chứng chỉ vẫn build được. Chứng chỉ tự ký chỉ có tác dụng trên máy tạo ra nó; phát hành cho người khác cần chứng chỉ Developer ID của Apple và công chứng (notarize).
 
 Trên Windows, bộ cài NSIS (cài cho người dùng hiện tại, không cần quyền quản trị) được tạo bằng:

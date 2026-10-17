@@ -90,6 +90,15 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             _ => {}
         });
+    // The menu bar wants a one-colour mark it can tint (light or dark bar); the
+    // Windows tray takes the coloured app icon.
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(mark) = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png")) {
+            builder = builder.icon(mark).icon_as_template(true);
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }

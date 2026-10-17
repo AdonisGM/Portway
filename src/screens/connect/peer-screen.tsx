@@ -353,7 +353,7 @@ function Performance({ peer, linked }: { peer: ConnectPeer; linked: boolean }) {
     { info: view.machine, live: view.live, h: hist.self },
     { info: peer.info, live: linked ? peer.live : null, h: linked ? (hist.peers[peer.id] ?? []) : [] },
   ]
-  const pick = (h: (Sample | null)[], f: (s: Sample) => number) => h.map((x) => (x ? f(x) : null))
+  const pick = (h: (Sample | null)[], f: (s: Sample) => number | null) => h.map((x) => (x ? f(x) : null))
 
   const cpu = sides.map((x): Cell => (x.live ? { value: `${Math.round(x.live.cpu)}%`, chart: <LiveChart max={100} series={[{ values: pick(x.h, (v) => v.cpu), color: 'var(--info)', fill: true }]} /> } : null))
   const ram = sides.map((x): Cell => {

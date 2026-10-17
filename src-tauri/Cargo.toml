@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.17.1"
+version = "0.18.0"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"
@@ -43,15 +43,17 @@ mdns-sd = "0.21"
 
 blake2 = "0.10"
 netdev = "0.46.3"
+# File URLs from the macOS pasteboard (already in the tree through Tauri).
+url = "2"
 # Specs of this machine (CPU, memory, disk) that a linked machine shows.
 sysinfo = { version = "0.37", default-features = false, features = ["system", "disk", "network"] }
 
 # Hide/show the native traffic lights while the splash screen is up.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSPasteboard"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSPasteboard", "NSPasteboardItem"] }
 # Ask LaunchServices which apps open text files (Sửa tệp › editor list).
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSURL"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSString", "NSURL"] }
 
 # Which process owns a local TCP connection (tunnel monitor) on Windows.
 [target.'cfg(windows)'.dependencies]

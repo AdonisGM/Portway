@@ -70,6 +70,10 @@ pub enum Intent {
     /// Already paired: measure how fast bytes go between the two machines.
     /// Nothing is stored and nobody is asked.
     Speed,
+    /// Already paired: take one item of the files the other machine copied
+    /// (`Msg::Want`). The sender serves only what it announced over the link and
+    /// has not since replaced on its clipboard.
+    Fetch,
 }
 
 /// A network card another machine can wake this one through.
@@ -81,6 +85,17 @@ pub struct MacInfo {
     pub name: String,
     /// "ethernet" or "wifi"
     pub kind: String,
+}
+
+/// One thing the other machine copied: a file, or a folder with everything in it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClipItem {
+    pub name: String,
+    /// Bytes of everything in it.
+    pub size: u64,
+    /// How many files: 1 for a file.
+    pub files: u32,
+    pub dir: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -132,6 +147,14 @@ pub enum Msg {
     Info { info: MachineInfo },
     /// CPU and memory use right now, every few seconds while linked; not stored.
     Stats { stats: LiveStats },
+    /// Files were copied on the sender: only their names and sizes travel. The
+    /// bytes come when the other machine pastes (or saves them) and asks with
+    /// an `Intent::Fetch` connection naming this `lease`.
+    ClipFiles { lease: String, items: Vec<ClipItem> },
+    /// What was announced is no longer on the sender's clipboard.
+    ClipFilesGone { lease: String },
+    /// First message of a `Fetch` connection: the item (by position) of a lease.
+    Want { lease: String, item: u32 },
     /// What this machine does with clipboard text for the other one, sent when
     /// a link comes up and whenever it changes: `receive` is "I write the text
     /// you send into my clipboard", `send` is "I send mine to you as soon as I

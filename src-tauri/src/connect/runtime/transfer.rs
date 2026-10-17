@@ -16,7 +16,7 @@ use wire::{Frame, OfferFile, MAX_DATA};
 const KEEP: usize = 30;
 /// Offers waiting for the user at once; more are refused as busy.
 const MAX_PENDING_OFFERS: usize = 3;
-const MAX_FILES: usize = 20_000;
+pub(super) const MAX_FILES: usize = 20_000;
 /// A frame holds about 64 KB; an offer message stays well under that.
 const OFFER_BATCH_BYTES: usize = 40_000;
 const OFFER_WAIT: Duration = Duration::from_secs(120);
@@ -33,7 +33,7 @@ pub struct Transfer {
     current: usize,
     rate: f64,
     error: Option<String>,
-    saved_to: Option<String>,
+    pub(super) saved_to: Option<String>,
     since: u64,
     last_publish: Instant,
     rate_at: Instant,
@@ -148,7 +148,7 @@ pub fn sanitize_rel(path: &str) -> Option<String> {
 }
 
 /// The offer cut into messages that each fit in a frame.
-pub fn offer_batches(files: &[OfferFile]) -> Vec<Vec<OfferFile>> {
+pub(super) fn offer_batches(files: &[OfferFile]) -> Vec<Vec<OfferFile>> {
     let mut out: Vec<Vec<OfferFile>> = vec![Vec::new()];
     let mut used = 0;
     for f in files {
@@ -165,7 +165,7 @@ pub fn offer_batches(files: &[OfferFile]) -> Vec<Vec<OfferFile>> {
 
 /// Every regular file under `root`, named `root_name/relative/path`. Links
 /// and special files are skipped, and so are empty folders (nothing to send).
-fn walk_dir(root: &Path) -> std::io::Result<Vec<(PathBuf, OfferFile)>> {
+pub(super) fn walk_dir(root: &Path) -> std::io::Result<Vec<(PathBuf, OfferFile)>> {
     let base = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "folder".into());
     let mut out = Vec::new();
     let mut stack = vec![(root.to_path_buf(), base)];
@@ -194,7 +194,7 @@ fn walk_dir(root: &Path) -> std::io::Result<Vec<(PathBuf, OfferFile)>> {
 /// Frames on their own task into a bounded queue: waiting for one never cuts a
 /// frame in half when another event wins a `select!`, and a slow disk slows the
 /// sender down instead of piling bytes up in memory.
-fn spawn_frame_reader<S: AsyncRead + Send + 'static>(mut rx: Receiver<S>) -> mpsc::Receiver<Frame> {
+pub(super) fn spawn_frame_reader<S: AsyncRead + Send + 'static>(mut rx: Receiver<S>) -> mpsc::Receiver<Frame> {
     let (tx, out) = mpsc::channel(64);
     tokio::spawn(async move {
         while let Ok(f) = rx.recv_frame().await {
@@ -208,7 +208,7 @@ fn spawn_frame_reader<S: AsyncRead + Send + 'static>(mut rx: Receiver<S>) -> mps
 
 /// Send the files, one after another, each closed by its hash. Ends when the
 /// receiver has confirmed the last one. `progress` hears about every chunk.
-async fn push_files<S: AsyncRead + AsyncWrite>(
+pub(super) async fn push_files<S: AsyncRead + AsyncWrite>(
     tx: &mut Sender<S>,
     msgs: &mut mpsc::Receiver<Frame>,
     files: &[(PathBuf, OfferFile)],
@@ -261,7 +261,7 @@ async fn push_files<S: AsyncRead + AsyncWrite>(
 /// Take the offered files into `dir`. A file is written under a temporary
 /// name and gets its real one only after its hash matched; a failure leaves
 /// nothing behind. Returns where the first file went.
-async fn pull_files<S: AsyncRead + AsyncWrite>(
+pub(super) async fn pull_files<S: AsyncRead + AsyncWrite>(
     tx: &mut Sender<S>,
     msgs: &mut mpsc::Receiver<Frame>,
     files: &[OfferFile],
@@ -354,16 +354,16 @@ async fn pull_one<S: AsyncRead + AsyncWrite>(
 }
 
 impl Connect {
-    fn download_dir(&self) -> PathBuf {
+    pub(super) fn download_dir(&self) -> PathBuf {
         let configured = self.inner.app.state::<SettingsStore>().get().download_dir.map(|d| crate::paths::expand_tilde(&d));
         configured.filter(|d| d.is_dir()).or_else(|| self.inner.app.path().download_dir().ok()).unwrap_or_else(crate::paths::home_dir)
     }
 
-    fn with_transfer<R>(&self, id: &str, f: impl FnOnce(&mut Transfer) -> R) -> Option<R> {
+    pub(super) fn with_transfer<R>(&self, id: &str, f: impl FnOnce(&mut Transfer) -> R) -> Option<R> {
         self.lock().transfers.iter_mut().find(|t| t.id == id).map(f)
     }
 
-    fn set_stage(&self, id: &str, stage: &'static str, error: Option<String>) {
+    pub(super) fn set_stage(&self, id: &str, stage: &'static str, error: Option<String>) {
         self.with_transfer(id, |t| {
             t.stage = stage;
             t.error = error;
@@ -375,7 +375,7 @@ impl Connect {
         self.publish();
     }
 
-    fn add_transfer(&self, t: Transfer) {
+    pub(super) fn add_transfer(&self, t: Transfer) {
         let mut s = self.lock();
         s.transfers.push(t);
         // Make room: drop the oldest finished ones.
@@ -389,7 +389,7 @@ impl Connect {
         }
     }
 
-    fn progress(&self, id: &str, bytes: u64, index: usize) {
+    pub(super) fn progress(&self, id: &str, bytes: u64, index: usize) {
         let publish = self
             .with_transfer(id, |t| {
                 t.done += bytes;
@@ -415,7 +415,7 @@ impl Connect {
         }
     }
 
-    fn new_transfer(peer_id: &str, peer_name: &str, receiving: bool, files: Vec<OfferFile>, stage: &'static str) -> (String, Transfer) {
+    pub(super) fn new_transfer(peer_id: &str, peer_name: &str, receiving: bool, files: Vec<OfferFile>, stage: &'static str) -> (String, Transfer) {
         let id = uuid::Uuid::new_v4().simple().to_string();
         let total = files.iter().map(|f| f.size).sum();
         let now = Instant::now();

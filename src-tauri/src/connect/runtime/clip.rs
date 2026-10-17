@@ -38,6 +38,8 @@ pub struct ClipNote {
     /// "in" (written here) or "out" (sent).
     pub direction: &'static str,
     pub chars: usize,
+    /// How many files or folders when it is files that were copied; 0 for text.
+    pub files: u32,
     pub at: u64,
     /// For "out": "sent" until the other machine answers, then "delivered" or
     /// why it was not taken ("off", "too_large", "failed"). Machines older than
@@ -56,12 +58,14 @@ pub struct ClipPrefs {
 pub struct ClipState {
     /// Hash of the text last sent or written, so it is not sent back or written twice.
     last: Option<u64>,
+    /// The clipboard's change count right after this app put something there.
+    pub own_change: Option<u64>,
     pub note: Option<ClipNote>,
 }
 
 impl ClipState {
     pub fn new() -> Self {
-        Self { last: None, note: None }
+        Self { last: None, own_change: None, note: None }
     }
 }
 
@@ -91,7 +95,7 @@ impl Connect {
         Ok(())
     }
 
-    fn link_outbox(&self, id: &str) -> Option<mpsc::UnboundedSender<Msg>> {
+    pub(super) fn link_outbox(&self, id: &str) -> Option<mpsc::UnboundedSender<Msg>> {
         self.lock().link.as_ref().filter(|l| l.up && l.peer_id == id).map(|l| l.outbox.clone())
     }
 
@@ -101,7 +105,7 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip.last = Some(hash_of(&text));
-            s.clip.note = Some(ClipNote { peer_id: id.to_string(), direction: "out", chars, at: now_ms(), status: "sent".into() });
+            s.clip.note = Some(ClipNote { peer_id: id.to_string(), direction: "out", chars, files: 0, at: now_ms(), status: "sent".into() });
         }
         let _ = outbox.send(Msg::Clip { text });
         self.audit("clipSend", &name, true, Some(format!("{chars} chars")));
@@ -135,7 +139,7 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip.last = Some(h);
-            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars, at: now_ms(), status: "delivered".into() });
+            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars, files: 0, at: now_ms(), status: "delivered".into() });
         }
         self.audit("clipReceive", &name, true, Some(format!("{chars} chars")));
         self.publish();
@@ -180,13 +184,31 @@ impl Connect {
                 return;
             }
             let now = sys_clip::change_count();
-            if !enabled || now.is_none() || now == seen {
-                // Keep up while off, so switching it on does not send what was copied long ago.
-                seen = now;
+            if now.is_none() || now == seen {
                 continue;
             }
             seen = now;
-            if sys_clip::is_sensitive() {
+            // Written by this app (files offered by the other machine): not something to send back.
+            if self.lock().clip.own_change == now {
+                continue;
+            }
+            let sensitive = sys_clip::is_sensitive();
+            // Files copied (and not marked sensitive): their names go, the bytes wait to be asked for.
+            let files = if sensitive { Vec::new() } else { sys_clip::file_paths() };
+            // Whatever was announced is not on the clipboard any more.
+            if !self.clip_out_is(&files) {
+                self.revoke_clip_files();
+            }
+            // Keep up while off, so switching it on does not send what was copied long ago.
+            if !enabled || sensitive {
+                continue;
+            }
+            if !files.is_empty() {
+                if !self.clip_out_is(&files) || !self.lock().clip_out_told(&peer_id) {
+                    if let Some(outbox) = self.link_outbox(&peer_id) {
+                        let _ = self.announce_clip_files(&peer_id, &outbox, files);
+                    }
+                }
                 continue;
             }
             let Ok(text) = self.inner.app.clipboard().read_text() else { continue };

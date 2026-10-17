@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Check, Cpu, FolderUp, Gauge, MemoryStick, Microchip, Network as NetworkIcon, Power, Send, TriangleAlert, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Cpu, Download, Files, FolderUp, Gauge, MemoryStick, Microchip, Network as NetworkIcon, Power, Send, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useConnect, useConnectHistory, type Sample } from '../../app/connect'
 import { useNav } from '../../app/nav'
@@ -487,7 +487,7 @@ function ClipboardPanel({ peer, linked, onError }: { peer: ConnectPeer; linked: 
   const remote = linked ? peer.remoteClip : null
   const setClip = (receive: boolean, send: boolean) => void api.connectSetClip(peer.id, receive, send).catch(onError(t('Không đổi được cài đặt')))
   const why = peer.versionMismatch ? t('Hai máy chạy khác phiên bản Portway.') : !linked ? t('Cần đang kết nối với máy này.') : null
-  const when = (n: NonNullable<typeof note>) => [t('{n} ký tự', { n: n.chars }), new Date(n.at).toLocaleTimeString()].join(' · ')
+  const when = (n: NonNullable<typeof note>) => [n.files > 0 ? t('{n} tệp hoặc thư mục', { n: n.files }) : t('{n} ký tự', { n: n.chars }), new Date(n.at).toLocaleTimeString()].join(' · ')
 
   // This machine to the other: needs our auto-send and, when it says, its Receive.
   const out: FlowState = !peer.clipSend ? 'off' : remote && !remote.receive ? 'blocked' : 'flow'
@@ -512,6 +512,8 @@ function ClipboardPanel({ peer, linked, onError }: { peer: ConnectPeer; linked: 
     </span>
   )
   const received = note?.direction === 'in' ? note : null
+  // Files go over a connection of their own, which an older Portway would refuse.
+  const filesWhy = why ?? (peer.info?.features.includes('clipfiles') ? null : t('Portway ở máy kia chưa hỗ trợ dán tệp. Cập nhật Portway ở máy đó.'))
 
   return (
     <Panel title={t('Clipboard')} note={t('chỉ văn bản')}>
@@ -532,8 +534,13 @@ function ClipboardPanel({ peer, linked, onError }: { peer: ConnectPeer; linked: 
               <Send size={13} strokeWidth={1.75} className="mr-1.5" />
               {t('Gửi ngay')}
             </Button>
+            <Button size="sm" disabled={!!filesWhy} title={filesWhy ?? undefined} onClick={() => void api.connectClipFilesSend(peer.id).catch(onError(t('Không gửi được tệp')))}>
+              <Files size={13} strokeWidth={1.75} className="mr-1.5" />
+              {t('Gửi tệp đang copy')}
+            </Button>
             {why && <span className="text-[11.5px] text-muted">{why}</span>}
           </div>
+          {peer.clipFiles && <IncomingFiles peer={peer} onError={onError} />}
         </div>
       </div>
     </Panel>
@@ -582,6 +589,30 @@ function ArrowLane({ dir, state, last }: { dir: 'in' | 'out'; state: FlowState; 
         {dir === 'out' && <Arrow size={16} strokeWidth={2.25} className="-ml-1 flex-none" />}
       </span>
       {last}
+    </div>
+  )
+}
+
+/** What the other machine copied: the names, and a button that fetches it all. */
+function IncomingFiles({ peer, onError }: { peer: ConnectPeer; onError: (title: string) => (e: unknown) => void }) {
+  const files = peer.clipFiles
+  if (!files) return null
+  const total = files.items.reduce((n, i) => n + i.size, 0)
+  const shown = files.items.slice(0, 3).map((i) => i.name)
+  const more = files.items.length - shown.length
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunken/40 px-3 py-2.5">
+      <span className="flex items-center gap-2 font-medium">
+        <Files size={15} strokeWidth={1.75} className="text-ink2" />
+        {t('{name} đã copy {n} mục · {size}', { name: peer.name, n: files.items.length, size: formatBytes(total) })}
+      </span>
+      <span className="truncate text-[11.5px] text-muted">{[...shown, more > 0 ? t('và {n} mục khác', { n: more }) : null].filter(Boolean).join(', ')}</span>
+      <span className="flex flex-wrap items-center gap-2.5">
+        <Button size="sm" variant="primary" onClick={() => void api.connectClipFilesSave(peer.id).catch(onError(t('Không lưu được tệp')))}>
+          <Download size={13} strokeWidth={1.75} className="mr-1.5" />
+          {t('Lưu vào Downloads')}
+        </Button>
+      </span>
     </div>
   )
 }

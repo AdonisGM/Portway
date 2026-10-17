@@ -102,6 +102,8 @@ pub struct PeerView {
     pub live: Option<LiveStats>,
     /// What it does with clipboard text for this machine; only while linked with it.
     pub remote_clip: Option<ClipPrefs>,
+    /// Files it copied and offered.
+    pub clip_files: Option<ClipFilesView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -264,6 +266,10 @@ struct State {
     peer_stats: Option<(String, LiveStats)>,
     /// What the linked machine does with clipboard text for this one, in memory only.
     peer_clip: Option<(String, ClipPrefs)>,
+    /// Files this machine copied and announced; served to whoever was told.
+    clip_out: Option<OutLease>,
+    /// Files the linked machine says it copied.
+    clip_in: Option<InLease>,
     /// Speed tests, the last one per machine.
     speeds: HashMap<String, SpeedState>,
     /// A machine is measuring the speed to this one right now.
@@ -300,10 +306,13 @@ struct Inner {
 }
 
 mod clip;
+mod clipfiles;
 mod speed;
 mod transfer;
 use super::sys_clip;
 use clip::{ClipNote, ClipPrefs, ClipState};
+use clipfiles::{ClipFilesView, InLease, OutLease};
+use transfer::{offer_batches, pull_files, push_files, spawn_frame_reader, walk_dir, MAX_FILES};
 use speed::{SpeedState, SpeedView};
 use transfer::{Transfer, TransferView};
 
@@ -332,6 +341,8 @@ impl Connect {
             stats: None,
             peer_stats: None,
             peer_clip: None,
+            clip_out: None,
+            clip_in: None,
             speeds: HashMap::new(),
             speed_serving: false,
             next_token: 1,
@@ -706,6 +717,17 @@ impl Connect {
                     return;
                 }
                 self.accept_speed(tx, rx).await;
+            }
+            Intent::Fetch => {
+                let peer = self.lock().store.peer(&id).filter(|p| p.public_key == hex(&remote_key)).cloned();
+                let Some(peer) = peer else {
+                    let _ = tx.send(&Msg::Refuse { code: "not_paired".into() }).await;
+                    return;
+                };
+                if tx.send(&hello).await.is_err() {
+                    return;
+                }
+                self.accept_fetch(tx, rx, peer).await;
             }
             Intent::Pair => {
                 let (decide_tx, decide_rx) = mpsc::unbounded_channel();
@@ -1209,6 +1231,11 @@ impl Connect {
                         let reason = self.on_clip(&peer_id, text);
                         if tx.send(&Msg::ClipAck { ok: reason.is_empty(), reason: reason.into() }).await.is_err() { break; }
                     }
+                    Some(Msg::ClipFiles { lease, items }) => {
+                        let reason = self.on_clip_files(&peer_id, lease, items);
+                        if tx.send(&Msg::ClipAck { ok: reason.is_empty(), reason: reason.into() }).await.is_err() { break; }
+                    }
+                    Some(Msg::ClipFilesGone { lease }) => self.on_clip_files_gone(&peer_id, &lease),
                     Some(Msg::ClipPrefs { receive, send }) => self.on_clip_prefs(&peer_id, receive, send),
                     Some(Msg::ClipAck { ok, reason }) => self.on_clip_ack(&peer_id, ok, reason),
                     Some(Msg::Info { info }) => self.on_info(&peer_id, info),
@@ -1278,9 +1305,17 @@ impl Connect {
         {
             let mut s = self.lock();
             if s.link.as_ref().is_some_and(|l| l.token == token) {
+                let who = s.link.as_ref().map(|l| l.peer_id.clone()).unwrap_or_default();
                 s.link = None;
                 s.peer_stats = None;
                 s.peer_clip = None;
+                // Once the link is gone what it copied cannot be revoked, and it can no longer be fetched from us.
+                if s.clip_in.as_ref().is_some_and(|l| l.peer_id == who) {
+                    s.clip_in = None;
+                }
+                if let Some(out) = s.clip_out.as_mut() {
+                    out.forget(&who);
+                }
             }
         }
         self.publish();
@@ -1385,7 +1420,7 @@ fn build_view(s: &State) -> View {
             // Reachable first, fastest first.
             paths.sort_by(|a, b| a.rtt_ms.unwrap_or(f64::MAX).total_cmp(&b.rtt_ms.unwrap_or(f64::MAX)));
             let online = is_online(s, &p.id);
-            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), live: s.peer_stats.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), remote_clip: s.peer_clip.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
+            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), live: s.peer_stats.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), remote_clip: s.peer_clip.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), clip_files: s.clip_in.as_ref().filter(|l| l.peer_id == p.id).map(clipfiles::view), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
         })
         .collect();
     View {
@@ -1441,6 +1476,8 @@ mod tests {
             stats: None,
             peer_stats: None,
             peer_clip: None,
+            clip_out: None,
+            clip_in: None,
             speeds: HashMap::new(),
             speed_serving: false,
             next_token: 1,

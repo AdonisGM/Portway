@@ -267,6 +267,16 @@ const en: Dict = {
   'Tự gửi sang máy kia': 'Auto-send to the other machine',
   'Nhận từ máy kia': 'Receive from the other machine',
   'Máy kia chưa gửi số liệu. Cập nhật Portway ở máy đó.': "The other machine doesn't send its figures yet. Update Portway there.",
+  '{n} tệp hoặc thư mục': '{n} files or folders',
+  'Gửi tệp đang copy': 'Send copied files',
+  'Portway ở máy kia chưa hỗ trợ dán tệp. Cập nhật Portway ở máy đó.': "Portway on the other machine doesn't support pasting files. Update Portway there.",
+  '{name} đã copy {n} mục · {size}': '{name} copied {n} items · {size}',
+  'và {n} mục khác': 'and {n} more',
+  'Lưu vào Downloads': 'Save to Downloads',
+  'Không lưu được tệp': "Couldn't save the files",
+  'Clipboard không có tệp nào. Hãy copy tệp trong Finder hoặc Explorer trước.': 'The clipboard has no files. Copy files in Finder or Explorer first.',
+  'Máy kia không còn tệp nào đang được copy': 'The other machine no longer has files copied',
+  'Máy kia đã copy thứ khác nên tệp không còn nữa': 'The other machine copied something else, so the files are gone',
 }
 
 export default en

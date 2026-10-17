@@ -48,3 +48,163 @@ pub fn is_sensitive() -> bool {
     #[allow(unreachable_code)]
     false
 }
+
+/// The files (and folders) on the clipboard, as copied in Finder or Explorer;
+/// empty when there are none or this platform has no way to read them.
+pub fn file_paths() -> Vec<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeFileURL};
+        let pb = NSPasteboard::generalPasteboard();
+        let Some(items) = pb.pasteboardItems() else { return Vec::new() };
+        // SAFETY: the constant is a plain pasteboard type name.
+        let kind = unsafe { NSPasteboardTypeFileURL };
+        return items
+            .iter()
+            .filter_map(|item| item.stringForType(kind))
+            .filter_map(|text| url::Url::parse(&text.to_string()).ok()?.to_file_path().ok())
+            .collect();
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStringExt;
+        use windows_sys::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
+        use windows_sys::Win32::UI::Shell::DragQueryFileW;
+        const CF_HDROP: u32 = 15;
+        let mut out = Vec::new();
+        // SAFETY: the clipboard is opened for the reads and closed after them; the
+        // handle belongs to the clipboard and is only read while it is open.
+        unsafe {
+            if OpenClipboard(std::ptr::null_mut()) == 0 {
+                return out;
+            }
+            let handle = GetClipboardData(CF_HDROP);
+            if !handle.is_null() {
+                let hdrop = handle as _;
+                let count = DragQueryFileW(hdrop, u32::MAX, std::ptr::null_mut(), 0);
+                for i in 0..count {
+                    let len = DragQueryFileW(hdrop, i, std::ptr::null_mut(), 0) as usize;
+                    let mut buf = vec![0u16; len + 1];
+                    DragQueryFileW(hdrop, i, buf.as_mut_ptr(), buf.len() as u32);
+                    out.push(std::path::PathBuf::from(std::ffi::OsString::from_wide(&buf[..len])));
+                }
+            }
+            CloseClipboard();
+        }
+        return out;
+    }
+    #[allow(unreachable_code)]
+    Vec::new()
+}
+
+/// Produces the file for item `index` when somebody pastes it, and says where
+/// it is; None when it cannot be had (the machine is gone, the clipboard moved on).
+pub type FileSource = std::sync::Arc<dyn Fn(usize) -> Option<std::path::PathBuf> + Send + Sync>;
+
+/// Put one pasteable file per name on the clipboard whose bytes do not exist yet:
+/// `source` is asked for each at the moment it is pasted (Finder asks, and waits
+/// for as long as it takes). Gives back the clipboard's change count right after,
+/// so the watcher can tell this write from the user's own copy. None where this
+/// platform cannot do it.
+pub fn set_lazy_files(names: &[String], source: FileSource) -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        return mac_lazy::set(names, source);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (names, source);
+        None
+    }
+}
+
+/// Take back what `set_lazy_files` put there, if it is still what the clipboard holds.
+pub fn clear_lazy_files(own_change: Option<u64>) {
+    #[cfg(target_os = "macos")]
+    {
+        mac_lazy::clear(own_change);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = own_change;
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod mac_lazy {
+    use super::FileSource;
+    use objc2::rc::Retained;
+    use objc2::runtime::ProtocolObject;
+    use objc2::{define_class, msg_send, AnyThread, DefinedClass};
+    use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSPasteboardItemDataProvider, NSPasteboardType, NSPasteboardTypeFileURL, NSPasteboardWriting};
+    use objc2_foundation::{NSArray, NSData, NSObject, NSObjectProtocol};
+    use std::sync::Mutex;
+
+    struct Ivars {
+        index: usize,
+        source: FileSource,
+    }
+
+    define_class!(
+        // SAFETY: NSObject has no subclassing requirements; the ivars are plain Rust data.
+        #[unsafe(super(NSObject))]
+        #[name = "PortwayLazyFile"]
+        #[ivars = Ivars]
+        struct LazyFile;
+
+        unsafe impl NSObjectProtocol for LazyFile {}
+
+        unsafe impl NSPasteboardItemDataProvider for LazyFile {
+            #[unsafe(method(pasteboard:item:provideDataForType:))]
+            fn provide(&self, _pasteboard: Option<&NSPasteboard>, item: &NSPasteboardItem, kind: &NSPasteboardType) {
+                let ivars = self.ivars();
+                // This is where the file is fetched: Finder waits for the answer.
+                if let Some(path) = (ivars.source)(ivars.index) {
+                    if let Ok(url) = url::Url::from_file_path(&path) {
+                        let data = NSData::with_bytes(url.as_str().as_bytes());
+                        item.setData_forType(&data, kind);
+                    }
+                }
+            }
+        }
+    );
+
+    /// The pasteboard does not keep its data providers alive.
+    struct Kept(#[allow(dead_code)] Vec<Retained<LazyFile>>);
+    // SAFETY: only held to keep the objects alive, never used from the thread it sits on.
+    unsafe impl Send for Kept {}
+    static KEPT: Mutex<Option<Kept>> = Mutex::new(None);
+
+    pub fn set(names: &[String], source: FileSource) -> Option<u64> {
+        let pb = NSPasteboard::generalPasteboard();
+        // SAFETY: plain constant.
+        let kind = unsafe { NSPasteboardTypeFileURL };
+        let mut keep = Vec::new();
+        let mut items: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> = Vec::new();
+        for index in 0..names.len() {
+            let provider: Retained<LazyFile> = {
+                let this = LazyFile::alloc().set_ivars(Ivars { index, source: source.clone() });
+                // SAFETY: `init` of NSObject on a freshly allocated, initialised-ivars object.
+                unsafe { msg_send![super(this), init] }
+            };
+            let item = NSPasteboardItem::new();
+            let types = NSArray::from_slice(&[kind]);
+            item.setDataProvider_forTypes(&ProtocolObject::from_ref(&*provider), &types);
+            items.push(ProtocolObject::from_retained(item));
+            keep.push(provider);
+        }
+        pb.clearContents();
+        let array = NSArray::from_retained_slice(&items);
+        let ok = pb.writeObjects(&array);
+        *KEPT.lock().unwrap() = Some(Kept(keep));
+        ok.then(|| pb.changeCount() as u64)
+    }
+
+    pub fn clear(own_change: Option<u64>) {
+        let pb = NSPasteboard::generalPasteboard();
+        if own_change.is_some() && Some(pb.changeCount() as u64) == own_change {
+            pb.clearContents();
+        }
+        *KEPT.lock().unwrap() = None;
+    }
+}

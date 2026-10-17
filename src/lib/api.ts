@@ -621,9 +621,13 @@ export type ConnectPeer = {
   speed: ConnectSpeed | null
   /** Its load now; null unless linked with it. */
   live: ConnectLive | null
+  /** Files it copied and offered; null when none (or it is no longer linked). */
+  clipFiles: ConnectClipFiles | null
   /** What it does with clipboard text for this machine (it takes what is sent / it sends as soon as it copies); null unless linked with a machine new enough to say. */
   remoteClip: { receive: boolean; send: boolean } | null
 }
+export type ConnectClipItem = { name: string; /** Bytes of everything in it. */ size: number; /** 1 for a file. */ files: number; dir: boolean }
+export type ConnectClipFiles = { items: ConnectClipItem[]; at: number }
 /** A machine as the other side of a link sees it. */
 export type ConnectGpu = { name: string; /** Bytes; 0 when shared with the system or unknown. */ vram: number; cores: number | null }
 /** CPU and memory use right now. */
@@ -709,7 +713,7 @@ export type ConnectTransfer = {
 }
 /** The last text sent or received over a link, without its content. */
 /** For "out": "sent" until the other machine answers, then "delivered" or why it was not taken ("off", "too_large", "failed"). */
-export type ConnectClipNote = { peerId: string; direction: 'in' | 'out'; chars: number; at: number; status: string }
+export type ConnectClipNote = { peerId: string; direction: 'in' | 'out'; chars: number; /** Files or folders, when it is those that were copied; 0 for text. */ files: number; at: number; status: string }
 export type ConnectView = {
   enabled: boolean
   device: { id: string; name: string; os: string; version: string; port: number | null; fingerprint: string } | null
@@ -809,6 +813,10 @@ type Api = {
   connectSetClip(id: string, receive: boolean, send: boolean): Promise<void>
   /** Send the text on the clipboard now to the machine linked with. */
   connectClipSend(id: string): Promise<void>
+  /** Announce the files on the clipboard to the machine linked with. */
+  connectClipFilesSend(id: string): Promise<void>
+  /** Fetch the files the linked machine copied into the downloads folder. */
+  connectClipFilesSave(id: string): Promise<void>
   /** Measure the speed to a paired machine on the network; the result comes in the view. */
   connectSpeedTest(id: string): Promise<void>
   tunnels(): Promise<Tunnel[]>
@@ -936,6 +944,8 @@ const tauriApi: Api = {
   connectTransfersClear: () => invoke('connect_transfers_clear'),
   connectSetClip: (id, receive, send) => invoke('connect_set_clip', { id, receive, send }),
   connectClipSend: (id) => invoke('connect_clip_send', { id }),
+  connectClipFilesSend: (id) => invoke('connect_clip_files_send', { id }),
+  connectClipFilesSave: (id) => invoke('connect_clip_files_save', { id }),
   connectSpeedTest: (id) => invoke('connect_speed_test', { id }),
   tunnels: () => invoke('tunnels_list'),
   saveTunnel: (spec) => invoke('tunnel_save', { spec }),
@@ -1161,6 +1171,8 @@ function browserApi(): Api {
     connectTransfersClear: async () => {},
     connectSetClip: async () => fail('needs_app'),
     connectClipSend: async () => fail('needs_app'),
+    connectClipFilesSend: async () => fail('needs_app'),
+    connectClipFilesSave: async () => fail('needs_app'),
     connectSpeedTest: async () => fail('needs_app'),
     tunnels: async () => [],
     saveTunnel: async () => fail('needs_app'),

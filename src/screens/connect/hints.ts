@@ -149,6 +149,12 @@ export function commandError(e: unknown): string {
       return t('{path} không phải tệp hay thư mục thường', { path: e.detail ?? '' })
     case 'no_offer':
       return t('Yêu cầu nhận tệp này đã hết hạn')
+    case 'clip_no_files':
+      return t('Clipboard không có tệp nào. Hãy copy tệp trong Finder hoặc Explorer trước.')
+    case 'clipfiles_unsupported':
+      return t('Portway ở máy kia chưa hỗ trợ dán tệp. Cập nhật Portway ở máy đó.')
+    case 'no_clip_files':
+      return t('Máy kia không còn tệp nào đang được copy')
     case 'speed_unsupported':
       return t('Portway ở máy kia chưa hỗ trợ đo tốc độ')
     case 'speed_busy':
@@ -175,6 +181,8 @@ export function transferError(code: string): string {
       return t('Máy kia gửi dữ liệu không đúng')
     case 'refused_busy':
       return t('Máy kia đang có quá nhiều yêu cầu nhận tệp')
+    case 'refused_gone':
+      return t('Máy kia đã copy thứ khác nên tệp không còn nữa')
     case 'refused_bad_offer':
       return t('Máy kia không nhận danh sách tệp này')
     default:

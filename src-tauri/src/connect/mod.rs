@@ -125,3 +125,15 @@ pub fn connect_clip_send(connect: State<'_, Connect>, id: String) -> AppResult<(
 pub fn connect_speed_test(connect: State<'_, Connect>, id: String) -> AppResult<()> {
     connect.speed_test(&id)
 }
+
+/// Tell the machine linked with that the files on the clipboard were copied here.
+#[tauri::command]
+pub fn connect_clip_files_send(connect: State<'_, Connect>, id: String) -> AppResult<()> {
+    connect.clip_files_send_now(&id)
+}
+
+/// Fetch what the linked machine copied into the downloads folder.
+#[tauri::command]
+pub fn connect_clip_files_save(connect: State<'_, Connect>, id: String) -> AppResult<()> {
+    connect.clip_files_save(&id)
+}

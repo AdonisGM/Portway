@@ -1,4 +1,4 @@
-import { ArrowLeft, ClipboardCopy, FolderUp, Gauge, Power, Send, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ClipboardCopy, FolderUp, Gauge, Power, Send, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useConnect } from '../../app/connect'
 import { useNav } from '../../app/nav'
@@ -7,7 +7,7 @@ import { ConfirmModal } from '../../components/ui/modal'
 import { Button, Chip, TONES } from '../../components/ui/primitives'
 import { RowMenu } from '../../components/ui/row-menu'
 import { t } from '../../i18n'
-import { api, type ConnectMachine, type ConnectPeer, type ConnectSpeed } from '../../lib/api'
+import { api, type ConnectLive, type ConnectMachine, type ConnectPeer, type ConnectSpeed } from '../../lib/api'
 import { formatBytes, formatUptime } from '../server/format'
 import { commandError, hintFor, speedError } from './hints'
 import { HintSteps } from './pairing-dialog'
@@ -172,11 +172,37 @@ const cpuText = (m: ConnectMachine) => {
 const diskText = (m: ConnectMachine) => (m.diskTotal > 0 ? t('{free} trống / {total}', { free: formatBytes(m.diskFree), total: formatBytes(m.diskTotal) }) : '—')
 const cardsText = (m: ConnectMachine) =>
   m.cards.length ? m.cards.map((c) => [c.name, cardSpeed(c.mbps)].filter(Boolean).join(' ')).join(', ') : '—'
+const gpuText = (m: ConnectMachine) =>
+  m.gpus.length
+    ? m.gpus.map((g) => [g.name, g.vram > 0 ? formatBytes(g.vram) : null, g.cores ? t('{n} nhân GPU', { n: g.cores }) : null].filter(Boolean).join(' · ')).join(', ')
+    : '—'
 
-const SPEC_ROWS: { label: () => string; value: (m: ConnectMachine) => string }[] = [
+/** A bar with its figure beside it, for what changes by the second. */
+function Meter({ pct, label }: { pct: number; label: string }) {
+  const hot = pct >= 85
+  return (
+    <span className="flex items-center gap-2">
+      <span className="h-1.5 w-16 flex-none overflow-hidden rounded-full bg-sunken">
+        <span className="block h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.max(2, Math.min(100, pct))}%`, background: hot ? 'var(--warn)' : 'var(--info)' }} />
+      </span>
+      <span className="num">{label}</span>
+    </span>
+  )
+}
+
+type SpecRowDef = { label: () => string; value: (m: ConnectMachine, live: ConnectLive | null) => React.ReactNode }
+
+const SPEC_ROWS: SpecRowDef[] = [
   { label: () => t('Hệ điều hành'), value: (m) => [m.osVersion, m.arch].filter(Boolean).join(' · ') || '—' },
+  { label: () => t('Mẫu máy'), value: (m) => m.model || '—' },
   { label: () => t('CPU'), value: cpuText },
-  { label: () => t('RAM'), value: (m) => (m.ram > 0 ? formatBytes(m.ram) : '—') },
+  { label: () => t('CPU đang dùng'), value: (_, l) => (l ? <Meter pct={l.cpu} label={`${Math.round(l.cpu)}%`} /> : '—') },
+  {
+    label: () => t('RAM'),
+    value: (m, l) =>
+      m.ram <= 0 ? '—' : l ? <Meter pct={(l.ramUsed / m.ram) * 100} label={`${formatBytes(l.ramUsed)} / ${formatBytes(m.ram)}`} /> : formatBytes(m.ram),
+  },
+  { label: () => t('GPU'), value: gpuText },
   { label: () => t('Ổ đĩa'), value: diskText },
   { label: () => t('Card mạng'), value: cardsText },
   { label: () => t('Đã bật được'), value: (m) => (m.uptime > 0 ? formatUptime(m.uptime) : '—') },
@@ -184,6 +210,7 @@ const SPEC_ROWS: { label: () => string; value: (m: ConnectMachine) => string }[]
 ]
 
 function Specs({ peer, mine, linked }: { peer: ConnectPeer; mine: ConnectMachine | null; linked: boolean }) {
+  const { live: myLive } = useConnect()
   const theirs = peer.info
   const note = !theirs
     ? linked
@@ -199,14 +226,14 @@ function Specs({ peer, mine, linked }: { peer: ConnectPeer; mine: ConnectMachine
         <span className="border-b border-line px-3 py-2 font-semibold text-ink2">{t('Máy này')}</span>
         <span className="truncate border-b border-line px-3 py-2 font-semibold text-ink2">{peer.name}</span>
         {SPEC_ROWS.map((row) => (
-          <SpecRow key={row.label()} label={row.label()} mine={mine ? row.value(mine) : '—'} theirs={theirs ? row.value(theirs) : '—'} />
+          <SpecRow key={row.label()} label={row.label()} mine={mine ? row.value(mine, myLive) : '—'} theirs={theirs ? row.value(theirs, linked ? peer.live : null) : '—'} />
         ))}
       </div>
     </Panel>
   )
 }
 
-function SpecRow({ label, mine, theirs }: { label: string; mine: string; theirs: string }) {
+function SpecRow({ label, mine, theirs }: { label: string; mine: React.ReactNode; theirs: React.ReactNode }) {
   return (
     <>
       <span className="border-t border-line px-3 py-2 text-muted">{label}</span>
@@ -349,11 +376,7 @@ function Feature({ icon: Icon, title, desc, why, children }: FeatureProps) {
 }
 
 function Features({ peer, linked, onError }: { peer: ConnectPeer; linked: boolean; onError: (title: string) => (e: unknown) => void }) {
-  const { clip } = useConnect()
-  const note = clip?.peerId === peer.id ? clip : null
   const reach = peer.versionMismatch ? t('Hai máy chạy khác phiên bản Portway. Cập nhật Portway ở cả hai máy.') : !peer.online ? t('Cần thấy máy này trong mạng.') : null
-  const needsLink = peer.versionMismatch ? reach : !linked ? t('Cần đang kết nối với máy này.') : null
-  const setClip = (receive: boolean, send: boolean) => void api.connectSetClip(peer.id, receive, send).catch(onError(t('Không đổi được cài đặt')))
   const wakeWhy = peer.online ? t('Máy này đang bật.') : !peer.canWake ? t('Chưa có địa chỉ MAC của máy này. Kết nối với nó một lần để Portway ghi lại.') : null
 
   return (
@@ -367,22 +390,7 @@ function Features({ peer, linked, onError }: { peer: ConnectPeer; linked: boolea
           {t('Gửi thư mục…')}
         </Button>
       </Feature>
-      <Feature icon={ClipboardCopy} title={t('Gửi clipboard sang máy này')} desc={t('Gửi văn bản đang copy. Có thể bật tự gửi mỗi khi bạn copy.')} why={needsLink}>
-        <Button size="sm" disabled={!!needsLink} onClick={() => void api.connectClipSend(peer.id).catch(onError(t('Không gửi được clipboard')))}>
-          {t('Gửi clipboard')}
-        </Button>
-      </Feature>
-      <SwitchRow title={t('Tự gửi clipboard sang máy này')} desc={t('Mỗi lần bạn copy văn bản, nó được gửi đi (trừ mật khẩu từ trình quản lý mật khẩu). Chỉ chạy khi đang kết nối.')} on={peer.clipSend} onChange={(v) => setClip(peer.clipReceive, v)} />
-      <SwitchRow
-        title={t('Nhận clipboard từ máy này')}
-        desc={
-          note
-            ? [note.direction === 'out' ? t('Đã gửi clipboard') : t('Đã nhận clipboard'), t('{n} ký tự', { n: note.chars }), new Date(note.at).toLocaleTimeString()].join(' · ')
-            : t('Văn bản máy kia gửi sẽ được ghi vào clipboard của máy này.')
-        }
-        on={peer.clipReceive}
-        onChange={(v) => setClip(v, peer.clipSend)}
-      />
+      <ClipboardFlow peer={peer} linked={linked} onError={onError} />
       <Feature icon={Power} title={t('Đánh thức máy này')} desc={t('Gửi gói Wake-on-LAN qua mọi card mạng, rồi đợi máy lên.')} why={wakeWhy}>
         <Button size="sm" disabled={!!wakeWhy} onClick={() => void api.connectWake(peer.id).catch(onError(t('Không đánh thức được')))}>
           {t('Đánh thức')}
@@ -392,15 +400,80 @@ function Features({ peer, linked, onError }: { peer: ConnectPeer; linked: boolea
   )
 }
 
-function SwitchRow({ title, desc, on, onChange }: { title: string; desc: string; on: boolean; onChange: (v: boolean) => void }) {
+/** Clipboard text between the two machines, drawn as the two machines with an
+ *  arrow each way: the arrow lights up when that direction is on. */
+function ClipboardFlow({ peer, linked, onError }: { peer: ConnectPeer; linked: boolean; onError: (title: string) => (e: unknown) => void }) {
+  const { clip, device } = useConnect()
+  const note = clip?.peerId === peer.id ? clip : null
+  const setClip = (receive: boolean, send: boolean) => void api.connectSetClip(peer.id, receive, send).catch(onError(t('Không đổi được cài đặt')))
+  const why = peer.versionMismatch ? t('Hai máy chạy khác phiên bản Portway.') : !linked ? t('Cần đang kết nối với máy này.') : null
+  const last = (dir: 'in' | 'out') => (note?.direction === dir ? [t('{n} ký tự', { n: note.chars }), new Date(note.at).toLocaleTimeString()].join(' · ') : null)
+
   return (
-    <div className="grid items-center gap-3 border-t border-line px-3.5 py-3" style={{ gridTemplateColumns: '20px minmax(0,1fr) auto' }}>
-      <span />
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-medium">{title}</span>
-        <span className="leading-normal text-muted">{desc}</span>
+    <div className="flex flex-col gap-3 border-t border-line px-3.5 py-3.5 first:border-t-0">
+      <span className="flex items-center gap-2 font-medium">
+        <ClipboardCopy size={16} strokeWidth={1.75} className="text-ink2" />
+        {t('Clipboard')}
+        <span className="font-normal text-muted">{t('chỉ văn bản')}</span>
       </span>
-      <Switch on={on} onChange={onChange} label={title} />
+      <div className="grid items-center gap-3" style={{ gridTemplateColumns: 'minmax(96px,140px) minmax(0,1fr) minmax(96px,140px)' }}>
+        <Endpoint os={device?.os ?? 'macos'} name={t('Máy này')} />
+        <div className="flex flex-col gap-3">
+          <Lane
+            dir="out"
+            label={t('Tự gửi')}
+            tip={t('Mỗi lần bạn copy văn bản, nó được gửi sang máy kia (trừ mật khẩu từ trình quản lý mật khẩu). Chỉ chạy khi đang kết nối.')}
+            on={peer.clipSend}
+            onChange={(v) => setClip(peer.clipReceive, v)}
+            last={last('out')}
+          />
+          <Lane
+            dir="in"
+            label={t('Nhận#clipboard')}
+            tip={t('Văn bản máy kia gửi sẽ được ghi vào clipboard của máy này.')}
+            on={peer.clipReceive}
+            onChange={(v) => setClip(v, peer.clipSend)}
+            last={last('in')}
+          />
+        </div>
+        <Endpoint os={peer.os} name={peer.name} />
+      </div>
+      <div className="flex items-center gap-2.5">
+        <Button size="sm" disabled={!!why} title={why ?? undefined} onClick={() => void api.connectClipSend(peer.id).catch(onError(t('Không gửi được clipboard')))}>
+          <Send size={13} strokeWidth={1.75} className="mr-1.5" />
+          {t('Gửi ngay')}
+        </Button>
+        {why && <span className="text-[11.5px] text-muted">{why}</span>}
+      </div>
+    </div>
+  )
+}
+
+function Endpoint({ os, name }: { os: string; name: string }) {
+  return (
+    <span className="flex min-w-0 flex-col items-center gap-1.5 rounded-lg border border-line bg-sunken/40 px-2 py-2.5 text-center">
+      <OsIcon os={os} />
+      <span className="max-w-full truncate text-[11.5px] font-medium">{name}</span>
+    </span>
+  )
+}
+
+/** One direction: a switch above an arrow that is solid when on and dashed when off. */
+function Lane({ dir, label, tip, on, onChange, last }: { dir: 'in' | 'out'; label: string; tip: string; on: boolean; onChange: (v: boolean) => void; last: string | null }) {
+  const Arrow = dir === 'out' ? ArrowRight : ArrowLeft
+  const line = <span className="h-0 flex-1 border-t-2" style={{ borderColor: on ? 'var(--accent)' : 'var(--line2)', borderStyle: on ? 'solid' : 'dashed' }} />
+  return (
+    <div className="flex flex-col items-center gap-1" title={tip}>
+      <span className="flex items-center gap-2 text-[12px]">
+        <span className={on ? 'font-medium text-ink' : 'text-muted'}>{label}</span>
+        <Switch on={on} onChange={onChange} label={label} />
+      </span>
+      <span className="flex w-full items-center" style={{ color: on ? 'var(--accent)' : 'var(--line2)' }}>
+        {dir === 'in' && <Arrow size={16} strokeWidth={2.25} className="-mr-1 flex-none" />}
+        {line}
+        {dir === 'out' && <Arrow size={16} strokeWidth={2.25} className="-ml-1 flex-none" />}
+      </span>
+      {last && <span className="num text-[11px] text-muted">{last}</span>}
     </div>
   )
 }

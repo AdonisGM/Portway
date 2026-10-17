@@ -608,9 +608,17 @@ export type ConnectPeer = {
   infoAt: number
   /** The last speed test with it. */
   speed: ConnectSpeed | null
+  /** Its load now; null unless linked with it. */
+  live: ConnectLive | null
 }
 /** A machine as the other side of a link sees it. */
+export type ConnectGpu = { name: string; /** Bytes; 0 when shared with the system or unknown. */ vram: number; cores: number | null }
+/** CPU and memory use right now. */
+export type ConnectLive = { /** 0 to 100 */ cpu: number; /** Bytes */ ramUsed: number }
 export type ConnectMachine = {
+  /** "Mac mini (Mac14,12)"; empty when unknown. */
+  model: string
+  gpus: ConnectGpu[]
   osVersion: string
   arch: string
   cpu: string
@@ -694,6 +702,8 @@ export type ConnectView = {
   clip: ConnectClipNote | null
   /** This machine, as a linked machine sees it. */
   machine: ConnectMachine | null
+  /** This machine's load now. */
+  live: ConnectLive | null
 }
 
 export function isAppError(e: unknown): e is AppError {
@@ -1102,7 +1112,7 @@ function browserApi(): Api {
     servicesJournal: async () => fail('needs_app'),
     servicesUnitFile: async () => fail('needs_app'),
     servicesAction: async () => fail('needs_app'),
-    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null, transfers: [], clip: null, machine: null }),
+    connectState: async () => ({ enabled: false, device: null, error: null, selfSeen: false, nearby: [], peers: [], pairing: null, link: null, linkError: null, wake: null, transfers: [], clip: null, machine: null, live: null }),
     connectSetEnabled: async () => fail('needs_app'),
     connectPair: async () => fail('needs_app'),
     connectPairDecide: async () => fail('needs_app'),

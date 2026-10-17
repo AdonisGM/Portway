@@ -246,6 +246,16 @@ const en: Dict = {
   'Trung bình': 'Average',
   'Văn bản máy kia gửi sẽ được ghi vào clipboard của máy này.': "Text the other machine sends is written into this machine's clipboard.",
   'Portway ở máy kia chưa gửi thông tin máy. Cập nhật Portway ở máy đó.': "Portway on the other machine doesn't send its details yet. Update Portway there.",
+  '{n} nhân GPU': '{n} GPU cores',
+  'Mẫu máy': 'Model',
+  'CPU đang dùng': 'CPU in use',
+  'GPU': 'GPU',
+  'Clipboard': 'Clipboard',
+  'chỉ văn bản': 'text only',
+  'Tự gửi': 'Auto-send',
+  'Mỗi lần bạn copy văn bản, nó được gửi sang máy kia (trừ mật khẩu từ trình quản lý mật khẩu). Chỉ chạy khi đang kết nối.': 'Each time you copy text it is sent to the other machine (except passwords from a password manager). Works only while linked.',
+  'Gửi ngay': 'Send now',
+  'Nhận#clipboard': 'Receive',
 }
 
 export default en

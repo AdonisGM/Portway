@@ -3,7 +3,7 @@
 //! other's static key during the handshake; whether that key is trusted is
 //! decided above this layer (pairing, or the list of paired machines).
 
-use super::machine::MachineInfo;
+use super::machine::{LiveStats, MachineInfo};
 use blake2::{Blake2s256, Digest};
 use serde::{Deserialize, Serialize};
 use snow::{Builder, StatelessTransportState};
@@ -130,6 +130,8 @@ pub enum Msg {
     Clip { text: String },
     /// What the other machine is, sent once when a link comes up.
     Info { info: MachineInfo },
+    /// CPU and memory use right now, every few seconds while linked; not stored.
+    Stats { stats: LiveStats },
     /// Speed test, step 1: the sender's bytes follow as data frames, then `SpeedEnd`.
     SpeedUp,
     /// Speed test, step 2: send data frames for this many milliseconds, then `SpeedEnd`.

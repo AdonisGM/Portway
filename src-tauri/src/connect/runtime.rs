@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Notify};
 
-use super::machine::{self, MachineInfo, FEATURE_SPEED};
+use super::machine::{self, LiveStats, MachineInfo, Sampler, Statics, FEATURE_SPEED};
 use super::net::{self, Fail, DEFAULT_PORT, SERVICE};
 use super::store::{Peer, Store};
 use super::wire::{self, hex, Intent, MacInfo, Msg, Receiver, Sender, VERSION};
@@ -98,6 +98,8 @@ pub struct PeerView {
     pub info_at: u64,
     /// The last speed test with it.
     pub speed: Option<SpeedView>,
+    /// Its CPU and memory use now; only while linked with it.
+    pub live: Option<LiveStats>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -169,6 +171,8 @@ pub struct View {
     pub clip: Option<ClipNote>,
     /// This machine, as a linked machine sees it.
     pub machine: Option<MachineInfo>,
+    /// This machine's CPU and memory use now.
+    pub live: Option<LiveStats>,
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +254,12 @@ struct State {
     clip: ClipState,
     /// This machine's specs, read when Connect starts and refreshed now and then.
     machine: Option<MachineInfo>,
+    /// Model and graphics cards, read once per run; None until then.
+    statics: Option<Statics>,
+    /// This machine's CPU and memory use, sampled with each probe round.
+    stats: Option<LiveStats>,
+    /// What the linked machine last said about its load, in memory only.
+    peer_stats: Option<(String, LiveStats)>,
     /// Speed tests, the last one per machine.
     speeds: HashMap<String, SpeedState>,
     /// A machine is measuring the speed to this one right now.
@@ -281,6 +291,8 @@ pub struct Connect {
 struct Inner {
     app: AppHandle,
     state: Mutex<State>,
+    /// Kept for the whole run: a CPU figure is the change since the last sample.
+    sampler: Mutex<Sampler>,
 }
 
 mod clip;
@@ -312,11 +324,14 @@ impl Connect {
             transfers: Vec::new(),
             clip: ClipState::new(),
             machine: None,
+            statics: None,
+            stats: None,
+            peer_stats: None,
             speeds: HashMap::new(),
             speed_serving: false,
             next_token: 1,
         };
-        Self { inner: Arc::new(Inner { app, state: Mutex::new(state) }) }
+        Self { inner: Arc::new(Inner { app, state: Mutex::new(state), sampler: Mutex::new(Sampler::new()) }) }
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -402,6 +417,10 @@ impl Connect {
             s.store.ensure_identity()?;
         }
         self.refresh_machine().await;
+        {
+            let this = self.clone();
+            tauri::async_runtime::spawn(async move { this.load_statics().await });
+        }
         let listener = match TcpListener::bind(("0.0.0.0", DEFAULT_PORT)).await {
             Ok(l) => l,
             Err(_) => TcpListener::bind(("0.0.0.0", 0)).await.map_err(|e| AppError::detail("listen_failed", e))?,
@@ -514,10 +533,37 @@ impl Connect {
 
     /// Read this machine's specs again (off the async threads: listing disks blocks).
     async fn refresh_machine(&self) {
-        let cards = self.lock().cards.clone();
-        if let Ok(info) = tokio::task::spawn_blocking(move || machine::collect(&cards)).await {
+        let (cards, statics) = {
+            let s = self.lock();
+            (s.cards.clone(), s.statics.clone().unwrap_or_default())
+        };
+        if let Ok(info) = tokio::task::spawn_blocking(move || machine::collect(&cards, &statics)).await {
             self.lock().machine = Some(info);
         }
+    }
+
+    /// Model and graphics cards: read once, in the background, then folded into
+    /// the description of this machine.
+    async fn load_statics(&self) {
+        if self.lock().statics.is_some() {
+            return;
+        }
+        if let Ok(statics) = tokio::task::spawn_blocking(machine::read_statics).await {
+            self.lock().statics = Some(statics);
+            self.refresh_machine().await;
+            self.publish();
+        }
+    }
+
+    fn sample_stats(&self) {
+        let live = self.inner.sampler.lock().unwrap().sample();
+        self.lock().stats = Some(live);
+    }
+
+    /// The linked machine's load, as it last said.
+    fn on_stats(&self, id: &str, stats: LiveStats) {
+        self.lock().peer_stats = Some((id.to_string(), stats));
+        self.publish();
     }
 
     async fn probe_loop(&self) {
@@ -528,6 +574,7 @@ impl Connect {
             if round % 6 == 0 {
                 self.refresh_machine().await;
             }
+            self.sample_stats();
             let jobs: Vec<(String, SocketAddrV4, bool)> = {
                 let s = self.lock();
                 let mut jobs = Vec::new();
@@ -1115,9 +1162,26 @@ impl Connect {
             tauri::async_runtime::spawn(async move { this.watch_clipboard(token, id).await })
         });
         // Both sides are trusted by now: say what this machine is.
-        let mine = self.lock().machine.clone();
+        // The model and graphics cards are read in the background when Connect
+        // starts; a link made right then waits a moment for them.
+        for _ in 0..30 {
+            if self.lock().statics.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let (mine, stats) = {
+            let s = self.lock();
+            (s.machine.clone(), s.stats)
+        };
         if let Some(info) = mine {
             if tx.send(&Msg::Info { info }).await.is_err() {
+                self.end_link(token);
+                return;
+            }
+        }
+        if let Some(stats) = stats {
+            if tx.send(&Msg::Stats { stats }).await.is_err() {
                 self.end_link(token);
                 return;
             }
@@ -1130,6 +1194,7 @@ impl Connect {
                 m = msgs.recv() => match m {
                     Some(Msg::Clip { text }) => self.on_clip(&peer_id, text),
                     Some(Msg::Info { info }) => self.on_info(&peer_id, info),
+                    Some(Msg::Stats { stats }) => self.on_stats(&peer_id, stats),
                     // From a newer Portway: nothing to do with it, and no reason to drop the link.
                     Some(Msg::Unknown) => {}
                     Some(Msg::Ping { seq }) => { if tx.send(&Msg::Pong { seq }).await.is_err() { break; } }
@@ -1159,6 +1224,13 @@ impl Connect {
                     sent.insert(seq, Instant::now());
                     sent.retain(|_, t| t.elapsed() < Duration::from_secs(30));
                     if tx.send(&Msg::Ping { seq }).await.is_err() { break; }
+                    // Load changes by the second but is only worth a line every few.
+                    if seq % 2 == 0 {
+                        let stats = self.lock().stats;
+                        if let Some(stats) = stats {
+                            if tx.send(&Msg::Stats { stats }).await.is_err() { break; }
+                        }
+                    }
                 }
                 _ = cancel.notified() => {
                     let _ = tx.send(&Msg::Bye).await;
@@ -1189,6 +1261,7 @@ impl Connect {
             let mut s = self.lock();
             if s.link.as_ref().is_some_and(|l| l.token == token) {
                 s.link = None;
+                s.peer_stats = None;
             }
         }
         self.publish();
@@ -1293,7 +1366,7 @@ fn build_view(s: &State) -> View {
             // Reachable first, fastest first.
             paths.sort_by(|a, b| a.rtt_ms.unwrap_or(f64::MAX).total_cmp(&b.rtt_ms.unwrap_or(f64::MAX)));
             let online = is_online(s, &p.id);
-            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
+            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), live: s.peer_stats.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
         })
         .collect();
     View {
@@ -1320,6 +1393,7 @@ fn build_view(s: &State) -> View {
         transfers: s.transfers.iter().map(transfer::view).collect(),
         clip: s.clip.note.clone(),
         machine: s.machine.clone(),
+        live: s.stats,
     }
 }
 
@@ -1344,6 +1418,9 @@ mod tests {
             transfers: Vec::new(),
             clip: ClipState::new(),
             machine: None,
+            statics: None,
+            stats: None,
+            peer_stats: None,
             speeds: HashMap::new(),
             speed_serving: false,
             next_token: 1,

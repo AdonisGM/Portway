@@ -43,11 +43,14 @@ pub struct LiveStats {
     /// Bytes per second received and sent over all the network interfaces.
     pub net_rx: u64,
     pub net_tx: u64,
+    /// Percent of the busiest graphics engine; None when the system does not say
+    /// (or it was not asked: it costs a little, so only while linked).
+    pub gpu: Option<f32>,
 }
 
 impl Default for LiveStats {
     fn default() -> Self {
-        Self { cpu: 0.0, ram_used: 0, net_rx: 0, net_tx: 0 }
+        Self { cpu: 0.0, ram_used: 0, net_rx: 0, net_tx: 0, gpu: None }
     }
 }
 
@@ -127,6 +130,8 @@ pub struct Sampler {
     sys: System,
     nets: Networks,
     at: std::time::Instant,
+    #[cfg(windows)]
+    gpu: Option<win::GpuCounter>,
 }
 
 impl Sampler {
@@ -134,10 +139,10 @@ impl Sampler {
         let mut sys = System::new();
         sys.refresh_cpu_usage();
         sys.refresh_memory();
-        Self { sys, nets: Networks::new_with_refreshed_list(), at: std::time::Instant::now() }
+        Self { sys, nets: Networks::new_with_refreshed_list(), at: std::time::Instant::now(), #[cfg(windows)] gpu: None }
     }
 
-    pub fn sample(&mut self) -> LiveStats {
+    pub fn sample(&mut self, with_gpu: bool) -> LiveStats {
         self.sys.refresh_cpu_usage();
         self.sys.refresh_memory();
         // `received()` is what arrived since the last refresh, so it divides by the time since.
@@ -152,8 +157,41 @@ impl Sampler {
             rx += data.received();
             tx += data.transmitted();
         }
-        LiveStats { cpu: self.sys.global_cpu_usage().clamp(0.0, 100.0), ram_used: self.sys.used_memory(), net_rx: (rx as f64 / secs) as u64, net_tx: (tx as f64 / secs) as u64 }
+        let gpu = if with_gpu { self.gpu_load() } else { None };
+        LiveStats { cpu: self.sys.global_cpu_usage().clamp(0.0, 100.0), ram_used: self.sys.used_memory(), net_rx: (rx as f64 / secs) as u64, net_tx: (tx as f64 / secs) as u64, gpu }
     }
+
+    #[cfg(target_os = "macos")]
+    fn gpu_load(&mut self) -> Option<f32> {
+        let out = std::process::Command::new("ioreg").args(["-r", "-d", "1", "-w", "0", "-c", "IOAccelerator"]).output().ok()?;
+        parse_ioreg(&String::from_utf8_lossy(&out.stdout))
+    }
+
+    /// The counter is a rate: it needs two readings, so the first one after it is opened says nothing.
+    #[cfg(windows)]
+    fn gpu_load(&mut self) -> Option<f32> {
+        if self.gpu.is_none() {
+            self.gpu = win::GpuCounter::open();
+        }
+        self.gpu.as_mut()?.read()
+    }
+
+    #[cfg(not(any(target_os = "macos", windows)))]
+    fn gpu_load(&mut self) -> Option<f32> {
+        None
+    }
+}
+
+/// The busiest accelerator's "Device Utilization %" in `ioreg -c IOAccelerator` output.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn parse_ioreg(text: &str) -> Option<f32> {
+    let key = "\"Device Utilization %\"=";
+    text.match_indices(key)
+        .filter_map(|(i, _)| {
+            let digits: String = text[i + key.len()..].chars().take_while(|c| c.is_ascii_digit()).collect();
+            digits.parse::<f32>().ok()
+        })
+        .reduce(f32::max)
 }
 
 /// Model and graphics cards. Slow (up to a couple of seconds), so call it once,
@@ -225,6 +263,90 @@ mod win {
     use super::*;
     use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ};
     use winreg::RegKey;
+
+    use std::collections::HashMap;
+    use windows_sys::Win32::System::Performance::{
+        PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterArrayW, PdhOpenQueryW, PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE, PDH_MORE_DATA,
+    };
+
+    /// "\\GPU Engine(*)\\Utilization Percentage": one instance per process and engine,
+    /// named like `pid_4321_luid_0x00000000_0x0000A1B2_phys_0_eng_0_engtype_3D`. Added by
+    /// its English name so it works on a Windows in any language.
+    pub struct GpuCounter {
+        query: isize,
+        counter: isize,
+    }
+
+    impl GpuCounter {
+        pub fn open() -> Option<Self> {
+            let path: Vec<u16> = r"\GPU Engine(*)\Utilization Percentage".encode_utf16().chain(std::iter::once(0)).collect();
+            unsafe {
+                let mut query = 0isize;
+                if PdhOpenQueryW(std::ptr::null(), 0, &mut query) != 0 {
+                    return None;
+                }
+                let mut counter = 0isize;
+                if PdhAddEnglishCounterW(query, path.as_ptr(), 0, &mut counter) != 0 {
+                    PdhCloseQuery(query);
+                    return None;
+                }
+                // A rate: this first reading is the baseline.
+                PdhCollectQueryData(query);
+                Some(Self { query, counter })
+            }
+        }
+
+        /// The busiest engine, which is what Task Manager's GPU figure follows: the
+        /// processes' shares of one engine add up, engines are not added together.
+        pub fn read(&mut self) -> Option<f32> {
+            unsafe {
+                if PdhCollectQueryData(self.query) != 0 {
+                    return None;
+                }
+                let (mut size, mut count) = (0u32, 0u32);
+                if PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, &mut size, &mut count, std::ptr::null_mut()) != PDH_MORE_DATA || size == 0 {
+                    return None;
+                }
+                // Aligned for the items it holds.
+                let mut buf = vec![0u64; (size as usize).div_ceil(8)];
+                let items = buf.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W;
+                if PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, &mut size, &mut count, items) != 0 {
+                    return None;
+                }
+                let mut engines: HashMap<String, f64> = HashMap::new();
+                for i in 0..count as usize {
+                    let item = &*items.add(i);
+                    if item.FmtValue.CStatus != 0 {
+                        continue;
+                    }
+                    let name = wide_to_string(item.szName);
+                    // Drop "pid_N_" so the processes of one engine share a key.
+                    let engine = name.split_once("_luid_").map(|(_, rest)| rest.to_string()).unwrap_or(name);
+                    *engines.entry(engine).or_default() += item.FmtValue.Anonymous.doubleValue;
+                }
+                engines.values().copied().reduce(f64::max).map(|v| v.clamp(0.0, 100.0) as f32)
+            }
+        }
+    }
+
+    impl Drop for GpuCounter {
+        fn drop(&mut self) {
+            unsafe {
+                PdhCloseQuery(self.query);
+            }
+        }
+    }
+
+    unsafe fn wide_to_string(p: *const u16) -> String {
+        if p.is_null() {
+            return String::new();
+        }
+        let mut len = 0;
+        while *p.add(len) != 0 {
+            len += 1;
+        }
+        String::from_utf16_lossy(std::slice::from_raw_parts(p, len))
+    }
 
     const DISPLAY_CLASS: &str = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
 
@@ -306,10 +428,19 @@ mod tests {
     }
 
     #[test]
+    fn the_busiest_accelerator_is_the_one_that_counts() {
+        let two = r#""PerformanceStatistics" = {"Device Utilization %"=7,"Renderer Utilization %"=6}
+            "PerformanceStatistics" = {"Tiler Utilization %"=2,"Device Utilization %"=41}"#;
+        assert_eq!(parse_ioreg(two), Some(41.0));
+        assert_eq!(parse_ioreg("nothing here"), None);
+    }
+
+    #[test]
     fn live_figures_are_sane() {
         let mut s = Sampler::new();
         std::thread::sleep(std::time::Duration::from_millis(300));
-        let l = s.sample();
+        let l = s.sample(false);
+        assert_eq!(l.gpu, None);
         assert!((0.0..=100.0).contains(&l.cpu));
         assert!(l.ram_used > 0);
     }

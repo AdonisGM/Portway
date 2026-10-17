@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.16.1"
+version = "0.17.0"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"
@@ -57,7 +57,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [target.'cfg(windows)'.dependencies]
 # Model and graphics cards from the registry.
 winreg = "0.55"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_DataExchange", "Win32_System_Threading", "Win32_UI_Shell"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_DataExchange", "Win32_System_Performance", "Win32_System_Threading", "Win32_UI_Shell"] }
 # russh's crypto backend; use the NASM objects shipped with aws-lc-sys so the
 # build does not need NASM installed.
 aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }

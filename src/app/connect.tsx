@@ -9,18 +9,18 @@ const ConnectContext = createContext<ConnectView | null>(null)
 
 /** CPU, memory and network use over the last few minutes, for the charts. A
  *  `null` marks a gap (the link was down). */
-export type Sample = { cpu: number; ram: number; rx: number; tx: number }
+export type Sample = { cpu: number; ram: number; rx: number; tx: number; gpu: number | null }
 export type History = { self: (Sample | null)[]; peers: Record<string, (Sample | null)[]> }
 export const KEEP_SAMPLES = 90
 const HistoryContext = createContext<History>({ self: [], peers: {} })
 
-const same = (a: Sample | null | undefined, b: Sample) => !!a && a.cpu === b.cpu && a.ram === b.ram && a.rx === b.rx && a.tx === b.tx
+const same = (a: Sample | null | undefined, b: Sample) => !!a && a.cpu === b.cpu && a.ram === b.ram && a.rx === b.rx && a.tx === b.tx && a.gpu === b.gpu
 
 function grow(list: (Sample | null)[] | undefined, live: ConnectLive | null): (Sample | null)[] | undefined {
   const cur = list ?? []
   const last = cur[cur.length - 1]
   if (!live) return cur.length === 0 || last === null ? list : [...cur, null].slice(-KEEP_SAMPLES)
-  const next: Sample = { cpu: live.cpu, ram: live.ramUsed, rx: live.netRx, tx: live.netTx }
+  const next: Sample = { cpu: live.cpu, ram: live.ramUsed, rx: live.netRx, tx: live.netTx, gpu: live.gpu ?? null }
   // The same view arrives again after every unrelated change.
   return same(last, next) ? list : [...cur, next].slice(-KEEP_SAMPLES)
 }

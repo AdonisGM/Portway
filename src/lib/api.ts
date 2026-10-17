@@ -635,6 +635,8 @@ export type ConnectLive = {
   /** Bytes per second over all network interfaces. */
   netRx: number
   netTx: number
+  /** Busiest graphics engine, 0 to 100; null when not measured (only while linked). */
+  gpu: number | null
 }
 export type ConnectMachine = {
   /** "Mac mini (Mac14,12)"; empty when unknown. */

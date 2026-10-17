@@ -561,7 +561,9 @@ impl Connect {
     }
 
     fn sample_stats(&self) {
-        let live = self.inner.sampler.lock().unwrap().sample();
+        // The graphics load costs a program run on macOS: only while it is being drawn on a linked machine's page.
+        let linked = self.lock().link.as_ref().is_some_and(|l| l.up);
+        let live = self.inner.sampler.lock().unwrap().sample(linked);
         self.lock().stats = Some(live);
     }
 

@@ -378,6 +378,9 @@ function Performance({ peer, linked }: { peer: ConnectPeer; linked: boolean }) {
     }
   })
 
+  // Only a machine that reports its graphics load gets a chart; the name is shown either way.
+  const gpu = sides.map((x): Cell => (x.live?.gpu != null ? { value: `${Math.round(x.live.gpu)}%`, chart: <LiveChart max={100} series={[{ values: pick(x.h, (v) => v.gpu), color: 'var(--warn)', fill: true }]} /> } : null))
+
   return (
     <Panel title={t('Hiệu năng')} note={linked ? undefined : t('Máy kia chỉ hiện khi đang kết nối')}>
       <div className="grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] text-[12px]">
@@ -387,22 +390,13 @@ function Performance({ peer, linked }: { peer: ConnectPeer; linked: boolean }) {
         <MetricRow icon={Cpu} label={t('CPU')} cells={cpu} empty={empty} />
         <MetricRow icon={MemoryStick} label={t('RAM')} cells={ram} empty={empty} />
         <MetricRow icon={NetworkIcon} label={t('Mạng')} cells={net} empty={empty} />
-        <span className="flex items-start gap-1.5 border-t border-line px-3 py-2.5 text-muted">
-          <Microchip size={14} strokeWidth={1.75} className="mt-0.5 flex-none" />
-          {t('GPU')}
-        </span>
-        {sides.map((x, i) => (
-          <span key={i} className="flex flex-col gap-0.5 border-t border-line px-3 py-2.5">
-            <span className="select-text">{x.info ? gpuText(x.info) : '—'}</span>
-            <span className="text-[11px] text-muted">{t('Chưa đo được mức dùng GPU')}</span>
-          </span>
-        ))}
+        <MetricRow icon={Microchip} label={t('GPU')} cells={gpu} empty={empty} below={sides.map((x) => (x.info ? gpuText(x.info) : '—'))} />
       </div>
     </Panel>
   )
 }
 
-function MetricRow({ icon: Icon, label, cells, empty }: { icon: LucideIcon; label: string; cells: Cell[]; empty: string[] }) {
+function MetricRow({ icon: Icon, label, cells, empty, below }: { icon: LucideIcon; label: string; cells: Cell[]; empty: string[]; below?: string[] }) {
   return (
     <>
       <span className="flex items-start gap-1.5 border-t border-line px-3 py-2.5 text-muted">
@@ -416,8 +410,14 @@ function MetricRow({ icon: Icon, label, cells, empty }: { icon: LucideIcon; labe
               <span className="num text-[13px] font-medium whitespace-nowrap">{c.value}</span>
               {c.chart}
             </>
-          ) : (
+          ) : below ? null : (
             <span className="flex h-full min-h-[66px] items-center leading-normal text-muted">{empty[i]}</span>
+          )}
+          {below && (
+            <span className="flex flex-col gap-0.5">
+              <span className="select-text">{below[i]}</span>
+              {!c && <span className="text-[11px] text-muted">{t('Chưa đo được mức dùng GPU')}</span>}
+            </span>
           )}
         </span>
       ))}

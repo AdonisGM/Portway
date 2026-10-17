@@ -101,19 +101,31 @@ pub fn file_paths() -> Vec<std::path::PathBuf> {
 /// it is; None when it cannot be had (the machine is gone, the clipboard moved on).
 pub type FileSource = std::sync::Arc<dyn Fn(usize) -> Option<std::path::PathBuf> + Send + Sync>;
 
-/// Put one pasteable file per name on the clipboard whose bytes do not exist yet:
+/// One thing to paste: what it is called, how big, and whether it is a folder.
+#[derive(Debug, Clone)]
+pub struct LazyItem {
+    pub name: String,
+    pub size: u64,
+    pub dir: bool,
+}
+
+/// Put one pasteable file per item on the clipboard whose bytes do not exist yet:
 /// `source` is asked for each at the moment it is pasted (Finder asks, and waits
 /// for as long as it takes). Gives back the clipboard's change count right after,
 /// so the watcher can tell this write from the user's own copy. None where this
 /// platform cannot do it.
-pub fn set_lazy_files(names: &[String], source: FileSource) -> Option<u64> {
+pub fn set_lazy_files(items: &[LazyItem], source: FileSource) -> Option<u64> {
     #[cfg(target_os = "macos")]
     {
-        return mac_lazy::set(names, source);
+        return mac_lazy::set(items, source);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     {
-        let _ = (names, source);
+        return super::win_paste::set(items, source);
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        let _ = (items, source);
         None
     }
 }
@@ -124,7 +136,12 @@ pub fn clear_lazy_files(own_change: Option<u64>) {
     {
         mac_lazy::clear(own_change);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        let _ = own_change;
+        super::win_paste::clear();
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
     {
         let _ = own_change;
     }
@@ -175,13 +192,13 @@ mod mac_lazy {
     unsafe impl Send for Kept {}
     static KEPT: Mutex<Option<Kept>> = Mutex::new(None);
 
-    pub fn set(names: &[String], source: FileSource) -> Option<u64> {
+    pub fn set(items_in: &[super::LazyItem], source: FileSource) -> Option<u64> {
         let pb = NSPasteboard::generalPasteboard();
         // SAFETY: plain constant.
         let kind = unsafe { NSPasteboardTypeFileURL };
         let mut keep = Vec::new();
         let mut items: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> = Vec::new();
-        for index in 0..names.len() {
+        for index in 0..items_in.len() {
             let provider: Retained<LazyFile> = {
                 let this = LazyFile::alloc().set_ivars(Ivars { index, source: source.clone() });
                 // SAFETY: `init` of NSObject on a freshly allocated, initialised-ivars object.

@@ -198,11 +198,11 @@ impl Connect {
     /// Not possible on every system; the button is always there.
     fn offer_to_system(&self) {
         let Some(lease) = self.lock().clip_in.clone() else { return };
-        let names: Vec<String> = lease.items.iter().map(|i| i.name.clone()).collect();
+        let items: Vec<sys_clip::LazyItem> = lease.items.iter().map(|i| sys_clip::LazyItem { name: i.name.clone(), size: i.size, dir: i.dir }).collect();
         let this = self.clone();
         let l = lease.clone();
         let source: sys_clip::FileSource = Arc::new(move |index| this.paste_item(&l, index));
-        let own = sys_clip::set_lazy_files(&names, source);
+        let own = sys_clip::set_lazy_files(&items, source);
         // So the watcher does not take this for something the user copied and offer it back.
         self.lock().clip.own_change = own;
     }

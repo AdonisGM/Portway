@@ -4224,7 +4224,7 @@ dependencies = [
 
 [[package]]
 name = "portway"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -4254,6 +4254,8 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
  "windows-sys 0.59.0",
  "winreg",
 ]

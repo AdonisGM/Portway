@@ -8,6 +8,8 @@ mod net;
 mod runtime;
 mod store;
 mod sys_clip;
+#[cfg(windows)]
+mod win_paste;
 mod wire;
 
 pub use runtime::Connect;

@@ -149,6 +149,8 @@ export function commandError(e: unknown): string {
       return t('{path} không phải tệp hay thư mục thường', { path: e.detail ?? '' })
     case 'no_offer':
       return t('Yêu cầu nhận tệp này đã hết hạn')
+    case 'peer_login_screen':
+      return t('Máy đó đang ở màn hình đăng nhập. Đăng nhập Windows ở máy đó rồi thử lại.')
     case 'clip_no_files':
       return t('Clipboard không có tệp nào. Hãy copy tệp trong Finder hoặc Explorer trước.')
     case 'clipfiles_unsupported':

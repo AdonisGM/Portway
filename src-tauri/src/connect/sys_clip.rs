@@ -103,6 +103,7 @@ pub type FileSource = std::sync::Arc<dyn Fn(usize) -> Option<std::path::PathBuf>
 
 /// One thing to paste: what it is called, how big, and whether it is a folder.
 #[derive(Debug, Clone)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub struct LazyItem {
     pub name: String,
     pub size: u64,

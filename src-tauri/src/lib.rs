@@ -1,5 +1,7 @@
 #[cfg(windows)]
 mod askpass;
+#[cfg(windows)]
+mod beacon;
 mod audit;
 mod background;
 mod connect;
@@ -95,6 +97,9 @@ mod macos {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The same exe runs as the pre-login service and installs it: those end here, before any window.
+    #[cfg(windows)]
+    beacon::run_if_requested();
     #[cfg(windows)]
     askpass::run_if_requested();
     let profile = std::env::var("PORTWAY_PROFILE").ok().map(|p| p.trim().to_string()).filter(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
@@ -231,6 +236,8 @@ pub fn run() {
             logtail::log_tail_stop,
             background::background_state,
             background::background_set_autostart,
+            background::beacon_state,
+            background::beacon_set,
             settings::settings_get,
             settings::settings_set,
             settings::app_data_path,

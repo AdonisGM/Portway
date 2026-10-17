@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Check, Cpu, Download, Files, FolderUp, Gauge, MemoryStick, Microchip, Network as NetworkIcon, Power, Send, TriangleAlert, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Cpu, Download, Files, FolderUp, Info, Gauge, MemoryStick, Microchip, Network as NetworkIcon, Power, Send, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useConnect, useConnectHistory, type Sample } from '../../app/connect'
 import { useNav } from '../../app/nav'
@@ -58,7 +58,9 @@ export function ConnectPeerScreen({ peerId }: { peerId: string }) {
         ? up
           ? { tone: TONES.success, text: mine.rttMs !== null ? t('Đang kết nối · {ms}', { ms: ms(mine.rttMs) }) : t('Đang kết nối') }
           : { tone: TONES.info, text: t('Đang kết nối…') }
-        : peer.online
+        : peer.loginScreen
+          ? { tone: TONES.info, text: t('Đã bật · chờ đăng nhập') }
+          : peer.online
           ? { tone: TONES.neutral, text: t('Thấy trong mạng, chưa kết nối') }
           : { tone: TONES.neutral, text: t('Không thấy') }
 
@@ -87,7 +89,7 @@ export function ConnectPeerScreen({ peerId }: { peerId: string }) {
               {up ? t('Ngắt kết nối') : t('Huỷ')}
             </Button>
           ) : (
-            <Button size="md" variant="primary" disabled={otherBusy || !!pairing || peer.versionMismatch} title={otherBusy ? t('Đang kết nối với một máy khác') : undefined} onClick={() => void api.connectLink(peer.id).catch(fail(t('Không kết nối được')))}>
+            <Button size="md" variant="primary" disabled={otherBusy || !!pairing || peer.versionMismatch || peer.loginScreen} title={otherBusy ? t('Đang kết nối với một máy khác') : undefined} onClick={() => void api.connectLink(peer.id).catch(fail(t('Không kết nối được')))}>
               {error ? t('Kết nối lại') : t('Kết nối')}
             </Button>
           )}
@@ -114,6 +116,12 @@ export function ConnectPeerScreen({ peerId }: { peerId: string }) {
         </div>
       )}
       {waking?.stage === 'timeout' && <WakeTimeout />}
+      {peer.loginScreen && (
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-info-soft px-3 py-2.5 text-info">
+          <Info size={15} strokeWidth={1.75} className="flex-none" />
+          <span className="leading-normal">{t('Máy này đã bật nhưng đang ở màn hình đăng nhập Windows. Đăng nhập ở máy đó rồi bấm Kết nối.')}</span>
+        </div>
+      )}
 
       <div className="grid items-start gap-3 min-[1000px]:grid-cols-2">
         <Specs peer={peer} mine={view.machine} linked={up} />

@@ -10,6 +10,9 @@ use tokio::net::TcpStream;
 /// Port Connect listens on; another one is used when it is taken.
 pub const DEFAULT_PORT: u16 = 47615;
 /// mDNS service type Portways announce themselves under.
+/// The mDNS TXT `s` value of a machine that only answers as a beacon, before anyone has signed in.
+pub const BEACON_STATE: &str = "login";
+
 pub const SERVICE: &str = "_portway._tcp.local.";
 
 /// Why a connection to another machine did not happen. The first three are

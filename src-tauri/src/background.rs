@@ -160,3 +160,44 @@ pub fn background_set_autostart(app: AppHandle, on: bool) -> AppResult<Backgroun
     refresh(&app);
     Ok(view(&app))
 }
+
+/// The pre-login beacon (Windows only): a service that announces the PC is on
+/// while nobody has signed in. See `beacon`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BeaconView {
+    pub supported: bool,
+    pub installed: bool,
+    pub running: bool,
+}
+
+#[tauri::command]
+pub fn beacon_state() -> BeaconView {
+    #[cfg(windows)]
+    {
+        let s = crate::beacon::state();
+        return BeaconView { supported: s.supported, installed: s.installed, running: s.running };
+    }
+    #[allow(unreachable_code)]
+    BeaconView { supported: false, installed: false, running: false }
+}
+
+/// Install or remove the beacon. Windows asks the user for permission (UAC);
+/// declining is `beacon_declined`.
+#[tauri::command]
+pub async fn beacon_set(on: bool) -> AppResult<BeaconView> {
+    #[cfg(windows)]
+    {
+        let done = tokio::task::spawn_blocking(move || crate::beacon::set_installed(on)).await.map_err(|e| AppError::detail("beacon_failed", e))?;
+        return match done {
+            Ok(s) => Ok(BeaconView { supported: s.supported, installed: s.installed, running: s.running }),
+            Err(code) if code == "declined" => Err(AppError::new("beacon_declined")),
+            Err(code) => Err(AppError::detail("beacon_failed", code)),
+        };
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = on;
+        Err(AppError::new("beacon_unsupported"))
+    }
+}

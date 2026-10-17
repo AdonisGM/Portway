@@ -81,6 +81,9 @@ export type Settings = {
   background: boolean
 }
 
+/** The Windows service that announces the PC is on before anyone has signed in. */
+export type BeaconState = { supported: boolean; installed: boolean; running: boolean }
+
 /** Running without a window: what the OS says about starting at login, and the user's own choice. */
 export type BackgroundState = {
   /** The OS starts Portway when the user logs in. */
@@ -623,6 +626,8 @@ export type ConnectPeer = {
   live: ConnectLive | null
   /** Files it copied and offered; null when none (or it is no longer linked). */
   clipFiles: ConnectClipFiles | null
+  /** On and waiting at the Windows sign-in screen: nothing can be done with it until somebody signs in. */
+  loginScreen: boolean
   /** What it does with clipboard text for this machine (it takes what is sent / it sends as soon as it copies); null unless linked with a machine new enough to say. */
   remoteClip: { receive: boolean; send: boolean } | null
 }
@@ -748,6 +753,9 @@ type Api = {
   settings(): Promise<Settings>
   setSettings(settings: Settings): Promise<Settings>
   backgroundState(): Promise<BackgroundState>
+  beaconState(): Promise<BeaconState>
+  /** Install or remove the beacon; Windows asks for the administrator's permission. */
+  beaconSet(on: boolean): Promise<BeaconState>
   backgroundSetAutostart(on: boolean): Promise<BackgroundState>
   appDataPath(): Promise<string>
   listKeys(): Promise<SshKey[]>
@@ -893,6 +901,8 @@ const tauriApi: Api = {
   settings: () => invoke('settings_get'),
   setSettings: (settings) => invoke('settings_set', { settings }),
   backgroundState: () => invoke('background_state'),
+  beaconState: () => invoke('beacon_state'),
+  beaconSet: (on) => invoke('beacon_set', { on }),
   backgroundSetAutostart: (on) => invoke('background_set_autostart', { on }),
   appDataPath: () => invoke('app_data_path'),
   listKeys: () => invoke('ssh_keys_list'),
@@ -1070,6 +1080,8 @@ function browserApi(): Api {
       return s
     },
     backgroundState: async () => ({ autostart: false, background: false, canAutostart: false }),
+    beaconState: async () => ({ supported: false, installed: false, running: false }),
+    beaconSet: async () => fail('needs_app'),
     backgroundSetAutostart: async () => fail('needs_app'),
     appDataPath: async () => fail('needs_app'),
     async listKeys() {

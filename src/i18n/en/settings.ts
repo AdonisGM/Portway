@@ -74,6 +74,18 @@ const en: Dict = {
   'Đóng cửa sổ chỉ ẩn nó. Portway vẫn chạy ở thanh menu; thoát bằng Thoát Portway ở biểu tượng đó hoặc Cmd+Q.': 'Closing the window only hides it. Portway keeps running in the menu bar; quit with Quit Portway from its icon, or Cmd+Q.',
   'Windows mở Portway khi bạn đăng nhập, không phải khi máy vừa bật. Sau khi đánh thức bằng Wake-on-LAN, máy dừng ở màn hình đăng nhập nên Portway chưa trả lời cho tới khi có người đăng nhập, trừ khi bật tự đăng nhập Windows.': 'Windows opens Portway when you sign in, not when the PC starts. After a Wake-on-LAN wake the PC waits at the sign-in screen, so Portway does not answer until someone signs in, unless Windows automatic sign-in is on.',
   'Khởi động#section': 'Startup',
+  'Đã bật · chờ đăng nhập': 'On · waiting to sign in',
+  'Máy này đã bật nhưng đang ở màn hình đăng nhập Windows. Đăng nhập ở máy đó rồi bấm Kết nối.': 'This machine is on but at the Windows sign-in screen. Sign in there, then press Connect.',
+  'Máy đó đang ở màn hình đăng nhập. Đăng nhập Windows ở máy đó rồi thử lại.': 'That machine is at the sign-in screen. Sign in to Windows there and try again.',
+  'Cần quyền quản trị để cài hoặc gỡ dịch vụ, và bạn đã từ chối': 'Administrator permission is needed to install or remove the service, and it was declined',
+  'Báo hiệu khi chưa đăng nhập': 'Announce before sign-in',
+  'Một dịch vụ Windows nhỏ cho các máy khác biết PC đã bật khi chưa có ai đăng nhập, ví dụ sau khi đánh thức bằng Wake-on-LAN. Chỉ báo hiệu: chưa kết nối hay truyền gì được cho tới khi bạn đăng nhập. Cài hoặc gỡ cần quyền quản trị.': 'A small Windows service that tells other machines the PC is on while nobody has signed in, for example after a Wake-on-LAN wake. It only announces: nothing can connect or transfer until you sign in. Installing or removing needs administrator permission.',
+  'Đang chạy': 'Running',
+  'Đã cài, chưa chạy': 'Installed, not running',
+  'Chưa cài': 'Not installed',
+  'Không đổi được dịch vụ báo hiệu': "Couldn't change the beacon service",
+  'Gỡ': 'Remove',
+  'Cài đặt dịch vụ': 'Install service',
 }
 
 export default en

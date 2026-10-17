@@ -104,6 +104,8 @@ pub struct PeerView {
     pub remote_clip: Option<ClipPrefs>,
     /// Files it copied and offered.
     pub clip_files: Option<ClipFilesView>,
+    /// It is on, waiting at the sign-in screen: it will answer once somebody signs in.
+    pub login_screen: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -193,6 +195,9 @@ struct Nearby {
     port: u16,
     /// Protocol version it announced, when it did.
     version: Option<u32>,
+    /// A Windows machine that is on but waiting at the sign-in screen: only its
+    /// beacon service answers, so nothing can be done with it yet.
+    login: bool,
 }
 
 #[derive(Clone)]
@@ -443,6 +448,9 @@ impl Connect {
         };
         let port = listener.local_addr().map_err(|e| AppError::detail("listen_failed", e))?.port();
         let me = self.me().ok_or_else(|| AppError::new("keychain"))?;
+        // The pre-login service announces as this machine: tell it who that is.
+        #[cfg(windows)]
+        crate::beacon::publish_identity(&me.id, VERSION, port);
 
         let daemon = ServiceDaemon::new().map_err(|e| AppError::detail("mdns_failed", e))?;
         let host = format!("portway-{}.local.", me.id);
@@ -529,8 +537,10 @@ impl Connect {
                     }
                 } else {
                     let version = info.get_property_val_str("v").and_then(|v| v.parse::<u32>().ok());
-                    let e = s.nearby.entry(id).or_insert_with(|| Nearby { addrs: BTreeSet::new(), port: info.get_port(), version });
+                    let login = info.get_property_val_str("s") == Some(net::BEACON_STATE);
+                    let e = s.nearby.entry(id).or_insert_with(|| Nearby { addrs: BTreeSet::new(), port: info.get_port(), version, login });
                     e.version = version;
+                    e.login = login;
                     e.addrs.extend(addrs);
                     e.port = info.get_port();
                 }
@@ -598,7 +608,7 @@ impl Connect {
                 let mut jobs = Vec::new();
                 for p in &s.store.data.peers {
                     let mut seen = BTreeSet::new();
-                    if let Some(n) = s.nearby.get(&p.id) {
+                    if let Some(n) = s.nearby.get(&p.id).filter(|n| !n.login) {
                         for ip in &n.addrs {
                             let a = SocketAddrV4::new(*ip, n.port);
                             if seen.insert(a) {
@@ -1052,7 +1062,7 @@ impl Connect {
             if s.wake.as_ref().is_none_or(|w| w.token != token) {
                 return;
             }
-            if is_online(&s, id) {
+            if is_online(&s, id) || at_login_screen(&s, id) {
                 break "up";
             }
             if Instant::now() >= deadline {
@@ -1092,6 +1102,9 @@ impl Connect {
                 return Err(AppError::new("link_busy"));
             }
             let peer = s.store.peer(id).ok_or_else(|| AppError::new("peer_not_found"))?.clone();
+            if at_login_screen(&s, id) {
+                return Err(AppError::new("peer_login_screen"));
+            }
             let targets = targets_for(&s, id, &peer);
             if targets.is_empty() {
                 return Err(AppError::new("peer_not_found"));
@@ -1368,10 +1381,19 @@ fn targets_for(s: &State, id: &str, peer: &Peer) -> Vec<SocketAddrV4> {
 /// are not repeated often, so "not heard lately" proves nothing, while a path
 /// that stops answering does.
 fn is_online(s: &State, id: &str) -> bool {
+    // At the sign-in screen only a beacon answers: on, but nothing to connect to.
+    if at_login_screen(s, id) {
+        return false;
+    }
     match s.paths.get(id) {
         Some(v) if !v.is_empty() => v.iter().any(|p| p.result.is_ok()),
         _ => s.nearby.contains_key(id),
     }
+}
+
+/// On and waiting for somebody to sign in (see `Nearby::login`).
+fn at_login_screen(s: &State, id: &str) -> bool {
+    s.nearby.get(id).is_some_and(|n| n.login)
 }
 
 fn build_view(s: &State) -> View {
@@ -1420,7 +1442,7 @@ fn build_view(s: &State) -> View {
             // Reachable first, fastest first.
             paths.sort_by(|a, b| a.rtt_ms.unwrap_or(f64::MAX).total_cmp(&b.rtt_ms.unwrap_or(f64::MAX)));
             let online = is_online(s, &p.id);
-            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), live: s.peer_stats.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), remote_clip: s.peer_clip.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), clip_files: s.clip_in.as_ref().filter(|l| l.peer_id == p.id).map(clipfiles::view), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
+            PeerView { id: p.id.clone(), name: p.name.clone(), os: p.os.clone(), paired_at: p.paired_at, online, paths, manual_addrs: p.manual_addrs.clone(), can_wake: !p.macs.is_empty(), clip_receive: p.clip_receive, clip_send: p.clip_send, info: p.info.clone(), info_at: p.info_at, speed: s.speeds.get(&p.id).map(speed::view), live: s.peer_stats.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), remote_clip: s.peer_clip.as_ref().filter(|(id, _)| *id == p.id).map(|(_, v)| *v), clip_files: s.clip_in.as_ref().filter(|l| l.peer_id == p.id).map(clipfiles::view), login_screen: at_login_screen(s, &p.id), version_mismatch: s.nearby.get(&p.id).and_then(|n| n.version).is_some_and(|v| v != VERSION) }
         })
         .collect();
     View {
@@ -1489,7 +1511,7 @@ mod tests {
     }
 
     fn announced(s: &mut State, id: &str) {
-        s.nearby.insert(id.to_string(), Nearby { addrs: BTreeSet::new(), port: 47615, version: None });
+        s.nearby.insert(id.to_string(), Nearby { addrs: BTreeSet::new(), port: 47615, version: None, login: false });
     }
 
     #[test]
@@ -1513,6 +1535,18 @@ mod tests {
         let mut s = state();
         assert!(!is_online(&s, "a"));
         announced(&mut s, "a");
+        assert!(is_online(&s, "a"));
+    }
+
+    #[test]
+    fn a_machine_waiting_at_the_sign_in_screen_is_on_but_not_online() {
+        let mut s = state();
+        announced(&mut s, "a");
+        s.nearby.get_mut("a").unwrap().login = true;
+        assert!(at_login_screen(&s, "a"));
+        assert!(!is_online(&s, "a"));
+        // Once somebody signs in the app announces without the flag.
+        s.nearby.get_mut("a").unwrap().login = false;
         assert!(is_online(&s, "a"));
     }
 }

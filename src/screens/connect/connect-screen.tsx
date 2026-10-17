@@ -201,7 +201,9 @@ function PeerRow({ peer, menuOpen, setMenuOpen, onUnpair, onError }: { peer: Con
               ? mine.stage === 'up'
                 ? { tone: TONES.success, text: mine.rttMs !== null ? t('Đang kết nối · {ms}', { ms: ms(mine.rttMs) }) : t('Đang kết nối') }
                 : { tone: TONES.info, text: t('Đang kết nối…') }
-              : peer.online
+              : peer.loginScreen
+                ? { tone: TONES.info, text: t('Đã bật · chờ đăng nhập') }
+                : peer.online
                 ? { tone: TONES.neutral, text: t('Thấy trong mạng') }
                 : { tone: TONES.neutral, text: t('Không thấy') }
 
@@ -226,7 +228,7 @@ function PeerRow({ peer, menuOpen, setMenuOpen, onUnpair, onError }: { peer: Con
           <Button
             size="sm"
             variant="primary"
-            disabled={otherBusy || !!pairing || peer.versionMismatch}
+            disabled={otherBusy || !!pairing || peer.versionMismatch || peer.loginScreen}
             onClick={() => {
               open()
               void api.connectLink(peer.id).catch(onError(t('Không kết nối được')))

@@ -9,9 +9,9 @@ import { useEdits } from '../../app/edits'
 import { asksDownload, useSettings } from '../../app/settings'
 import { useToast } from '../../components/toast'
 import { SelectField } from '../../components/ui/form-controls'
-import { Button } from '../../components/ui/primitives'
+import { Button, Chip, TONES } from '../../components/ui/primitives'
 import { SegmentedControl } from '../../components/ui/segmented'
-import { api, isAppError, type BackgroundState, type Theme } from '../../lib/api'
+import { api, isAppError, type BackgroundState, type BeaconState, type Theme } from '../../lib/api'
 import { pickApp } from '../../lib/pick-app'
 import { t } from '../../i18n'
 import { isWindows, localBaseName } from '../../lib/platform'
@@ -37,7 +37,9 @@ const errText = (e: unknown) =>
             ? t('Chỉ dùng được với bản đã cài, không dùng được ở bản dev')
             : e.code === 'autostart_failed'
               ? t('Không bật được việc mở cùng máy: hệ điều hành không ghi nhận. Thử lại, hoặc kiểm tra quyền của Portway.')
-              : (e.detail ?? e.code)
+              : e.code === 'beacon_declined'
+                ? t('Cần quyền quản trị để cài hoặc gỡ dịch vụ, và bạn đã từ chối')
+                : (e.detail ?? e.code)
     : String(e)
 
 /** "Cài đặt": downloads, appearance, the server list as a file, version. */
@@ -54,11 +56,14 @@ export function SettingsScreen() {
   const [home, setHome] = useState('')
   const ask = asksDownload(settings)
   const [bg, setBg] = useState<BackgroundState | null>(null)
+  const [beacon, setBeacon] = useState<BeaconState | null>(null)
+  const [beaconBusy, setBeaconBusy] = useState(false)
 
   useEffect(() => {
     if (!isTauri()) return
     void api.appDataPath().then(setDataPath).catch(() => {})
     void api.backgroundState().then(setBg).catch(() => {})
+    void api.beaconState().then(setBeacon).catch(() => {})
     void getVersion().then(setVersion)
     void downloadDir().then((d) => setSystemDownloads(d.replace(/[\\/]+$/, '')))
     void homeDir().then((d) => setHome(d.replace(/[\\/]+$/, '')))
@@ -144,6 +149,24 @@ export function SettingsScreen() {
         >
           <Switch on={settings.background || !!bg?.autostart} disabled={!!bg?.autostart} onChange={(background) => void run(async () => { await update({ background }); setBg(await api.backgroundState()) }, t('Không lưu được'))} label={t('Giữ chạy nền khi đóng cửa sổ')} />
         </Row>
+        {isWindows && beacon?.supported && (
+          <Row
+            label={t('Báo hiệu khi chưa đăng nhập')}
+            hint={t('Một dịch vụ Windows nhỏ cho các máy khác biết PC đã bật khi chưa có ai đăng nhập, ví dụ sau khi đánh thức bằng Wake-on-LAN. Chỉ báo hiệu: chưa kết nối hay truyền gì được cho tới khi bạn đăng nhập. Cài hoặc gỡ cần quyền quản trị.')}
+          >
+            <Chip tone={beacon.running ? TONES.success : beacon.installed ? TONES.warn : TONES.neutral}>{beacon.running ? t('Đang chạy') : beacon.installed ? t('Đã cài, chưa chạy') : t('Chưa cài')}</Chip>
+            <Button
+              size="sm"
+              disabled={beaconBusy}
+              onClick={() => {
+                setBeaconBusy(true)
+                void run(async () => setBeacon(await api.beaconSet(!beacon.installed)), t('Không đổi được dịch vụ báo hiệu')).finally(() => setBeaconBusy(false))
+              }}
+            >
+              {beacon.installed ? t('Gỡ') : t('Cài đặt dịch vụ')}
+            </Button>
+          </Row>
+        )}
         {isWindows && (
           <div className="border-t border-line px-4 py-3 text-[11.5px] leading-normal text-muted">
             {t('Windows mở Portway khi bạn đăng nhập, không phải khi máy vừa bật. Sau khi đánh thức bằng Wake-on-LAN, máy dừng ở màn hình đăng nhập nên Portway chưa trả lời cho tới khi có người đăng nhập, trừ khi bật tự đăng nhập Windows.')}

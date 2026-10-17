@@ -1,6 +1,6 @@
 [package]
 name = "portway"
-version = "0.13.0"
+version = "0.13.1"
 description = "Portway desktop app"
 authors = ["Portway"]
 edition = "2021"
@@ -62,6 +62,22 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 # RSA key generation is unbearably slow unoptimised; build the bigint crates
 # with optimisations even in dev.
+# The link's encryption and hashing: unoptimized they cap file transfers and
+# the speed test at a few MB/s in a dev build, which says nothing about the network.
+[profile.dev.package.snow]
+opt-level = 3
+[profile.dev.package.chacha20poly1305]
+opt-level = 3
+[profile.dev.package.chacha20]
+opt-level = 3
+[profile.dev.package.poly1305]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.curve25519-dalek]
+opt-level = 3
+[profile.dev.package.cipher]
+opt-level = 3
 [profile.dev.package.num-bigint-dig]
 opt-level = 3
 [profile.dev.package.rsa]

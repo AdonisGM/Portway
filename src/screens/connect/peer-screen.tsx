@@ -11,7 +11,7 @@ import { api, type ConnectMachine, type ConnectPeer, type ConnectSpeed } from '.
 import { formatBytes, formatUptime } from '../server/format'
 import { commandError, hintFor, speedError } from './hints'
 import { HintSteps } from './pairing-dialog'
-import { AddAddressDialog, OsIcon, PathLine, Switch, WakeTimeout, ms, osLabel } from './shared'
+import { AddAddressDialog, ipOf, OsIcon, PathLine, Switch, WakeTimeout, ms, osLabel } from './shared'
 import { pickAndSend, TransfersSection } from './transfers'
 
 const FEATURE_SPEED = 'speed'
@@ -248,7 +248,7 @@ function Network({ peer }: { peer: ConnectPeer }) {
   const history = mine?.rttHistory ?? []
   const avg = history.length ? history.reduce((a, b) => a + b, 0) / history.length : null
   const jitter = history.length > 1 ? history.slice(1).reduce((a, v, i) => a + Math.abs(v - history[i]), 0) / (history.length - 1) : null
-  const used = mine ? peer.paths.find((p) => p.addr === mine.addr) : (peer.paths.find((p) => p.rttMs !== null) ?? null)
+  const used = mine ? peer.paths.find((p) => ipOf(p.addr) === ipOf(mine.addr)) : (peer.paths.find((p) => p.rttMs !== null) ?? null)
   const cardMbps = used?.card ? (machine?.cards.find((c) => c.name === used.card)?.mbps ?? null) : null
   const through = used ? [used.card, used.network].filter(Boolean).join(' · ') : ''
 
@@ -268,7 +268,7 @@ function Network({ peer }: { peer: ConnectPeer }) {
         <div className="flex flex-col gap-1 border-t border-line px-3.5 py-2.5">
           <span className="text-[10.5px] font-medium text-muted">{t('Các đường tới máy này')}</span>
           {peer.paths.map((path) => (
-            <PathLine key={path.addr} path={path} inUse={!!mine && mine.addr === path.addr} peerId={peer.id} />
+            <PathLine key={path.addr} path={path} inUse={!!mine && ipOf(mine.addr) === ipOf(path.addr)} peerId={peer.id} />
           ))}
         </div>
       )}

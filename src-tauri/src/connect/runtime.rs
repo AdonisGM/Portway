@@ -574,6 +574,7 @@ impl Connect {
 
     async fn handle_incoming(&self, stream: Stream) {
         let Some(me) = self.me() else { return };
+        let remote_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_default();
         // A TCP connection that never speaks (a path probe) ends here, quietly.
         let Ok(Ok(est)) = tokio::time::timeout(HANDSHAKE_TIMEOUT, wire::respond(stream, &me.key)).await else { return };
         let remote_key = est.remote_static.clone();
@@ -609,7 +610,7 @@ impl Connect {
                         let (token, cancel) = (s.next_token, Arc::new(Notify::new()));
                         s.next_token += 1;
                         let (outbox, outbox_rx) = mpsc::unbounded_channel();
-                        s.link = Some(Link { token, peer_id: id.clone(), addr: String::new(), up: true, since: now_ms(), rtt: None, rtts: VecDeque::new(), cancel: cancel.clone(), outbox, outbox_rx: Some(outbox_rx) });
+                        s.link = Some(Link { token, peer_id: id.clone(), addr: remote_addr, up: true, since: now_ms(), rtt: None, rtts: VecDeque::new(), cancel: cancel.clone(), outbox, outbox_rx: Some(outbox_rx) });
                         Some((token, cancel))
                     }
                 };

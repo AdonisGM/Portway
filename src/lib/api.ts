@@ -1074,7 +1074,7 @@ function browserApi(): Api {
     exportServers: async () => fail('needs_app'),
     importServersFile: async () => fail('needs_app'),
     async settings() {
-      return { language: 'vi', downloadDir: null, askDownload: null, theme: 'dark', editor: null, openWith: {}, background: false }
+      return { language: 'en', downloadDir: null, askDownload: null, theme: 'dark', editor: null, openWith: {}, background: false }
     },
     async setSettings(s) {
       return s

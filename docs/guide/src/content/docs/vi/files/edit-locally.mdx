@@ -1,0 +1,47 @@
+---
+title: Sửa tệp bằng ứng dụng trên máy
+description: Sửa một tệp của server bằng ứng dụng trên máy tính này, với việc tự tải lên mỗi lần lưu và phát hiện xung đột.
+sidebar:
+  order: 3
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Portway có thể mở một tệp của server bằng ứng dụng đã cài trên máy tính này, như Visual Studio Code, Sublime Text hoặc TextEdit, và tải lên lại mỗi lần ứng dụng lưu tệp.
+
+## Sửa một tệp
+
+1. Bấm đúp một tệp trong màn hình Tệp, hoặc chọn tệp rồi chọn **Sửa trên máy**.
+2. Portway tải tệp về một thư mục tạm và mở nó bằng ứng dụng đã chọn.
+3. Sửa và lưu như bình thường. Mỗi lần lưu được tải lên server.
+
+Khay **Đang sửa trên máy** xuất hiện ở đáy cửa sổ. Khay liệt kê từng tệp đang mở, kèm thời điểm tải lên gần nhất và số lần tải lên. Trước lần lưu đầu tiên, khay nêu rằng việc lưu trong editor sẽ tự tải lên.
+
+## Chọn ứng dụng
+
+- **Tệp chữ** mở bằng ứng dụng được chọn ở mục **Sửa tệp** trong [Cài đặt](/docs/vi/app/settings/). Giá trị mặc định là trình soạn văn bản mặc định của hệ thống.
+- **Các loại tệp khác**, như tài liệu Word, bảng tính, PDF và ảnh, mở bằng ứng dụng mà hệ thống dùng cho loại đó. Portway ghi nhớ lựa chọn theo từng đuôi tệp. Các ứng dụng đã nhớ được liệt kê ở mục **Theo loại tệp** trong Cài đặt, nơi có thể đổi hoặc bỏ chúng.
+- **Mở bằng app khác** trong bảng bên phải chọn ứng dụng cho một tệp, và Portway ghi nhớ cho loại tệp đó.
+
+Các loại tệp chạy được như `.sh`, `.command`, `.bat` và `.exe` không bao giờ được hệ thống tự mở.
+
+## Việc tải lên hoạt động thế nào
+
+- Thư mục tạm riêng cho từng server và user, và tên có chứa mã băm của server, host, cổng, user và đường dẫn. Tệp trùng tên trên hai server không bao giờ dùng chung một bản.
+- Mỗi lần tải lên ghi đè tệp ngay tại chỗ, nên chủ sở hữu và quyền của tệp được giữ nguyên.
+- Khay hiển thị trạng thái của từng tệp: chờ tải lên, đang tải lên, đã tải lên hoặc lỗi.
+
+## Xung đột
+
+Portway ghi nhớ trạng thái của tệp lúc tải về. Nếu tệp trên server đã thay đổi trong thời gian đó, việc tải lên dừng lại và khay nêu rằng tệp trên server đã đổi từ lúc mở. Có hai lựa chọn.
+
+- **Ghi đè lên server** tải lên bản trên máy và thay thế các thay đổi trên server.
+- **Lấy bản trên server** bỏ các thay đổi trên máy và tải về tệp hiện tại.
+
+## Thôi sửa
+
+**Thôi sửa** ngừng tải lên và xoá bản trên máy. Thay đổi chưa tải lên sẽ mất, và Portway hỏi xác nhận. **Hiện bản trên máy trong Finder** mở vị trí của tệp tạm, còn **Mở lại trong editor** mở lại tệp.
+
+<Aside type="note">
+  Việc sửa bằng root cũng được. Hãy bật [quyền root](/docs/vi/files/permissions-and-root/) trước, để tệp đọc và ghi được.
+</Aside>

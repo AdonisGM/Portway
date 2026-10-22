@@ -1,0 +1,52 @@
+---
+title: Khoá SSH
+description: Liệt kê, tạo và sao chép khoá SSH, đồng thời xem tài khoản nào đang dùng từng khoá.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Màn hình **Khoá SSH** liệt kê các cặp khoá nằm trong `~/.ssh` trên máy tính này. Mở màn hình từ khu vực **Quản lý kết nối**, cạnh danh sách server.
+
+<Figure
+  src="vi/keys.webp"
+  alt="Màn hình Khoá SSH với ba khoá, mỗi khoá hiển thị loại, tháng tạo, ghi chú, vân tay, nút Sao chép public key và số tài khoản đang dùng."
+  caption="Hình 1. Danh sách khoá SSH."
+/>
+
+Khoá riêng luôn nằm trong `~/.ssh`. Portway chỉ đọc khoá công khai để lấy loại khoá và vân tay, và chỉ ghi khoá riêng khi tạo khoá mới.
+
+## Đọc danh sách
+
+Mỗi khoá hiển thị tên và đường dẫn, loại (ví dụ `ED25519` hoặc `RSA 3072`), tháng tạo, ghi chú và vân tay SHA256. Dòng bên dưới cho biết có bao nhiêu tài khoản và server đang dùng khoá. Chọn **Tài khoản dùng khoá này** để liệt kê chúng. Khoá có tệp bị mất được đánh dấu, vì các server dùng khoá đó sẽ không đăng nhập được.
+
+Các bộ lọc phía trên danh sách thu hẹp theo loại và theo việc sử dụng: mọi khoá, khoá đang dùng và khoá chưa dùng. Ô tìm kiếm khớp với tên, đường dẫn và vân tay. **Quét lại ~/.ssh** đọc lại thư mục sau khi khoá được thêm từ bên ngoài Portway.
+
+## Tạo khoá
+
+<Figure
+  src="vi/key-new.webp"
+  alt="Hộp thoại Khoá mới với loại ED25519 được chọn, tên tệp, ghi chú, các ô passphrase và lệnh ssh-keygen tương đương."
+  caption="Hình 2. Hộp thoại tạo khoá mới."
+/>
+
+1. Chọn **Khoá mới**.
+2. Chọn loại khoá. **ED25519** được khuyên dùng: ngắn, nhanh và mọi server OpenSSH hiện nay đều nhận. **RSA 4096** dành cho server cũ không nhận ED25519.
+3. Nhập tên tệp. Cặp khoá được lưu thành `~/.ssh/<tên>` và `~/.ssh/<tên>.pub`. Tên chỉ gồm chữ không dấu, số, dấu chấm, gạch dưới và gạch ngang, không bắt đầu bằng dấu chấm và không trùng tệp đã có.
+4. Tuỳ chọn nhập ghi chú. Khi để trống, `user@tên-máy` được dùng, giống `ssh-keygen`.
+5. Tuỳ chọn nhập passphrase hai lần.
+6. Kiểm tra mục **Lệnh tương đương** rồi chọn **Tạo khoá**.
+
+## Cấp quyền cho khoá trên server
+
+**Sao chép public key** sao chép khoá công khai. Dán nó thành một dòng mới vào `~/.ssh/authorized_keys` của user trên server. Sau đó, một tài khoản của server đó có thể dùng khoá này làm cách đăng nhập.
+
+## Khoá có passphrase
+
+Khi khoá được bảo vệ bằng passphrase, Portway hỏi passphrase lúc kết nối. Chọn **Lưu vào Keychain của máy** để lưu, nhờ đó câu hỏi không lặp lại. Trên Windows, passphrase được lưu trong Credential Manager.
+
+<Aside type="note">
+  Lỗi như bị từ chối quyền lúc đăng nhập thường có nghĩa là khoá công khai chưa nằm trong `~/.ssh/authorized_keys` của user đó trên server.
+</Aside>

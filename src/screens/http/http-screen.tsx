@@ -150,7 +150,7 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
         </Button>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: '230px minmax(0,1fr)' }}>
+      <div className="grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: '252px minmax(0,1fr)' }}>
         {/* Saved and history */}
         <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
           <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5">
@@ -190,7 +190,7 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
                 active={false}
                 method={h.request.method}
                 title={shortUrl(h.request.url)}
-                sub={`${new Date(h.at).toLocaleTimeString(locale())} · ${ms(h.ms)}` + (h.redacted ? ' · ' + t('không lưu token') : '')}
+                sub={`${new Date(h.at).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })} · ${ms(h.ms)}` + (h.redacted ? ' · ' + t('không lưu token') : '')}
                 onClick={() => open(h.request, null)}
               >
                 <span className="num flex-none text-[11px] font-semibold" style={{ color: h.error ? 'var(--danger)' : statusColor(h.status) }}>
@@ -212,7 +212,7 @@ export function HttpScreen({ server, user }: { server: Server; user: string }) {
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="off"
-              placeholder="http://127.0.0.1:3000/api/health"
+              placeholder={t('Nhập URL, ví dụ http://127.0.0.1:3000/api/health')}
               className="box-border h-[34px] min-w-0 flex-1 rounded-lg border border-line2 bg-sunken px-3 font-mono text-[12.5px] leading-[32px] text-ink outline-none select-text focus:border-accent"
             />
             <Button variant="primary" onClick={() => void send()} disabled={!req.url.trim() || sending} className="!h-[34px]">

@@ -1,0 +1,49 @@
+---
+title: Edit files locally
+description: Edit a server file in an application on this computer, with automatic upload on every save and conflict detection.
+sidebar:
+  order: 3
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Portway can open a file of the server in an application that is installed on this computer, such as Visual Studio Code, Sublime Text or TextEdit, and upload it again every time the application saves it.
+
+## Edit a file
+
+The labels in this guide are the ones of the macOS version. On Windows, `Mac` reads `PC`.
+
+1. Double-click a file in the Files screen, or select the file and choose **Edit on this Mac**.
+2. Portway downloads the file into a temporary folder and opens it in the chosen application.
+3. Edit and save as usual. Every save is uploaded to the server.
+
+The panel **Editing on this Mac** appears at the bottom of the window. It lists each open file with the time of the last upload and the number of uploads. Before the first save it states that saving in the editor uploads automatically.
+
+## Choose the application
+
+- **Text files** open in the application that is chosen under **File editing** in [Settings](/docs/app/settings/). The default is the default text editor of the system.
+- **Other file types**, such as Word documents, spreadsheets, PDF files and images, open in the application that the system uses for that type. Portway remembers the choice for each extension. The remembered applications are listed under **By file type** in Settings, where they can be changed or removed.
+- **Open with another app…** in the side panel picks an application for one file, and Portway remembers it for that type.
+
+Files that can run, such as `.sh`, `.command`, `.bat` and `.exe`, are never opened automatically by the system.
+
+## How uploads work
+
+- The temporary folder is separate for each server and user, and the name includes a hash of the server, host, port, user and path. Files with the same name on two servers never share a copy.
+- An upload overwrites the file in place, so the owner and the mode of the file stay as they were.
+- The panel shows the state of each file: waiting to upload, uploading, uploaded or failed.
+
+## Conflicts
+
+Portway remembers the state of the file when it was downloaded. If the file on the server changed in the meantime, the upload stops and the panel states that the file on the server changed since it was opened. Two choices are offered.
+
+- **Overwrite on server** uploads the local version and replaces the changes on the server.
+- **Use server version** discards the local changes and downloads the current file.
+
+## Stop editing
+
+**Stop editing** stops the uploads and deletes the local copy. Changes that were not uploaded are lost, and Portway asks for confirmation. **Show the local copy in Finder** reveals the temporary file, and **Reopen in the editor** opens it again.
+
+<Aside type="note">
+  Editing as root works too. Turn on [root access](/docs/files/permissions-and-root/) first, so that the file can be read and written.
+</Aside>

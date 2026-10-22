@@ -1,0 +1,50 @@
+---
+title: Quyền truy cập và quyền root
+description: Cách Portway giải thích user được làm gì với một tệp, và cách thao tác tệp bằng root thông qua sudo.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+## User được làm gì
+
+Với mỗi mục được chọn, bảng bên phải nêu user của phiên được làm gì và lý do. Nội dung được tính từ chủ sở hữu, nhóm và quyền của mục, cùng các nhóm mà user thuộc về.
+
+| Tình huống | Nội dung nêu ra |
+|---|---|
+| User là root | User là root và không bị giới hạn quyền |
+| User là chủ sở hữu của mục | Áp dụng quyền của owner |
+| User thuộc nhóm của mục | Áp dụng quyền của group |
+| Không thuộc trường hợp nào ở trên | Áp dụng quyền của others |
+
+Với thư mục, bảng nêu có xem được nội dung không và có tạo, xoá được bên trong không. Với nhiều mục được chọn, bảng đếm số mục không đọc được hoặc không ghi được. Nhờ vậy, phần lớn vấn đề về quyền được giải thích mà không cần rời màn hình.
+
+## Thư mục không mở được
+
+Khi user không có quyền đọc một thư mục, danh sách được thay bằng một thông báo nêu tên thư mục, chủ sở hữu, nhóm và quyền, cùng user không mở được nó. Nếu có quyền root, thông báo đưa ra nút mở thư mục bằng kết nối root.
+
+## Quyền root cho tệp
+
+User thường có thể duyệt, tải lên, sửa và xoá tệp bằng root thông qua sudo. Đây là một công tắc riêng, vì tệp được tạo hoặc tải lên bằng root sẽ thuộc về root.
+
+<Steps>
+
+1. Bật [sudo](/docs/vi/servers/sudo/) cho phiên.
+2. Trong màn hình Tệp, chọn **Quyền root** (**Dùng quyền root (sudo)**).
+3. Làm việc như bình thường. Một thông báo nêu rằng tệp đang được xử lý bằng root, tệp tải lên và mục mới sẽ thuộc về root, và user của phiên là ai.
+4. Chọn **Quay về** user khi xong việc.
+
+</Steps>
+
+Về mặt kỹ thuật, Portway mở thêm một kênh SFTP chạy `sudo sftp-server`, nên mọi thao tác tệp đều chạy bằng root. Việc đổi chủ sở hữu của tệp luôn đi qua lệnh shell, vì SFTP không ánh xạ được tên người dùng. Việc chuyển công tắc được ghi vào nhật ký thao tác.
+
+## Khi quyền root chưa dùng được
+
+- Nếu sudo đang tắt, màn hình Tệp yêu cầu bật sudo trước.
+- Nếu sudo đang bật nhưng quyền root chưa bật, một thông báo nêu rằng các thao tác tệp vẫn chạy bằng user của phiên.
+- Nếu server không có chương trình `sftp-server` chạy được qua sudo, ví dụ vì SFTP được cấu hình là `internal-sftp`, Portway báo như vậy và tiếp tục làm việc bằng user của phiên.
+
+<Aside type="caution">
+  Chỉ làm việc bằng root khi cần. Tệp tạo bằng root có thể không đọc được hoặc không ghi được đối với ứng dụng cần dùng chúng. Dùng **Đổi owner** để sửa lại sau đó.
+</Aside>

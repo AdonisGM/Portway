@@ -24,8 +24,8 @@ pub enum Theme {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum Language {
-    #[default]
     Vi,
+    #[default]
     En,
 }
 

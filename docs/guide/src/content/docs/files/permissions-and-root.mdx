@@ -1,0 +1,50 @@
+---
+title: Permissions and root access
+description: How Portway explains what a user may do with a file, and how to work on files as root through sudo.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+## What the user may do
+
+For every selected item the side panel states what the user of the session may do, and why. The statement is calculated from the owner, the group and the mode of the item, and from the groups of the user.
+
+| Situation | Statement |
+|---|---|
+| The user is root | The user is root and has no permission limits |
+| The user owns the item | The owner bits apply |
+| The user belongs to the group of the item | The group bits apply |
+| Neither of the above | The bits for others apply |
+
+For a folder the panel states whether its contents can be listed and whether items can be created and deleted inside. For several selected items it counts how many are not readable or not writable. This explains most permission problems without leaving the screen.
+
+## Folders that cannot be opened
+
+When the user has no permission to read a folder, the list is replaced by a message that names the folder, the owner, the group and the mode, and that states the user who cannot open it. If root access is available, the message offers a button to open the folder with the root connection.
+
+## Root access for files
+
+A regular user can browse, upload, edit and delete files as root through sudo. This is a separate switch, because files that are created or uploaded as root belong to root.
+
+<Steps>
+
+1. Turn on [sudo](/docs/servers/sudo/) for the session.
+2. In the Files screen, select **Root access** (**Use root (sudo)**).
+3. Work as usual. A notice states that files are handled as root, that uploaded files and new items belong to root, and which user is the session user.
+4. Select **Back to the user** when the work is finished.
+
+</Steps>
+
+Technically Portway opens a second SFTP channel that runs `sudo sftp-server`, so every file operation runs as root. Changing the owner of a file always goes through a shell command, because SFTP cannot map user names. The switch is written to the audit log.
+
+## When root access is not available
+
+- If sudo is off, the Files screen asks to turn it on first.
+- If sudo is on but root access is not, a notice states that file operations still run as the session user.
+- If the server has no `sftp-server` binary that can run through sudo, for example because SFTP is configured as `internal-sftp`, Portway reports that and keeps working as the session user.
+
+<Aside type="caution">
+  Work as root only when needed. Files that are created as root can be unreadable or unwritable for the application that is supposed to use them. Use **Change owner** to correct that afterwards.
+</Aside>

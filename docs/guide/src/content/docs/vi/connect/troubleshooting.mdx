@@ -1,0 +1,57 @@
+---
+title: Khắc phục sự cố Connect
+description: Việc cần làm khi không thấy một máy tính, không kết nối được hoặc việc ghép đôi bị từ chối.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Portway giải thích phần lớn lỗi của Connect ngay trên màn hình và gợi ý cách sửa phù hợp với loại lỗi. Trang này tập hợp chúng.
+
+## Máy kia không có trong danh sách
+
+- Mở Portway trên máy kia và bật Connect ở đó. Connect chỉ hoạt động khi Portway đang chạy và công tắc đang bật.
+- Kiểm tra cả hai máy ở cùng một mạng, và mạng không cô lập các thiết bị với nhau, như mạng khách thường làm.
+- Nếu sau vài giây **Connect** vẫn không thấy chính máy này, mạng có thể chặn multicast, hoặc máy Mac này chưa được cấp quyền mạng nội bộ. Vẫn ghép đôi được bằng địa chỉ IP.
+- Nhập địa chỉ ở mục **Hoặc theo địa chỉ IP**, ví dụ `10.10.10.2`. Có thể thêm cổng, như `10.10.10.2:47615`.
+
+## Thấy máy kia nhưng không kết nối được
+
+| Nguyên nhân | Việc cần làm |
+|---|---|
+| Máy kia không nhận kết nối | Mở Portway ở đó và bật Connect |
+| Tường lửa của máy kia chặn (hay gặp trên Windows) | Ở hộp thoại tường lửa lần đầu, tích cả Private và Public, hoặc đổi mạng sang Private. Trên Windows, PowerShell chạy bằng quyền quản trị có thể thêm rule cho cổng, và màn hình hiển thị lệnh |
+| Không có đường tới máy kia | Kiểm tra hai máy cùng một mạng và cáp hoặc Wi-Fi còn kết nối, hoặc nhập địa chỉ IP |
+| Máy Mac này chưa có quyền mạng nội bộ | Mở **System Settings › Privacy & Security › Local Network** và bật Portway. Nếu Portway chưa có trong danh sách, hãy thoát hẳn rồi mở lại |
+| Máy kia đang bận | Máy kia đã có một liên kết hoặc một yêu cầu ghép đôi khác. Thử lại sau vài giây |
+
+Một đường có thể hiển thị là `không trả lời`, `không có đường tới` hoặc `bị từ chối`. Ba trường hợp này khác nhau: hết thời gian chờ thường do tường lửa bỏ gói tin, không có đường thường do thiếu quyền hoặc khác mạng, còn bị từ chối nghĩa là không có gì lắng nghe ở đó.
+
+## Ghép đôi thất bại
+
+| Thông báo | Ý nghĩa và cách sửa |
+|---|---|
+| Ghép đôi đã bị từ chối | Một bên bấm **Không khớp**. Hãy so mã cẩn thận rồi thử lại |
+| Hết thời gian chờ so mã | Hai bên phải bấm **Khớp** trong vòng 2 phút. Hãy thử lại |
+| Địa chỉ này không phải máy bạn chọn | Máy trả lời có mã định danh khác. Thử lại, hoặc nhập đúng địa chỉ IP |
+| Đang có một yêu cầu ghép đôi khác | Hoàn tất hoặc huỷ yêu cầu đầu tiên rồi thử lại |
+| Khoá của máy kia đã đổi | Máy kia có thể đã cài lại Portway, hoặc một máy khác đang giả danh. Hãy bỏ ghép đôi, ghép đôi lại và so mã thật kỹ |
+| Máy kia không còn ghép đôi với máy này | Bỏ ghép đôi trên cả hai máy, rồi ghép đôi lại |
+
+## Liên kết bị ngắt, hoặc hai phiên bản khác nhau
+
+- Nếu kết nối bị ngắt giữa chừng, hãy thử lại. Nếu lặp lại, kiểm tra hai máy chạy cùng phiên bản Portway.
+- Khi hai phiên bản khác nhau, một số tính năng có thể thiếu, và trang cho biết là tính năng nào. Hãy cập nhật Portway ở cả hai máy.
+
+## Những vấn đề khiến Connect không khởi động được
+
+| Thông báo | Cách sửa |
+|---|---|
+| Không mở được cổng nhận kết nối | Chương trình khác đang dùng cổng hoặc cổng bị chặn. Tắt rồi bật lại Connect |
+| Không bật được việc tìm máy trong mạng | Kiểm tra máy tính đang nối mạng, rồi tắt và bật lại Connect |
+| Không lưu được khoá của máy này | Cho phép Portway dùng Keychain khi hệ thống hỏi, rồi thử lại |
+
+<Aside type="note">
+  Cổng mặc định là 47615. Khi cổng này bị chiếm, Portway dùng cổng khác, và máy kia tìm thấy nó qua thông báo trên mạng.
+</Aside>

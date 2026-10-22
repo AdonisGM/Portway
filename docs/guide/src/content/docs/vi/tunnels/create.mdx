@@ -1,0 +1,77 @@
+---
+title: Tạo tunnel
+description: Chuyển tiếp cổng qua SSH bằng tunnel Local, SOCKS5 và Remote, và giữ chúng chạy ổn định.
+sidebar:
+  order: 1
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Tunnel đưa lưu lượng mạng đi qua một kết nối SSH. Các cách dùng điển hình là truy cập một cơ sở dữ liệu chỉ lắng nghe trên server, mở một dashboard nội bộ trong trình duyệt, hoặc gửi lưu lượng của một ứng dụng qua server.
+
+## Các loại
+
+| Loại | Tương đương | Tác dụng |
+|---|---|---|
+| **Local** | `ssh -L` | Mở một cổng trên máy tính này. Kết nối vào đó được chuyển tới một host và cổng **như được thấy từ server** |
+| **SOCKS** | `ssh -D` | Mở một proxy SOCKS5 trên máy tính này. Mọi kết nối qua proxy đi ra từ server |
+| **Remote** | `ssh -R` | Server mở một cổng, chỉ trên localhost của chính nó. Kết nối vào đó được chuyển về một host và cổng trên máy tính này |
+
+Loại Remote nằm ở mục **Nâng cao (Remote forward)** của biểu mẫu.
+
+## Tạo tunnel
+
+<Steps>
+
+1. Mở **Tunnel** từ thanh biểu tượng và chọn **Tunnel mới**.
+
+2. Nhập tên và chọn loại.
+
+   <Figure
+     src="vi/tunnel-form.webp"
+     alt="Hộp thoại Tunnel mới với loại Local, tài khoản root@web-prod, cổng 15000 trên máy tính này, đích 127.0.0.1:80, các gợi ý từ server, nút Mở, hai ô chọn và lệnh ssh tương đương."
+     caption="Hình 1. Hộp thoại Tunnel mới."
+   />
+
+3. Chọn **Đi qua (server + user)**, là tài khoản có phiên mang tunnel.
+
+4. Đặt các cổng.
+   - **Cổng trên máy bạn**: một con số, hoặc **Tự chọn** để Portway chọn. Cổng dưới 1024 cần quyền quản trị trên máy tính này.
+   - **Đích**, được biểu mẫu ghi kèm tên server, ví dụ `host:port nhìn từ web-prod`. Một giá trị mẫu là `127.0.0.1:5432`. Khi server đang kết nối, danh sách gợi ý hiển thị các cổng đang lắng nghe trên server, và chọn một gợi ý sẽ điền vào ô.
+
+5. Tuỳ chọn chọn **Nút Mở**: **Không**, **Mở URL** hoặc **Copy chuỗi**. Lựa chọn này thêm một nút vào dòng tunnel để mở địa chỉ trong trình duyệt hoặc sao chép chuỗi kết nối, ví dụ cho một ứng dụng cơ sở dữ liệu.
+
+6. Chọn các tuỳ chọn rồi chọn **Tạo và bật**.
+
+</Steps>
+
+## Tuỳ chọn
+
+- **Tự bật khi mở Portway** bật tunnel cùng với ứng dụng.
+- **Tự kết nối lại khi rớt mạng** kết nối lại tự động. Khi đó dòng tunnel hiển thị số lần thử, lý do và thời điểm thử lại.
+- **Bind trên máy bạn** mặc định là `127.0.0.1`. Lựa chọn **0.0.0.0 (LAN)** cho phép các thiết bị khác trong cùng mạng dùng tunnel. Biểu mẫu nêu điều này, vì bất kỳ ai trong mạng đó khi ấy đều tới được đích.
+
+## SOCKS ra mạng nội bộ
+
+Tunnel SOCKS được gắn ra mạng nội bộ luôn yêu cầu đăng nhập. Portway tạo user `portway` và một mật khẩu ngẫu nhiên, rồi lưu chúng vào Keychain. Menu của tunnel có hành động sao chép user và mật khẩu, để nhập vào ứng dụng dùng proxy.
+
+## Chạy và dừng
+
+Công tắc trên mỗi dòng tunnel bật và dừng nó. Mỗi tunnel có kết nối SSH riêng và tiếp tục chạy khi tab server bị đóng. Tunnel dừng khi thoát Portway. Một tunnel chỉ tự mở được khi mật khẩu hoặc passphrase của nó đã lưu trong Keychain, hoặc khi server đang được kết nối.
+
+Menu của tunnel có **Sửa**, **Nhân bản**, **Sao chép lệnh ssh** và **Xoá**. Dòng tunnel hiển thị trạng thái, thời gian chạy, số kết nối và lượng dữ liệu. Chọn dòng để mở [màn hình theo dõi](/docs/vi/tunnels/monitor/).
+
+## Các lỗi thường gặp
+
+| Thông báo | Ý nghĩa |
+|---|---|
+| Cổng đang bị chiếm trên máy bạn | Chương trình khác, hoặc một tunnel khác, đã dùng cổng này |
+| Cần passphrase của khoá hoặc mật khẩu | Hãy kết nối server một lần và chọn lưu bí mật vào Keychain |
+| Chưa tin khoá máy chủ | Hãy kết nối server một lần để xác nhận khoá máy chủ |
+| Server không cho mở cổng | Cấu hình `sshd` đang hạn chế việc chuyển tiếp |
+| Mất kết nối tới server | Mạng bị gián đoạn; tunnel tự kết nối lại khi tuỳ chọn đó đang bật |
+
+<Aside type="caution">
+  Tunnel mở ra mạng nội bộ cho phép truy cập đích mà không cần mật khẩu, trừ SOCKS. Chỉ dùng trong mạng đáng tin cậy.
+</Aside>

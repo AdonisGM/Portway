@@ -1,0 +1,77 @@
+---
+title: Create tunnels
+description: Forward ports over SSH with local, SOCKS5 and remote tunnels, and keep them running.
+sidebar:
+  order: 1
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+A tunnel carries network traffic through an SSH connection. Typical uses are reaching a database that listens only on the server, opening an internal dashboard in the browser, or sending the traffic of an application through the server.
+
+## Types
+
+| Type | Equivalent | What it does |
+|---|---|---|
+| **Local** | `ssh -L` | Opens a port on this computer. Connections to it are forwarded to a host and port **as seen from the server** |
+| **SOCKS** | `ssh -D` | Opens a SOCKS5 proxy on this computer. Every connection through the proxy leaves from the server |
+| **Remote** | `ssh -R` | The server opens a port, on its own localhost only. Connections to it are forwarded to a host and port on this computer |
+
+The Remote type is under **Advanced (remote forward)** in the form.
+
+## Create a tunnel
+
+<Steps>
+
+1. Open **Tunnel** from the icon rail and select **New tunnel**.
+
+2. Enter a name and choose the type.
+
+   <Figure
+     src="en/tunnel-form.webp"
+     alt="The New tunnel dialog with the type Local, the account root@web-prod, port 15000 on this computer, the destination 127.0.0.1:80, suggestions from the server, the open button, two checkboxes and the equivalent ssh command."
+     caption="Figure 1. The New tunnel dialog."
+   />
+
+3. Choose **Via (server + user)**, which is the account whose session carries the tunnel.
+
+4. Set the ports.
+   - **Port on your Mac**: a number, or **Auto** to let Portway choose. Ports below 1024 need administrator rights on this computer.
+   - **Destination**, which the form labels with the name of the server, for example `host:port as seen from web-prod`. A value is, for example, `127.0.0.1:5432`. When the server is connected, a list of suggestions shows the ports that listen on it, and selecting one fills the field.
+
+5. Optionally choose the **Open button**: **None**, **Open URL**, or **Copy string**. It adds a button to the tunnel row that opens the address in the browser or copies a connection string, for example for a database client.
+
+6. Choose the options and select **Create and start**.
+
+</Steps>
+
+## Options
+
+- **Start when Portway opens** starts the tunnel together with the application.
+- **Reconnect when the network drops** reconnects automatically. The row then shows the attempt number, the reason and the time of the next attempt.
+- **Bind on your Mac** is `127.0.0.1` by default. The choice **0.0.0.0 (LAN)** lets other devices on the same network use the tunnel. This is stated in the form, because anyone on that network can then reach the destination.
+
+## SOCKS on the network
+
+A SOCKS tunnel that is bound to the local network always requires a sign-in. Portway creates the user `portway` and a random password, and stores them in the Keychain. The menu of the tunnel has an action that copies the user and the password, so that they can be entered in the application that uses the proxy.
+
+## Run and stop
+
+A switch on each tunnel row starts and stops it. Each tunnel has its own SSH connection and keeps running when the server tab is closed. Tunnels stop when Portway quits. A tunnel can start by itself only when its password or passphrase is saved in the Keychain, or when the server is already connected.
+
+The menu of a tunnel offers **Edit**, **Duplicate**, **Copy ssh command** and **Delete**. The row shows the state, the uptime, the number of connections and the amount of data. Selecting the row opens the [monitor](/docs/tunnels/monitor/).
+
+## Common errors
+
+| Message | Meaning |
+|---|---|
+| Port is in use on your computer | Another program, or another tunnel, already uses the port |
+| Needs the key passphrase or the password | Connect to the server once and choose to save the secret in the Keychain |
+| Host key not trusted yet | Connect to the server once, so that the host key can be confirmed |
+| The server did not allow opening the port | The `sshd` configuration restricts forwarding |
+| Lost connection to the server | The network dropped; the tunnel reconnects when that option is on |
+
+<Aside type="caution">
+  A tunnel that is open to the network gives access to its destination without a password, except for SOCKS. Use it only on a network that is trusted.
+</Aside>

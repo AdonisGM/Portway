@@ -1,0 +1,38 @@
+{
+  "hero": {
+    "width": 1600,
+    "height": 900
+  },
+  "tunnel": {
+    "width": 913,
+    "height": 620
+  },
+  "files": {
+    "width": 352,
+    "height": 526
+  },
+  "nginx": {
+    "width": 900,
+    "height": 525
+  },
+  "docker": {
+    "width": 384,
+    "height": 438
+  },
+  "firewall": {
+    "width": 736,
+    "height": 440
+  },
+  "services": {
+    "width": 546,
+    "height": 440
+  },
+  "http": {
+    "width": 1036,
+    "height": 289
+  },
+  "connect": {
+    "width": 1288,
+    "height": 155
+  }
+}

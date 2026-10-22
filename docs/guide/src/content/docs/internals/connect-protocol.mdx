@@ -1,0 +1,51 @@
+---
+title: The Connect protocol
+description: Discovery, pairing, encryption and message handling between two Portway installations on the same network.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Connect links two Portway installations on one local network, and it is meant for two computers that belong to the same person. It is off by default. While it is off, nothing listens and nothing is announced.
+
+## Discovery
+
+When Connect is turned on, Portway opens a TCP port (47615 by default, or another port when that one is taken) and announces a random identifier through mDNS under the service type `_portway._tcp.local.`. The announcement carries the protocol version, but not the machine name. The name and every other detail are sent only to machines that are already paired.
+
+## Encrypted channel
+
+Two machines communicate over a Noise handshake that runs on top of any byte stream.
+
+| Item | Value |
+|---|---|
+| Pattern | `Noise_XX_25519_ChaChaPoly_BLAKE2s` |
+| Framing | A 16-bit length followed by that many bytes, so one frame carries at most 65,535 bytes |
+| Messages | JSON, each with a kind byte. Inside one connection, control messages and file bytes share the same framing |
+| Protocol version | 3 |
+
+Both sides learn the static key of the other side during the handshake. Whether that key is trusted is decided above this layer, by pairing or by the list of paired machines. A message that a machine does not recognize is ignored instead of ending the link, so a new message type does not require a new protocol version.
+
+## Pairing
+
+Pairing happens once. After the handshake, both screens show the same six-digit code, and both people choose to confirm it. To prevent a machine in the middle from predicting the code, the two sides exchange random numbers as commitments first and reveal them afterwards. The private key of the machine is stored in the Keychain on macOS and in Credential Manager on Windows.
+
+## The link
+
+A paired machine is reached through the fastest path that is found: a cable, Wi-Fi or an address that was typed in. Latency is measured every 5 seconds. Each machine keeps one link at a time.
+
+## What travels over the link
+
+- **Files.** Every transfer opens its own encrypted connection. The receiver is always asked to accept or decline. The file is written under a temporary name and renamed only after its BLAKE2s hash matches. File names from the other machine are sanitized, paths with `..` are rejected, and an existing file is never overwritten. A folder transfer is limited to 20,000 files, and an interrupted transfer cannot be resumed.
+- **Text clipboard.** Sending and receiving are both off by default and are set for each machine separately. The receiver acknowledges every message. Text that the source application marks as sensitive, such as an entry from a password manager, is never sent automatically. Text longer than about 40,000 characters is refused with a message instead of being truncated.
+- **Files in the clipboard.** Copying files sends only names and sizes as a lease with a random code. The content moves when the other machine pastes, on a separate connection. The sender serves only the lease that is still on its clipboard, only to the machine that was told about it, and only by item number, never by path. Changing the clipboard revokes the lease.
+- **Speed test.** A separate encrypted connection sends test data for about 1.5 seconds in each direction, up to 200 MB. The result includes the cost of encryption.
+- **Wake-on-LAN.** After pairing, the machines exchange the MAC addresses of their wired and wireless cards. A wake request sends a magic packet by UDP broadcast on ports 9 and 7.
+
+## Windows specifics
+
+On Windows, a small service named `PortwayBeacon` can announce that the computer is on before anyone signs in, so that the other machine can show that it is waiting for a sign-in after Wake-on-LAN. The service only announces. It does not listen for connections, transfer files or access the clipboard, because the keys of Connect belong to the signed-in user.
+
+<Aside type="caution">
+  Pasting files in Windows Explorer and the pre-login beacon are implemented, but they have not yet been verified on a real Windows machine.
+</Aside>

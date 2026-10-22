@@ -1,0 +1,59 @@
+---
+title: Cài đặt
+description: Ngôn ngữ, khởi động, tải xuống, sửa tệp, giao diện và dữ liệu.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Mở **Cài đặt** bằng biểu tượng bánh răng ở cuối thanh biểu tượng. Cài đặt được lưu trên máy tính này và áp dụng ngay cho mọi cửa sổ Portway.
+
+<Figure
+  src="vi/settings.webp"
+  alt="Màn hình Cài đặt với các mục Ngôn ngữ, Khởi động, Tải xuống, Sửa tệp, Giao diện và Dữ liệu."
+  caption="Hình 1. Màn hình Cài đặt."
+/>
+
+## Ngôn ngữ
+
+Chọn **Tiếng Việt** hoặc **English**. Thay đổi áp dụng ngay cho mọi màn hình và thông báo, và các kết nối đang mở vẫn được giữ. Tiếng Anh là mặc định.
+
+## Khởi động
+
+| Cài đặt | Tác dụng |
+|---|---|
+| **Mở Portway khi đăng nhập** | Khởi động Portway ẩn ở khay hệ thống hoặc thanh menu khi người dùng đăng nhập. Chỉ dùng được với bản đã cài |
+| **Giữ chạy nền khi đóng cửa sổ** | Đóng cửa sổ chỉ ẩn nó, và Portway tiếp tục chạy ở khay hệ thống hoặc thanh menu. Thoát từ biểu tượng của ứng dụng, hoặc bằng `Cmd+Q` trên macOS. Tự bật cùng với cài đặt thứ nhất |
+
+Connect chỉ trả lời các máy tính khác khi Portway đang chạy, nên các cài đặt này quan trọng khi dùng Connect.
+
+Trên Windows, Portway chạy khi người dùng đăng nhập, không phải khi máy vừa khởi động. **Báo hiệu khi chưa đăng nhập** cài một dịch vụ Windows nhỏ cho các máy tính khác biết máy này đã bật khi chưa có ai đăng nhập, ví dụ sau khi đánh thức bằng Wake-on-LAN. Dịch vụ chỉ báo hiệu. Nó không kết nối hay truyền được gì cho tới khi có người đăng nhập. Việc cài hoặc gỡ cần quyền quản trị và hiển thị hộp xác nhận của Windows. Mục này cho biết dịch vụ đang chạy, đã cài hay chưa cài.
+
+## Tải xuống
+
+- **Thư mục tải về mặc định** là `~/Downloads` trừ khi chọn thư mục khác. **Mở trong Finder** mở thư mục đó, còn **Chọn thư mục** đổi nó.
+- **Hỏi nơi lưu mỗi lần tải** chọn giữa **Hỏi mỗi lần**, mở một hộp chọn thư mục bắt đầu từ thư mục mặc định, và **Lưu thẳng**, ghi tệp vào thư mục mặc định và thêm hậu tố như `(1)` cho tên trùng.
+
+## Sửa tệp
+
+- **Tệp chữ** được mở bằng ứng dụng chọn ở đây, mặc định là trình soạn văn bản mặc định của hệ thống. Tệp được tải về một thư mục tạm riêng cho từng server và user, và mỗi lần lưu sẽ tải lên lại.
+- **Theo loại tệp** liệt kê các ứng dụng mà Portway nhớ cho những loại tệp khác, như Word, Excel, PDF và ảnh. Lần đầu mở một loại như vậy, Portway dùng ứng dụng mặc định của hệ thống và ghi nhớ nó. **Đổi** chọn ứng dụng khác, còn **Bỏ** làm Portway dùng lại mặc định của hệ thống. Xem [Sửa tệp bằng ứng dụng trên máy](/docs/vi/files/edit-locally/).
+
+## Giao diện
+
+**Chế độ màu** là **Tối**, **Sáng** hoặc **Theo macOS**. Tối là mặc định.
+
+## Dữ liệu
+
+- **Danh sách server** xuất các server đã lưu ra một tệp, và nhập chúng từ một tệp. Tệp xuất chứa host, cổng, user, nhóm, tag, ghi chú và đường dẫn khoá. Mật khẩu và passphrase ở lại Keychain của máy tính này.
+- **Thư mục dữ liệu** cho biết Portway giữ các tệp của nó ở đâu. Xem [Bảo mật và dữ liệu](/docs/vi/internals/security-and-data/).
+
+## Giới thiệu
+
+Mục cuối hiển thị phiên bản của Portway.
+
+<Aside type="note">
+  Các nhãn theo hệ thống: Keychain là kho bí mật trên macOS, còn Credential Manager trên Windows. Các từ như `Finder` trở thành `Explorer` trên Windows.
+</Aside>

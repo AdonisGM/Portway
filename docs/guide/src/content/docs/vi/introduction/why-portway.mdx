@@ -1,0 +1,45 @@
+---
+title: Vì sao có Portway
+description: Những nhu cầu mà Portway hướng tới, đối tượng sử dụng và phạm vi của ứng dụng.
+sidebar:
+  order: 2
+---
+
+## Nhu cầu
+
+Bất kỳ ai vận hành vài server Linux, ví dụ máy chủ ảo cho một sản phẩm, một khách hàng hay một home lab, đều lặp lại những việc nhỏ giống nhau mỗi tuần: đọc nhật ký, sao chép một tệp, khởi động lại một dịch vụ, kiểm tra chứng chỉ sắp hết hạn, hoặc truy cập một cơ sở dữ liệu chỉ lắng nghe trên server. Mỗi việc cần một lệnh khác nhau, và mỗi lệnh đều dễ gõ sai.
+
+Công việc hằng ngày gặp hai nhóm vấn đề.
+
+- **Công cụ rời rạc.** `ssh`, `scp` hoặc `sftp`, `docker`, `systemctl`, `nginx`, `ufw` hoặc `firewalld` và `curl` đều có cú pháp và kết quả riêng. Việc giữ nhiều cửa sổ terminal đồng bộ cho nhiều server rất chậm.
+- **Lỗi âm thầm.** Một cổng đang mở ra internet, một container Docker vượt qua firewall, một site mà upstream đã ngừng phản hồi, hay một chứng chỉ hết hạn vào tuần sau đều không tự báo. Chúng chỉ được phát hiện khi đọc và so sánh kết quả của nhiều lệnh.
+
+Portway được xây dựng để giải quyết cả hai vấn đề mà không thêm hạ tầng: ứng dụng dùng SSH vốn đã có sẵn, và trình bày trạng thái của server ở dạng đọc lướt là hiểu.
+
+## Đối tượng sử dụng
+
+- Lập trình viên và người làm tự do tự duy trì server của mình.
+- Các nhóm nhỏ chưa có nền tảng vận hành riêng.
+- Người chạy home lab và muốn có một giao diện đồ hoạ cho nó.
+- Người làm việc trên cả macOS và Windows và muốn dùng cùng một công cụ ở cả hai nơi.
+
+## Các tác vụ điển hình
+
+| Tác vụ | Vị trí trong Portway |
+|---|---|
+| Kiểm tra một server có khoẻ không | [Tổng quan](/docs/vi/servers/overview/) |
+| Tải lên một bản phát hành hoặc tải xuống bản sao lưu | [Tệp](/docs/vi/files/browse/) và [Chuyển tệp](/docs/vi/files/transfer/) |
+| Sửa tệp cấu hình bằng editor trên máy | [Sửa tệp bằng ứng dụng trên máy](/docs/vi/files/edit-locally/) |
+| Truy cập cơ sở dữ liệu chỉ lắng nghe trên server | [Tunnel](/docs/vi/tunnels/create/) |
+| Tìm container đang lỗi hoặc đọc log của nó | [Container Docker](/docs/vi/docker/containers/) |
+| Xem site nào đang được phục vụ và khi nào chứng chỉ hết hạn | [Nginx](/docs/vi/web/nginx/) |
+| Tìm các cổng đang mở ra internet | [Firewall](/docs/vi/web/firewall/) |
+| Kiểm tra một API nội bộ từ server | [HTTP](/docs/vi/web/http/) |
+| Chuyển tệp và văn bản giữa hai máy tính của chính mình | [Connect](/docs/vi/connect/overview/) |
+
+## Giới hạn phạm vi
+
+- Portway quản lý các server do con người vận hành thủ công. Ứng dụng không dành để cấu hình hàng trăm máy, và không lưu lịch sử số liệu. Với những việc đó, hãy dùng hệ thống quản lý cấu hình hoặc hệ thống giám sát.
+- Đích là các server Linux có OpenSSH. Bản thân ứng dụng chạy trên macOS và Windows.
+- Một số tính năng bị giới hạn bởi những gì server cung cấp. Ví dụ, bản cập nhật gói đang chờ chỉ được đọc từ `apt` (Debian, Ubuntu) và `apk` (Alpine), và rule firewall chỉ được sửa với `ufw` và `firewalld`. Rule `iptables` thuần chưa được đọc, và với các server như vậy chỉ có các cổng đang lắng nghe được hiển thị.
+- Tác vụ định kỳ (cron và systemd timer) chưa có.

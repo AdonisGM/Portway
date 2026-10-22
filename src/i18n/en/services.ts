@@ -3,7 +3,7 @@ import { plural, type Dict } from '..'
 const en: Dict = {
   // Screen
   'Không đọc được danh sách unit': "Couldn't read the unit list",
-  'Tác vụ định kỳ sẽ làm ở bước tiếp theo': 'Scheduled tasks are coming in a later step',
+  'Chưa hỗ trợ tác vụ định kỳ (cron và systemd timer) trong phiên bản này': 'Scheduled jobs (cron and systemd timers) are not supported in this version',
   'Dịch vụ': 'Services',
   'Đang chọn unit để theo dõi…': 'Choosing units to watch…',
   '{n} unit đang theo dõi': (v) => `Watching ${plural(v.n, 'unit')}`,

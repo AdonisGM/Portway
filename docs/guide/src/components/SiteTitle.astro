@@ -1,0 +1,54 @@
+---
+// Header title: the logo links back to the landing page, not to the docs home.
+const { locale } = Astro.locals.starlightRoute;
+const home = locale === 'vi' ? '/vi/' : '/';
+const docsHome = locale === 'vi' ? '/docs/vi/' : '/docs/';
+const mark = `url(${import.meta.env.BASE_URL.replace(/\/$/, '')}/mark.svg)`;
+---
+
+<a href={home} class="site-title" aria-label="Portway">
+  <span class="mark" aria-hidden="true" style={`--mark: ${mark}`}></span>
+  <span class="name">Portway</span>
+</a>
+<a href={docsHome} class="docs-badge">Docs</a>
+
+<style>
+  .site-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    text-decoration: none;
+    color: var(--sl-color-white);
+    font-weight: 650;
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+  }
+  .mark {
+    width: 1.5rem;
+    height: 1.5rem;
+    background: currentColor;
+    -webkit-mask: var(--mark) center / contain no-repeat;
+    mask: var(--mark) center / contain no-repeat;
+  }
+  .docs-badge {
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    height: 1.5rem;
+    line-height: 1;
+    margin-inline-start: 0.6rem;
+    padding: 0 0.6rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+  }
+  .docs-badge:hover {
+    color: var(--sl-color-white);
+    border-color: var(--sl-color-gray-4);
+  }
+</style>

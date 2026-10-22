@@ -22,7 +22,7 @@ import {
   type Project,
 } from './format'
 
-const COLS = 'minmax(140px,1fr) 170px minmax(170px,1.2fr) 60px 70px 150px'
+const COLS = 'minmax(140px,1fr) 170px minmax(240px,1.4fr) 60px 70px 150px'
 
 type Group = { key: string; project: Project | null; containers: Container[] }
 

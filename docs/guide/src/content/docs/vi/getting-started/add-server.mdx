@@ -1,0 +1,146 @@
+---
+title: Thêm server và kết nối
+description: Tạo kết nối server trong Portway, xác minh khoá máy chủ ở lần kết nối đầu tiên và mở màn hình tổng quan của server.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Trang này mô tả cách thêm một server Linux vào Portway và mở kết nối đầu tiên. Portway kết nối bằng SSH, vì vậy server chỉ cần có dịch vụ OpenSSH đang chạy và một tài khoản đăng nhập được.
+
+## Chuẩn bị
+
+Cần có các thông tin sau:
+
+- Địa chỉ IP hoặc tên miền của server.
+- Cổng SSH. Giá trị mặc định là `22`.
+- Tên tài khoản dùng để đăng nhập.
+- Cách đăng nhập của tài khoản đó: một khoá SSH có trên máy tính này, hoặc mật khẩu.
+
+## Thêm server
+
+<Steps>
+
+1. **Mở danh sách server.**
+
+   Chọn **Quản lý kết nối** ở thanh bên trái, sau đó chọn **Danh sách server**. Bản cài đặt mới hiển thị danh sách trống.
+
+   <Figure
+     src="vi/add-server-1-list.webp"
+     width={1400}
+     height={330}
+     alt="Danh sách server của Portway đang trống, góc trên bên phải có hai nút Nhập từ ~/.ssh/config và Thêm server."
+     caption="Hình 1. Danh sách server khi chưa có server nào."
+   />
+
+2. **Mở biểu mẫu Thêm server.**
+
+   Chọn **Thêm server** ở góc trên bên phải. Nếu muốn dùng lại các host đã cấu hình cho lệnh `ssh`, chọn **Nhập từ ~/.ssh/config**; Portway sẽ đọc tệp này, kể cả các thiết lập `ProxyJump`.
+
+3. **Điền thông tin kết nối.**
+
+   <Figure
+     src="vi/add-server-2-form.webp"
+     width={518}
+     height={718}
+     alt="Hộp thoại Thêm server với tên hiển thị Web production, nhóm production, host 127.0.0.1, cổng 2202, tài khoản deploy dùng khoá id_ed25519 và các tag nginx, docker."
+     caption="Hình 2. Biểu mẫu Thêm server với giá trị mẫu."
+   />
+
+   | Trường | Mô tả |
+   |---|---|
+   | **Tên hiển thị** | Tên hiển thị trong ứng dụng. Bắt buộc. |
+   | **Nhóm** | Nhãn tuỳ chọn để gom các server trong danh sách, ví dụ `production`. |
+   | **Host hoặc IP** | Địa chỉ IP hoặc tên miền của server. Bắt buộc. |
+   | **Cổng** | Cổng SSH, từ 1 đến 65535. |
+   | **Kết nối qua (jump host)** | Một server đã lưu được dùng làm bastion. Giữ nguyên **Không, kết nối thẳng** trừ khi server chỉ truy cập được qua bastion. |
+   | **Tài khoản đăng nhập** | Một hoặc nhiều tài khoản. Mỗi tài khoản gồm tên người dùng và cách đăng nhập: khoá SSH có trong `~/.ssh`, hoặc mật khẩu. Tài khoản đầu tiên là tài khoản mặc định. |
+   | **Tag** và **Ghi chú** | Văn bản tuỳ chọn dùng để tìm kiếm và ghi nhớ. Các tag cách nhau bằng dấu phẩy. |
+
+   Mục **Lệnh SSH tương ứng** ở cuối biểu mẫu hiển thị lệnh `ssh` tương ứng với các giá trị hiện tại. Có thể dùng mục này để kiểm tra các giá trị đã nhập đúng như dự định.
+
+   <Aside type="note">
+     Mật khẩu được lưu trong Keychain trên macOS và trong Credential Manager trên Windows. Mật khẩu không bao giờ được ghi vào các tệp cấu hình của Portway.
+   </Aside>
+
+4. **Lưu server.**
+
+   Chọn **Thêm server**. Server xuất hiện trong danh sách kèm host, user, tag và nhóm. Hệ điều hành được nhận diện ở lần kết nối đầu tiên nên không cần nhập tay.
+
+   <Figure
+     src="vi/add-server-3-list.webp"
+     width={1400}
+     height={330}
+     alt="Danh sách server có một dòng: Web production, host 127.0.0.1:2202, user deploy, tag nginx và docker, nhóm production."
+     caption="Hình 3. Danh sách server sau khi thêm server."
+   />
+
+</Steps>
+
+## Kết nối lần đầu
+
+<Steps>
+
+1. **Chọn tài khoản.**
+
+   Trong dòng của server, chọn nút user (ở đây là `deploy`). Dòng mở rộng và liệt kê các tài khoản của server cùng cách đăng nhập tương ứng.
+
+   <Figure
+     src="vi/add-server-4-account.webp"
+     width={1400}
+     height={340}
+     alt="Dòng server được mở rộng, hiển thị tài khoản deploy@127.0.0.1 dùng khoá id_ed25519 và nút Kết nối."
+     caption="Hình 4. Dòng server được mở rộng với nút Kết nối."
+   />
+
+2. **Chọn Kết nối.**
+
+   Portway mở một kết nối SSH tới server.
+
+3. **Xác minh khoá máy chủ.**
+
+   Khi máy tính này chưa từng kết nối tới server, Portway yêu cầu xác nhận khoá máy chủ trước khi đăng nhập.
+
+   <Figure
+     src="vi/add-server-5-hostkey.webp"
+     width={498}
+     height={343}
+     alt="Hộp thoại Lần đầu kết nối tới Web production hiển thị vân tay SHA256 của khoá máy chủ cùng hai nút Huỷ và Tin tưởng và kết nối."
+     caption="Hình 5. Hộp thoại xác nhận khoá máy chủ ở lần kết nối đầu tiên."
+   />
+
+   Đối chiếu vân tay trong hộp thoại với khoá trên server. Lệnh `ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub` chạy trên server sẽ in ra vân tay của các khoá máy chủ. Khi hai giá trị khớp nhau, chọn **Tin tưởng và kết nối**. Khoá sau đó được lưu vào `~/.ssh/known_hosts` giống như lệnh `ssh`, và server này sẽ không bị hỏi xác nhận lại.
+
+   <Aside type="caution" title="Khi khoá máy chủ thay đổi">
+     Nếu về sau server trình ra một khoá khác với khoá đã lưu, Portway từ chối kết nối và hiển thị vân tay mới. Khoá thay đổi có thể do server được cài lại, nhưng cũng có thể do kết nối đang bị chặn nghe lén. Portway hiển thị lệnh `ssh-keygen -R '[host]:cổng'` để xoá mục cũ; chỉ chạy lệnh này sau khi đã xác nhận sự thay đổi là hợp lệ.
+   </Aside>
+
+4. **Mở màn hình tổng quan của server.**
+
+   Sau khi kết nối được thiết lập, màn hình tổng quan của server được hiển thị.
+
+   <Figure
+     src="vi/add-server-6-overview.webp"
+     width={1600}
+     height={900}
+     alt="Màn hình Tổng quan của server Web production đã kết nối, hiển thị mức dùng CPU, RAM, ổ đĩa và mạng, các tiến trình nặng nhất, tình trạng Docker, dịch vụ và bản cập nhật, cổng và firewall, ổ đĩa."
+     caption="Hình 6. Màn hình tổng quan của một server đã kết nối. Chọn vào ảnh để phóng to."
+   />
+
+</Steps>
+
+## Đọc màn hình tổng quan
+
+| Phần | Nội dung |
+|---|---|
+| **Tài nguyên** | Mức dùng CPU, bộ nhớ, ổ đĩa và mạng, được làm mới sau mỗi vài giây. |
+| **Tiến trình dùng nhiều nhất** | Các tiến trình dùng nhiều tài nguyên nhất, kèm container chứa tiến trình khi nó chạy trong Docker. |
+| **Tình trạng** | Trạng thái của các container Docker, các dịch vụ hệ thống và các bản cập nhật gói đang chờ. |
+| **Cổng mạng & firewall** | Các cổng đang lắng nghe, cổng nào truy cập được từ địa chỉ công khai, và trạng thái của firewall. |
+| **Ổ đĩa** | Mức dùng của từng ổ đĩa đã gắn và dung lượng do image, container, volume của Docker chiếm. |
+
+<Aside type="note" title="Khi đăng nhập bằng tài khoản không phải root">
+  Khi tài khoản không phải root, màn hình tổng quan hiển thị thông báo rằng firewall, Docker và các tiến trình của người dùng khác có thể cần quyền root, nên một phần thông tin bị giới hạn. Chọn **Dùng sudo cho phiên này** để cấp cho Portway quyền xem các thông tin đó. Mật khẩu sudo được chuyển tới server qua đầu vào chuẩn và không xuất hiện trong dòng lệnh hay trong nhật ký thao tác.
+</Aside>

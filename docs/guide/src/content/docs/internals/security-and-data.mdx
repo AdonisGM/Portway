@@ -1,0 +1,51 @@
+---
+title: Security and data
+description: Where Portway stores secrets, which permissions the web view has and how the main safeguards work.
+sidebar:
+  order: 5
+---
+
+## Secrets
+
+Passwords, key passphrases, SOCKS passwords and the secrets of saved HTTP requests are stored in the secret store of the operating system: the Keychain on macOS and Credential Manager on Windows. They are not written to the files of Portway.
+
+Credential Manager limits one entry to about 1,280 characters. A longer value, such as the tokens of an HTTP request, is split into several entries, and the main entry keeps only a marker with the number of parts.
+
+A second copy of the application can run side by side by setting `PORTWAY_PROFILE`. It then uses its own data folder and its own secret entries.
+
+## Sudo
+
+A sudo password is passed to the server through standard input, so it does not appear in a command line or in the audit log. Turning sudo on first tries `sudo -n true`, which succeeds when no password is required, and otherwise validates the password with `sudo -S -k -p ''`.
+
+## Terminal and SSH_ASKPASS
+
+On macOS, when Terminal is opened for an account that uses a password or a protected key, `ssh` obtains the saved secret through a temporary `SSH_ASKPASS` helper. The helper does not contain the secret. It only knows which entry of the secret store answers which prompt, and the operating system asks for permission before the entry is read. A secret that was not saved is asked for in the terminal as usual.
+
+On Windows, `portway.exe` itself acts as the `SSH_ASKPASS` program, because `ssh.exe` starts without a Unix shell. Each secret is supplied once for every terminal, so a wrong password is asked again on the console instead of being tried repeatedly.
+
+## The web view
+
+The interface runs with a restrictive Content Security Policy.
+
+| Directive | Value |
+|---|---|
+| `default-src` | `'self'` |
+| `script-src` | `'self'` |
+| `style-src` | `'self' 'unsafe-inline'` |
+| `img-src` | `'self' data: blob:` |
+| `font-src` | `'self' data:` |
+| `connect-src` | `'self' ipc: http://ipc.localhost` |
+| `object-src`, `base-uri`, `form-action`, `frame-src` | `'none'` |
+
+The web view receives only the permissions that are declared in `src-tauri/capabilities/`.
+
+## Trust decisions
+
+- An unknown host key is added to `~/.ssh/known_hosts` only after the user confirms its fingerprint, and a changed key is always refused.
+- Another Portway is trusted only after pairing, in which both people compare the same six-digit code.
+- Executable file types such as `.sh`, `.command`, `.bat` and `.exe` are never opened automatically by the operating system from the open and edit actions of Portway.
+- A file that arrives through Connect is accepted only after the receiver confirms it.
+
+## What leaves the computer
+
+Portway has no account system and no relay server. Its network traffic is mainly SSH connections to the servers that the user saved, local network traffic of Connect when it is turned on, and requests that the user sends from the HTTP screen, which run on the server.

@@ -1,0 +1,50 @@
+---
+title: Nhật ký thao tác và nhật ký gỡ lỗi
+description: Nơi xem lại Portway đã làm gì trên server, và cách nhật ký gỡ lỗi giải thích vì sao một màn hình chậm.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Portway giữ hai bản ghi riêng biệt. Chúng trả lời hai câu hỏi khác nhau.
+
+| | Nhật ký thao tác | Nhật ký gỡ lỗi |
+|---|---|---|
+| Câu hỏi | Portway đã thay đổi gì trên server này? | Portway đang làm gì, và vì sao một màn hình chậm? |
+| Ở đâu | Phần **Thao tác qua Portway** của màn hình Tổng quan | Cửa sổ **Nhật ký gỡ lỗi**, mở từ biểu tượng con bọ trên thanh biểu tượng |
+| Nội dung | Các hành động Portway thực hiện thay người dùng | Mọi lệnh từ xa, lời gọi SFTP, bước kết nối và lần truyền tệp |
+| Lưu ở | Tệp `audit.jsonl`, giữ 1000 mục mới nhất | Chỉ trong bộ nhớ, giữ 2000 mục mới nhất |
+
+## Nhật ký thao tác
+
+<Figure
+  src="vi/audit.webp"
+  alt="Phần Thao tác qua Portway với hai mục, mỗi mục có thời gian, hành động, user, lệnh và kết quả Thành công."
+  caption="Hình 1. Phần Thao tác qua Portway."
+/>
+
+Mỗi dòng hiển thị thời gian, hành động và user, lệnh đã chạy và kết quả. Các lệnh này chính là những lệnh mà hộp thoại xác nhận đã hiển thị trước khi thực hiện. Các mục gồm kết nối và ngắt kết nối, tin tưởng khoá máy chủ, bật và tắt sudo, mở terminal, theo dõi log, tải lên và các thao tác tệp khác, hành động với dịch vụ và Docker, thay đổi firewall và Nginx, cùng việc bật và dừng tunnel.
+
+Phần này nêu rõ phạm vi của nó: chỉ có các lệnh mà Portway chạy cho người dùng. Lệnh gõ trong terminal được mở từ Portway không được ghi, các lệnh chỉ đọc dùng để làm mới màn hình cũng không. Request gửi từ [màn hình HTTP](/docs/vi/web/http/) được giữ trong lịch sử request thay vì nhật ký này.
+
+## Nhật ký gỡ lỗi
+
+Nhật ký gỡ lỗi mở trong một cửa sổ riêng. Nhật ký liệt kê mọi lệnh, lời gọi SFTP, bước kết nối và lần truyền tệp từ lúc nó bắt đầu, hoặc từ lúc nó chờ một kênh SSH trống, cho tới khi kết thúc.
+
+| Cột | Ý nghĩa |
+|---|---|
+| **Thời điểm** và **Loại** | Lúc mục bắt đầu và loại của nó: lệnh, SFTP, kết nối hoặc truyền tệp |
+| **Việc · lệnh** | Việc đã làm |
+| **Đợi** | Thời gian chờ một kênh SSH trống |
+| **Thời gian** | Thời gian bản thân thao tác tốn |
+| **Kết quả** | Kết quả và mã thoát |
+
+Chọn một mục để xem phần đầu của đầu ra chuẩn và đầu ra lỗi. Các bộ lọc thu hẹp danh sách theo mục đang chạy, mục lỗi hoặc mục chậm, và theo phiên. **Tạm dừng** đóng băng danh sách, còn **Xoá các mục đã xong** làm trống danh sách. Huy hiệu trên biểu tượng con bọ cho biết có bao nhiêu việc đang chạy.
+
+Thời gian đợi dài nhưng thời gian chạy ngắn có nghĩa là nhiều thao tác cạnh tranh nhau số kênh SSH có hạn của một phiên. Thời gian chạy dài có nghĩa là bản thân lệnh chạy chậm.
+
+<Aside type="note">
+  Mật khẩu sudo không bao giờ nằm trong cả hai bản ghi, vì nó đi qua đầu vào chuẩn.
+</Aside>

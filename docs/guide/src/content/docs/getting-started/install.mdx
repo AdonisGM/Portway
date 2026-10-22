@@ -1,0 +1,62 @@
+---
+title: Install Portway
+description: System requirements and installation steps for Portway on macOS and Windows.
+sidebar:
+  order: 1
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Portway is distributed as an installer for macOS and for Windows. This page lists the requirements and the installation steps for each platform.
+
+## Requirements
+
+| Component | Requirement |
+|---|---|
+| macOS | macOS 11 (Big Sur) or later, on Apple Silicon or Intel |
+| Windows | Windows 10 (version 1809 or later) or Windows 11, 64-bit. WebView2 is required; it is included with Windows 11, and the installer downloads it when it is missing |
+| Server | A Linux server that runs OpenSSH |
+
+The management features rely on tools that already exist on the server: `systemd` for services, `docker` for containers, `nginx` for sites, and `ufw` or `firewalld` for firewall rules. A feature whose tool is missing from the server is reported as unavailable; the other features keep working.
+
+## Download
+
+Download the latest installer from the [Releases page on GitHub](https://github.com/AdonisGM/Portway/releases/latest). Choose the file that matches the operating system.
+
+## Install
+
+<Tabs>
+  <TabItem label="macOS">
+    1. Open the downloaded `.dmg` file.
+    2. Drag **Portway** into the **Applications** folder.
+    3. Open **Portway** from Launchpad or from the Applications folder.
+
+    <Aside type="note" title="If macOS blocks the first launch">
+      Builds that are not signed with an Apple Developer ID are reported by macOS as coming from an unverified developer. To open the application, go to **System Settings › Privacy & Security**, find the message about Portway and choose **Open Anyway**. This is required only once.
+    </Aside>
+  </TabItem>
+  <TabItem label="Windows">
+    1. Run the downloaded installer. It installs Portway for the current user and does not require administrator rights.
+    2. Follow the steps of the installer.
+    3. Open **Portway** from the Start menu.
+
+    <Aside type="note" title="If Windows SmartScreen appears">
+      An installer that is not code-signed can trigger a SmartScreen warning. Choose **More info**, then **Run anyway**.
+    </Aside>
+  </TabItem>
+</Tabs>
+
+## Where Portway stores data
+
+Portway keeps its configuration in the application data folder of the current user:
+
+| Platform | Location |
+|---|---|
+| macOS | `~/Library/Application Support/com.portway.app/` |
+| Windows | `%APPDATA%\com.portway.app\` |
+
+Passwords and key passphrases are not stored in these files. They are stored in the Keychain on macOS and in Credential Manager on Windows.
+
+## Next step
+
+[Add a server and connect](/docs/getting-started/add-server/) to open the first connection.

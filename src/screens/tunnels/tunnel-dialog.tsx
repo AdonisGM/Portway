@@ -297,7 +297,7 @@ export function TunnelDialog({ editing, initial, onClose }: { editing: Tunnel | 
       <div className="flex flex-col gap-1">
         <span className="text-[11px] text-muted">{t('Tương đương lệnh (Portway tự chạy, không cần Terminal)')}</span>
         <div className="flex items-start gap-2 rounded-md bg-sunken px-2.5 py-2">
-          <span className="flex-1 font-mono text-[11.5px] leading-[1.55] break-all select-text">{cmd}</span>
+          <span className="flex-1 font-mono text-[11.5px] leading-[1.55] break-words select-text">{cmd}</span>
           <Button size="xs" variant="ghost" onClick={() => void copyText(cmd)}>
             {t('Sao chép')}
           </Button>

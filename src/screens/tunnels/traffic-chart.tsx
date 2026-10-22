@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { t } from '../../i18n'
 import { hms } from '../../i18n/dates'
 import type { TunnelSample } from '../../lib/api'
-import { formatBytes } from '../server/format'
+import { formatBytes, formatDecimal } from '../server/format'
 
 export const RX = 'var(--info)'
 export const TX = 'var(--warn)'
@@ -13,8 +13,8 @@ export const rate = (bytes: number) => formatBytes(bytes) + '/s'
 export function latency(us: number | null) {
   if (us == null) return '—'
   const ms = us / 1000
-  if (ms >= 1000) return (ms / 1000).toFixed(1) + ' s'
-  return ms < 1 ? ms.toFixed(2) + ' ms' : ms < 10 ? ms.toFixed(1) + ' ms' : Math.round(ms) + ' ms'
+  if (ms >= 1000) return formatDecimal(ms / 1000, 1) + ' s'
+  return ms < 1 ? formatDecimal(ms, 2) + ' ms' : ms < 10 ? formatDecimal(ms, 1) + ' ms' : Math.round(ms) + ' ms'
 }
 
 /** A round top for the rate axis: 1, 2 or 5 × 1024ⁿ, at least 1 KB/s so an

@@ -1,0 +1,52 @@
+---
+title: Connect overview
+description: What Portway Connect is for, when it helps, and what it does not do.
+sidebar:
+  order: 1
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+**Connect links two computers that belong to the same person and sit on the same local network.** Its purpose is to make the work convenient when someone uses two computers side by side, for example a Mac and a Windows PC on the same desk or in the same home network, and wants them to behave like parts of one workstation.
+
+<Aside type="caution" title="Connect is not for sharing between different people">
+  Connect is not a collaboration tool and not a way to give another person access to a computer. Both computers are expected to be used by the same person, who can read the pairing code on both screens. It also does not work across the internet. It works only on a local network.
+</Aside>
+
+## When Connect helps
+
+- **Moving files between the two computers.** Send a file or a folder from one computer to the other without a USB drive, a cloud service or a file share.
+- **Sharing the clipboard.** Copy text on one computer and paste it on the other, or copy files in Finder or Explorer and paste them on the other computer.
+- **Waking the other computer.** Send a Wake-on-LAN packet from one computer to start the other.
+- **Checking the network between the two.** Measure the real speed between them, with encryption included, and see the latency and the network cards that are used.
+- **Seeing the other computer at a glance.** The model, the processor, the memory, the disks and the current load of both machines appear side by side.
+
+## What Connect does not do
+
+- It does not give remote control of the other computer, and it does not share the screen.
+- It does not work between computers on different networks, and it does not use a relay server.
+- It does not give anyone else access. A computer is trusted only after it was paired with a code that both screens show.
+- It is not needed to manage servers. Everything else in Portway works without it.
+
+## Properties
+
+- **Off by default.** While Connect is off, Portway opens no port and announces nothing on the network.
+- **Encrypted.** Every link and every file transfer is encrypted between the two computers. See [The Connect protocol](/docs/internals/connect-protocol/).
+- **Asks before acting.** The receiving computer is asked before it accepts files, and the clipboard is shared only in the directions that each computer allows.
+
+<Figure
+  src="en/connect.webp"
+  alt="The Connect screen in its default state, with a switch that lets Portways on the network see each other, turned off."
+  caption="Figure 1. The Connect screen is off by default."
+/>
+
+<Aside type="note">
+  Connect needs Portway on both computers, in compatible versions. When Portway reports a mismatch, update it on both. Pairing and the use of a link are described next.
+</Aside>
+
+<CardGrid>
+  <LinkCard title="Pair two computers" description="Turn Connect on and pair once with a six-digit code." href="/docs/connect/pairing/" />
+  <LinkCard title="Use the link" description="Send files, share the clipboard, wake a computer and measure the network." href="/docs/connect/features/" />
+  <LinkCard title="Troubleshooting" description="What to do when the other computer is not found or cannot be reached." href="/docs/connect/troubleshooting/" />
+</CardGrid>

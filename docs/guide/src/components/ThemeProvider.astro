@@ -1,0 +1,42 @@
+---
+// Same as Starlight's ThemeProvider, except dark is the default when the visitor has not chosen a theme.
+// A stored empty string means the visitor picked "auto" (follow the system); no stored value means dark.
+import { Icon } from '@astrojs/starlight/components';
+---
+
+<script is:inline>
+	window.StarlightThemeProvider = (() => {
+		let stored = null;
+		try {
+			stored = localStorage.getItem('starlight-theme');
+			// Persist the default so the theme picker, which reads this key, agrees with the page.
+			if (stored === null) localStorage.setItem('starlight-theme', (stored = 'dark'));
+		} catch {}
+		const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+		const theme = stored === null ? 'dark' : stored || (prefersLight ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(picked = stored === null ? 'dark' : stored || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = picked;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + picked);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script>
+
+<template id="theme-icons">
+	<Icon name="sun" class="light" />
+	<Icon name="moon" class="dark" />
+	<Icon name="laptop" class="auto" />
+</template>

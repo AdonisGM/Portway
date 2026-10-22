@@ -1,0 +1,36 @@
+---
+title: Theo dõi tệp log
+description: Theo dõi một tệp log của server theo thời gian thực, kèm lọc, tạm dừng và sao chép.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+**Theo dõi (tail -f)** trong bảng bên phải của màn hình Tệp chuyển các dòng của một tệp log về Portway ngay khi chúng được ghi. Hành động này chạy `tail -F` trên server, lệnh tiếp tục theo dõi tệp sau khi tệp bị xoay vòng. Cùng trình xem này cũng mở từ màn hình Nginx cho log truy cập và log lỗi.
+
+## Mở trình xem
+
+Chọn một tệp đọc được và chọn **Theo dõi (tail -f)**. Trình xem mở ra với các dòng gần nhất, và dòng mới xuất hiện ở cuối. Một dòng ở phần đầu cho biết việc theo dõi đang chạy bằng user hay qua sudo. Khi user không đọc được tệp, hành động bị khoá kèm ghi chú rằng cần bật sudo trước.
+
+## Các điều khiển
+
+| Điều khiển | Tác dụng |
+|---|---|
+| **Tạm dừng** và **Tiếp tục** | Đóng băng màn hình trong khi các dòng vẫn tiếp tục đến. Phần đầu cho biết có bao nhiêu dòng mới đang chờ |
+| **Lọc dòng** | Chỉ hiển thị các dòng khớp một đoạn chữ, hoặc một biểu thức chính quy viết dưới dạng `/mẫu/` |
+| **Tất cả**, **Lỗi + cảnh báo**, **Lỗi** | Lọc theo mức được nhận diện trong dòng |
+| **Không ngắt dòng**, **Ngắt dòng dài** | Đổi cách hiển thị các dòng dài |
+| **Sao chép các dòng đang hiện** | Sao chép các dòng khớp bộ lọc hiện tại |
+| **Xoá màn hình** | Làm trống màn hình. Tệp trên server không bị đụng tới |
+| **Xuống dòng mới nhất** | Cuộn tới dòng mới nhất sau khi đã cuộn lên |
+
+Khi tệp được ghi nhanh hơn khả năng hiển thị của trình xem, Portway bỏ qua một số dòng, và phần đầu cho biết đã bỏ qua bao nhiêu dòng.
+
+## Giới hạn
+
+Mỗi tệp được theo dõi giữ một kênh SSH cho đến khi trình xem đóng hoặc phiên bị ngắt. Một phiên cho phép một số lượng tệp được theo dõi cùng lúc, và Portway thông báo khi chạm giới hạn.
+
+<Aside type="note">
+  Việc theo dõi log được ghi vào [nhật ký thao tác](/docs/vi/servers/audit-log/), còn nội dung của log thì không.
+</Aside>

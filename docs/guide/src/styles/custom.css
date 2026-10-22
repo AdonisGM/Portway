@@ -1,0 +1,132 @@
+/* Portway docs theme: the same neutral palette as the app (src/styles/tokens.css). */
+:root {
+  --sl-font: 'Inter Variable', Inter, system-ui, sans-serif;
+  --sl-font-mono: 'Roboto Mono', ui-monospace, monospace;
+  --sl-content-width: 46rem;
+  --sl-text-body: 1rem;
+  --sl-line-height: 1.75;
+}
+
+/* Dark is Starlight's default theme, so these are the base values. */
+:root {
+  --sl-color-white: #eef0f2;
+  --sl-color-gray-1: #d6d9dc;
+  --sl-color-gray-2: #b2b6ba;
+  --sl-color-gray-3: #8b9096;
+  --sl-color-gray-4: #5d6167;
+  --sl-color-gray-5: #34383c;
+  --sl-color-gray-6: #212427;
+  --sl-color-gray-7: #1a1c1e;
+  --sl-color-black: #141617;
+  --sl-color-accent-low: #1b2836;
+  --sl-color-accent: #4f7fb1;
+  --sl-color-accent-high: #a8c4e2;
+  --sl-color-hairline: rgba(255, 255, 255, 0.09);
+  --sl-color-blue-low: #1b2836;
+  --sl-color-blue: #4f7fb1;
+  --sl-color-blue-high: #a8c4e2;
+  --sl-color-green-low: #172a20;
+  --sl-color-green: #4a9a73;
+  --sl-color-green-high: #a3d5bc;
+  --sl-color-orange-low: #2e2615;
+  --sl-color-orange: #b98a3c;
+  --sl-color-orange-high: #e3c58a;
+  --sl-color-red-low: #301c19;
+  --sl-color-red: #c0594a;
+  --sl-color-red-high: #e8a79d;
+  --sl-color-purple-low: #232a36;
+  --sl-color-purple: #6f8db3;
+  --sl-color-purple-high: #b8c9e0;
+  --sl-color-bg-nav: rgba(20, 22, 23, 0.82);
+  --pw-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme='light'] {
+  --sl-color-white: #111315;
+  --sl-color-gray-1: #1e2124;
+  --sl-color-gray-2: #383c40;
+  --sl-color-gray-3: #50555a;
+  --sl-color-gray-4: #7b8085;
+  --sl-color-gray-5: #c2c6ca;
+  --sl-color-gray-6: #e6e8ea;
+  --sl-color-gray-7: #f1f2f3;
+  --sl-color-black: #f8f9fa;
+  --sl-color-accent-low: #dbe6f2;
+  --sl-color-accent: #3a5f86;
+  --sl-color-accent-high: #27425f;
+  --sl-color-hairline: rgba(17, 19, 21, 0.1);
+  --sl-color-blue-low: #dbe6f2;
+  --sl-color-blue: #3a5f86;
+  --sl-color-blue-high: #27425f;
+  --sl-color-green-low: #dcebe3;
+  --sl-color-green: #2f6b4f;
+  --sl-color-green-high: #1e4734;
+  --sl-color-orange-low: #f0e6d2;
+  --sl-color-orange: #8b6928;
+  --sl-color-orange-high: #5d4519;
+  --sl-color-red-low: #f1dcd8;
+  --sl-color-red: #99463a;
+  --sl-color-red-high: #6c2f26;
+  --sl-color-purple-low: #dde5ef;
+  --sl-color-purple: #4a6a90;
+  --sl-color-purple-high: #2d4560;
+  --sl-color-bg-nav: rgba(248, 249, 250, 0.82);
+  --pw-shadow: 0 12px 32px rgba(51, 39, 42, 0.16);
+}
+
+header.header {
+  backdrop-filter: blur(14px) saturate(1.4);
+}
+
+/* Headings: tighter and heavier, like the landing page. */
+.sl-markdown-content :is(h1, h2, h3, h4) {
+  letter-spacing: -0.015em;
+}
+h1#_top {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+/* Screenshots: framed like app windows, captioned by <figure>. */
+.sl-markdown-content figure {
+  margin: 1.75rem 0;
+}
+.sl-markdown-content figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-inline: auto;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 0.75rem;
+  box-shadow: var(--pw-shadow);
+}
+.sl-markdown-content figcaption {
+  margin-top: 0.75rem;
+  text-align: center;
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-3);
+}
+
+/* Inline keyboard keys and UI labels. */
+kbd {
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--sl-color-gray-5);
+  border-bottom-width: 2px;
+  border-radius: 0.35rem;
+  font-family: var(--sl-font-mono);
+  font-size: 0.85em;
+}
+
+/* Tables: give the first column room so short labels such as "Display name" do not wrap. */
+.sl-markdown-content td:first-child,
+.sl-markdown-content th:first-child {
+  min-width: 8.5rem;
+}
+
+/* Starlight sizes the header selects from the character count, which clips "Tiếng Việt". */
+starlight-lang-select label {
+  --sl-select-width: 7.5rem !important;
+}
+starlight-theme-select label {
+  --sl-select-width: 4.75rem !important;
+}

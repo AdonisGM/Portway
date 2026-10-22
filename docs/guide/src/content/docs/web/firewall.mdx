@@ -1,0 +1,86 @@
+---
+title: Firewall
+description: Read and change ufw and firewalld rules, and compare them with the ports that are really listening.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+The **Firewall** section shows the rules of the server and, more usefully, which listening ports they actually protect. Portway reads `ufw`, `firewalld` and `iptables` together, picks the tool that manages the firewall, and displays its rules in one shape.
+
+<Figure
+  src="en/firewall.webp"
+  alt="The Firewall screen for firewalld in the zone public, with a table of rules that shows port or service, source, action and comment, and a button Open port."
+  caption="Figure 1. The rules of a firewalld zone."
+/>
+
+## Supported tools
+
+| Tool | Reading | Changing |
+|---|---|---|
+| `ufw` | Yes | Yes |
+| `firewalld` | Yes, the services, ports and rich rules of the zone | Yes |
+| Plain `iptables` | The listening ports only | No. Portway states that the server uses `iptables` directly |
+
+When two firewall tools are active at once, Portway warns that they overwrite each other, manages the one that suits the distribution, and recommends turning the other off. When neither `ufw` nor `firewalld` exists, Portway says which one the distribution usually uses. Rules are read as root, so a regular user needs [sudo](/docs/servers/sudo/).
+
+## The rules
+
+The table lists each rule with its port or service, the source, the action and a comment. `ufw` applies the first matching rule from top to bottom. `firewalld` has no rule order. A rule can be marked as ineffective, for example when an earlier rule already matches, or when Docker opened the port ahead of the firewall. The rule that Portway itself uses for its SSH connection is marked `Used by Portway (SSH)`.
+
+The menu of a rule offers to edit it, to switch it to **Limit** (`ufw` only, which blocks an IP address that opens more than 6 connections in 30 seconds, a defense against password guessing), or to delete it. `ufw` and `firewalld` cannot edit a rule in place, so Portway deletes the old rule and adds the new one. Complex rules that involve interfaces, logging or routes are edited in a terminal.
+
+## Open a port
+
+<Steps>
+
+1. Select **Open port**.
+
+2. Enter a port, a range such as `6000:6010`, or several ports separated by commas. Choose TCP, UDP or both. A range or several ports need TCP or UDP.
+
+3. Choose the source: anywhere, a single IP or a CIDR range. Choose whether to allow or deny. `ufw` also stores a comment, while `firewalld` does not.
+
+   <Figure
+     src="en/firewall-open.webp"
+     alt="The Open port dialog with the port 8081, TCP, the source Anywhere, the action Allow and the exact firewall-cmd commands that will run."
+     caption="Figure 2. The Open port dialog shows the exact commands."
+   />
+
+4. Check the **Exact command to run** and select **Open port**.
+
+</Steps>
+
+For `firewalld`, a change is applied to the runtime configuration first and written to the permanent one only after a new SSH connection still works.
+
+## Turn the firewall on or off
+
+Turning the firewall on is protected against locking out the user. Portway first adds a rule that allows the SSH port, unless one exists. After the firewall is on, Portway opens a new SSH connection, and it turns the firewall off again when that fails. Incoming connections that match no rule get the default policy that the dialog states. Deleting the only rule that allows SSH requires typing the name of the server, and Portway tests a new connection afterwards and undoes the change when it fails.
+
+Turning the firewall off makes every port that listens on a public address reachable from the internet. The rules are kept, so that they apply again after the firewall is turned back on.
+
+## What the page compares
+
+Below the rules, the page cross-checks the rules against the listening ports.
+
+| Section | Meaning |
+|---|---|
+| **Open to the internet because the firewall is off** | Processes that listen on a public address with nothing to block them |
+| **Open to the internet, bypassing the firewall** | Docker ports. Docker opens them ahead of the firewall, so rules have no effect |
+| **Listening publicly but blocked by the firewall** | Safe: the process binds a public address, but no rule allows it |
+| **Reachable only inside the server (127.0.0.1)** | Not exposed. Each row offers **Open tunnel** and **ssh command** to reach it from this computer |
+| **Unused rules** | Rules that allow a port that no process listens on |
+
+Process names of other users need root, so a regular user sees `needs root to see the process` for some rows.
+
+### Fix a Docker port that is open to the internet
+
+For a container port that bypasses the firewall, Portway offers two fixes.
+
+- **Bind to 127.0.0.1 (recommended).** Edit the compose file so that the port is published on `127.0.0.1`, run **Up** on the project to recreate the container, and reach it from this computer through a tunnel.
+- **Block in the DOCKER-USER chain.** Keep the container as it is and add an `iptables` rule that Docker respects. This applies to IPv4 only, and the dialog shows the rule and how to keep it after a reboot.
+
+<Aside type="caution">
+  A firewall of the cloud provider, such as a security group, lies outside the server. Portway cannot see it, and the Overview and this screen state that.
+</Aside>

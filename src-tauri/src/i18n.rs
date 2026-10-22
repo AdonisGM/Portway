@@ -1,11 +1,11 @@
 //! Language of the text the Rust side sends to the UI (errors, statuses,
-//! trace labels). Set from Cài đặt; Vietnamese until then.
+//! trace labels). Set from Cài đặt; English until then.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::settings::Language;
 
-static EN: AtomicBool = AtomicBool::new(false);
+static EN: AtomicBool = AtomicBool::new(true);
 
 pub fn set(lang: Language) {
     EN.store(lang == Language::En, Ordering::Relaxed);

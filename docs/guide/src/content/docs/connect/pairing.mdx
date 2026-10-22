@@ -1,0 +1,52 @@
+---
+title: Pair two computers
+description: Turn Connect on, find the other computer and pair once by comparing a six-digit code on both screens.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Pairing happens once for each pair of computers. Afterwards the two computers recognize each other and connect without another code. Both computers must be near the same person, because the code appears on both screens.
+
+## Before starting
+
+- Portway runs on both computers, in compatible versions.
+- Both computers are on the same local network.
+- The first time Connect is turned on, the operating system may ask for permission. On macOS, allow Portway under **System Settings › Privacy & Security › Local Network**. On Windows, allow Portway through the firewall for private networks. When a dialog offers private and public networks, tick both, or change that network to Private.
+
+## Pair
+
+<Steps>
+
+1. On both computers, open **Connect** from the icon rail and turn on **Let Portways on the network see each other**. Portway then opens a port for incoming connections and announces a random identifier on the network. The name of the computer and every other detail are sent only to computers that are already paired.
+
+2. On the first computer, find the other one under **Machines not paired yet** and select **Pair**. If the other computer does not appear, wait a few seconds, or add its address under **Or by IP address**, for example `10.10.10.2` or `10.10.10.2:47615`.
+
+3. A dialog on both computers shows the same **Pairing code** of six digits. The computer that started the pairing says `You asked to pair`, and the other one says that a computer wants to pair with it.
+
+4. Compare the two codes. When they are identical, and you started the pairing yourself, select **Matches** on both computers. If they differ, or you did not start it, select **Doesn't match**.
+
+5. When both sides have pressed **Matches**, a message states that the two computers are paired.
+
+</Steps>
+
+Both sides must confirm within 2 minutes. A declined or expired pairing can be repeated.
+
+## Why the code matters
+
+The code proves that the two screens talk to each other and not to a third computer in between. It is calculated so that a computer in the middle cannot predict it before both sides have committed to their part. Select **Matches** only when the codes are the same, and only when you started the pairing.
+
+## After pairing
+
+The paired computer appears under **Paired machines**, with its state: `Connected` with the latency, `On the network`, or `Not seen`. Select **Connect** to open a link. A computer can have one link at a time. The link uses the fastest route that was found: a cable, Wi-Fi or an address that was entered by hand, and the latency is measured every few seconds. Select a row to open the page of that computer, which is described in [Use the link](/docs/connect/features/).
+
+If mDNS does not find a paired computer, the menu of its row offers **Add an IP address**. This works for paired computers when the network blocks multicast.
+
+## Unpair
+
+**Unpair** removes the trust. The other computer loses the right to connect to this one immediately. To use it again, the two must be paired again with a new code comparison. The other computer still remembers this one until it is unpaired there too, so unpair on both computers.
+
+<Aside type="note">
+  If the key of a paired computer changed, for example because Portway was reinstalled, Connect refuses the link and recommends unpairing and pairing again, with a careful comparison of the code.
+</Aside>

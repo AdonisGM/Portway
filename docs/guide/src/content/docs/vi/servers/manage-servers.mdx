@@ -1,0 +1,64 @@
+---
+title: Quản lý server
+description: Tìm kiếm, sửa, nhóm, ghim, nhập, xuất và xoá các server đã lưu trong Portway.
+sidebar:
+  order: 1
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Danh sách server là điểm bắt đầu của Portway. Danh sách chứa mọi kết nối đã lưu. Việc thêm server đầu tiên được mô tả trong bài [Thêm server và kết nối](/docs/vi/getting-started/add-server/). Trang này nói về việc quản lý danh sách hằng ngày.
+
+<Figure
+  src="vi/servers.webp"
+  alt="Danh sách server với ba server, hiển thị tên, host, số user, tag và nhóm, kèm các nút lọc theo nhóm."
+  caption="Hình 1. Danh sách server."
+/>
+
+## Đọc danh sách
+
+| Cột | Nội dung |
+|---|---|
+| **Tên** | Tên hiển thị, kèm biểu tượng hệ điều hành sau lần kết nối đầu tiên |
+| **Host** | Host và cổng. Jump host được hiển thị bằng chữ `qua` và tên server đó |
+| **User** | Số tài khoản, hoặc tên user khi chỉ có một tài khoản. Bấm vào để liệt kê các tài khoản |
+| **Tag** | Các nhãn dùng để tìm kiếm |
+| **Nhóm** | Nhóm của server, dùng để lọc |
+
+Dấu ghim ở cuối dòng cho biết server đã được ghim.
+
+## Tìm server
+
+Ô tìm kiếm lọc theo tên, host, nhóm và tag. Các nút phía trên bảng lọc theo nhóm, và `Tất cả` hiển thị mọi server. Bộ đếm bên phải cho biết có bao nhiêu server khớp.
+
+## Kết nối
+
+Chọn nút user của một dòng. Dòng mở rộng và liệt kê các tài khoản, mỗi tài khoản có cách đăng nhập và nút **Kết nối**. Có thể kết nối nhiều tài khoản của cùng một server cùng lúc, và mỗi tài khoản xuất hiện thành một phiên riêng ở cột thứ hai.
+
+## Sửa hoặc xoá server
+
+Chọn một dòng, ngoài nút user, để mở biểu mẫu kết nối. Biểu mẫu giống biểu mẫu dùng khi thêm server. Việc sửa chỉ thay đổi thông tin lưu trên máy tính này, và không thay đổi gì trên server.
+
+Biểu mẫu có nút xoá server. Việc xoá chỉ xoá thông tin kết nối đang lưu trên máy tính này. Server và dữ liệu trên đó không bị ảnh hưởng.
+
+## Ghim server
+
+**Ghim** ở phần đầu của server đang kết nối giữ server ở đầu danh sách.
+
+## Nhập từ `~/.ssh/config`
+
+**Nhập từ ~/.ssh/config** đọc tệp này và thêm các host chưa có trong Portway. Trình đọc hiểu các khối `Host` với `HostName`, `User`, `Port`, `IdentityFile` và `ProxyJump`, các giá trị của khối `Host *` làm mặc định, và `Include`. Host chứa ký tự đại diện và khối `Match` bị bỏ qua vì chúng không chỉ một server cụ thể. Sau khi nhập, một thông báo cho biết số server đã thêm, hoặc cho biết mọi host đã có sẵn.
+
+## Xuất và nhập cả danh sách
+
+[Cài đặt](/docs/vi/app/settings/) có **Xuất ra tệp** và **Nhập từ tệp** trong mục Dữ liệu. Tệp JSON được xuất chứa host, cổng, user, nhóm, tag, ghi chú và đường dẫn khoá. Mật khẩu và passphrase ở lại Keychain của máy gốc, nên phải nhập lại trên máy khác. Khi nhập, các server có tên đã tồn tại bị bỏ qua, và thông báo liệt kê chúng.
+
+<Aside type="note">
+  Tên phải là duy nhất. Host chỉ gồm chữ, số và các ký tự `.`, `-`, `_`, `:`, `[` và `]`, và không được bắt đầu bằng dấu gạch ngang.
+</Aside>
+
+## Các bài liên quan
+
+- [Jump host](/docs/vi/servers/jump-hosts/) cho các server chỉ truy cập được qua một server khác.
+- [Khoá SSH](/docs/vi/servers/ssh-keys/) để tạo và quản lý khoá.

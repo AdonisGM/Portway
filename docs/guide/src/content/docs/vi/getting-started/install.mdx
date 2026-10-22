@@ -1,0 +1,62 @@
+---
+title: Cài đặt Portway
+description: Yêu cầu hệ thống và các bước cài đặt Portway trên macOS và Windows.
+sidebar:
+  order: 1
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Portway được phát hành dưới dạng bộ cài cho macOS và cho Windows. Trang này liệt kê các yêu cầu và các bước cài đặt trên từng nền tảng.
+
+## Yêu cầu
+
+| Thành phần | Yêu cầu |
+|---|---|
+| macOS | macOS 11 (Big Sur) trở lên, chạy trên Apple Silicon hoặc Intel |
+| Windows | Windows 10 (bản 1809 trở lên) hoặc Windows 11, 64-bit. Cần có WebView2; thành phần này đã có sẵn trên Windows 11, và bộ cài sẽ tự tải về khi máy chưa có |
+| Server | Server Linux có chạy OpenSSH |
+
+Các tính năng quản trị dựa trên những công cụ đã có sẵn trên server: `systemd` cho dịch vụ, `docker` cho container, `nginx` cho site, `ufw` hoặc `firewalld` cho rule firewall. Nếu server thiếu công cụ tương ứng, tính năng đó được báo là không khả dụng và các tính năng khác vẫn hoạt động bình thường.
+
+## Tải về
+
+Tải bộ cài mới nhất tại [trang Releases trên GitHub](https://github.com/AdonisGM/Portway/releases/latest). Chọn tệp phù hợp với hệ điều hành đang dùng.
+
+## Cài đặt
+
+<Tabs>
+  <TabItem label="macOS">
+    1. Mở tệp `.dmg` đã tải về.
+    2. Kéo **Portway** vào thư mục **Applications**.
+    3. Mở **Portway** từ Launchpad hoặc từ thư mục Applications.
+
+    <Aside type="note" title="Khi macOS chặn lần mở đầu tiên">
+      Bản build chưa được ký bằng Apple Developer ID sẽ bị macOS báo là của nhà phát triển chưa xác minh. Để mở ứng dụng, vào **System Settings › Privacy & Security**, tìm thông báo về Portway và chọn **Open Anyway**. Thao tác này chỉ cần thực hiện một lần.
+    </Aside>
+  </TabItem>
+  <TabItem label="Windows">
+    1. Chạy bộ cài đã tải về. Bộ cài cài đặt Portway cho người dùng hiện tại và không yêu cầu quyền quản trị.
+    2. Làm theo các bước của bộ cài.
+    3. Mở **Portway** từ menu Start.
+
+    <Aside type="note" title="Khi Windows SmartScreen hiện cảnh báo">
+      Bộ cài chưa được ký mã có thể làm SmartScreen hiện cảnh báo. Chọn **More info**, sau đó chọn **Run anyway**.
+    </Aside>
+  </TabItem>
+</Tabs>
+
+## Nơi Portway lưu dữ liệu
+
+Portway lưu cấu hình trong thư mục dữ liệu ứng dụng của người dùng hiện tại:
+
+| Nền tảng | Vị trí |
+|---|---|
+| macOS | `~/Library/Application Support/com.portway.app/` |
+| Windows | `%APPDATA%\com.portway.app\` |
+
+Mật khẩu và passphrase của khoá không được lưu trong các tệp này. Chúng được lưu trong Keychain trên macOS và trong Credential Manager trên Windows.
+
+## Bước tiếp theo
+
+[Thêm server và kết nối](/docs/vi/getting-started/add-server/) để mở kết nối đầu tiên.

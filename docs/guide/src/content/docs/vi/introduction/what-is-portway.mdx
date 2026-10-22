@@ -1,0 +1,43 @@
+---
+title: Portway là gì
+description: Giới thiệu ngắn về Portway, ứng dụng desktop quản trị server Linux qua SSH trên macOS và Windows.
+sidebar:
+  order: 1
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Portway là ứng dụng desktop cho macOS và Windows, dùng để quản trị server Linux qua SSH. Ứng dụng gom vào một cửa sổ những công cụ thường nằm rải rác trong terminal: tệp, tunnel, Docker, dịch vụ systemd, Nginx, rule firewall và kiểm tra HTTP.
+
+<Figure
+  src="vi/overview.webp"
+  alt="Màn hình Tổng quan của Portway cho một server đã kết nối, gồm mức dùng tài nguyên, tiến trình dùng nhiều nhất, tình trạng, cổng mạng và ổ đĩa."
+  caption="Hình 1. Màn hình Tổng quan của một server đã kết nối."
+/>
+
+## Portway làm được gì
+
+- Kết nối tới các server đã lưu qua SSH, kể cả server chỉ truy cập được thông qua jump host.
+- Duyệt và sửa tệp qua SFTP, có thể dùng quyền root thông qua sudo.
+- Sao chép tệp giữa máy tính đang dùng và server, hoặc giữa hai server.
+- Mở tunnel SSH và cho biết ứng dụng cục bộ nào đang dùng từng tunnel.
+- Đọc và quản lý container, dự án Compose, image và volume của Docker.
+- Hiển thị dịch vụ systemd, site Nginx và rule firewall, đồng thời đối chiếu với các cổng đang thực sự lắng nghe.
+- Gửi request HTTP ngay từ server.
+- Ghép đôi hai máy tính của cùng một người trong một mạng, để chuyển tệp và văn bản giữa chúng (Connect).
+
+## Portway không làm gì
+
+- Không cài agent hay bất kỳ chương trình nào lên server. Mọi thao tác dùng các công cụ chuẩn đã có sẵn ở đó.
+- Không có hệ thống tài khoản, dịch vụ đám mây hay máy chủ trung gian. Cấu hình chỉ nằm trên máy tính.
+- Không thay thế các hệ thống quản lý cấu hình hay giám sát. Phạm vi dự kiến được nêu trong bài [Vì sao có Portway](/docs/vi/introduction/why-portway/).
+
+## Đọc tiếp
+
+<CardGrid>
+  <LinkCard title="Vì sao có Portway" description="Những nhu cầu mà Portway hướng tới, và đối tượng sử dụng." href="/docs/vi/introduction/why-portway/" />
+  <LinkCard title="Ý tưởng thiết kế" description="Các ý tưởng đứng sau thiết kế: truy cập không agent, lệnh hiển thị rõ và nhật ký thao tác." href="/docs/vi/architecture/concepts/" />
+  <LinkCard title="Cài đặt Portway" description="Yêu cầu và cách cài đặt trên macOS và Windows." href="/docs/vi/getting-started/install/" />
+  <LinkCard title="Thêm server" description="Tạo kết nối đầu tiên và xác minh khoá máy chủ." href="/docs/vi/getting-started/add-server/" />
+</CardGrid>

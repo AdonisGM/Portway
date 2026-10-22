@@ -1,0 +1,72 @@
+---
+title: Architecture overview
+description: How the Portway interface, the Rust backend and the local data fit together.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Portway is a Tauri 2 application. A React interface runs in the web view of the operating system, and a Rust backend performs every operation that touches the network, the file system or a secret. Credentials are stored and used only by the backend, and the interface never opens a socket by itself.
+
+## Layers
+
+```text
+React interface (web view)
+   |  invoke(command, arguments)      events: transfer, settings, trace, logtail
+   v
+Tauri IPC
+   v
+Rust backend
+   |-- russh and russh-sftp  ->  SSH sessions, SFTP, tunnels
+   |-- operating system store ->  Keychain or Credential Manager
+   `-- JSON files             ->  servers, tunnels, requests, settings, audit log
+```
+
+The interface calls the backend through a typed layer in `src/lib/api.ts`. The same file also contains a small stand-in that is used when the interface runs in a plain browser during development. It covers local data such as the server list, and the operations that need a real connection are available only in the application.
+
+## Interface
+
+- React 19 with Vite and Tailwind CSS. Icons come from `lucide-react`.
+- Shared state lives in providers under `src/app/`: servers, connections, tunnels, transfers, settings, trace, Connect, local edits and navigation.
+- Each screen is a folder under `src/screens/`, for example servers, files, transfer, docker, services, nginx, firewall, http, tunnels, connect and settings.
+- Text is written once in Vietnamese and passed through a translation function. An English dictionary lives in `src/i18n/en/`, and a script (`pnpm i18n:check`) fails when an entry is missing.
+
+## Backend modules
+
+| Area | Modules | Responsibility |
+|---|---|---|
+| Connections | `ssh`, `servers`, `keys`, `ssh_config`, `askpass` | SSH sessions, the saved server list, keys in `~/.ssh`, import from `~/.ssh/config`, password prompts for a terminal opened on Windows |
+| Files | `files`, `transfers`, `editing`, `local` | SFTP operations, the transfer queue, editing a remote file in a local application, folders on this computer |
+| Tunnels | `tunnels`, `tunnel_stats` | Local, SOCKS5 and remote forwarding, and the live numbers of a running tunnel |
+| Administration | `docker`, `services`, `nginx`, `firewall`, `firewalld`, `ports`, `disks`, `http`, `logtail` | Reading and changing the server through its own command line tools |
+| Records | `audit`, `trace` | The audit log and the debug trace |
+| Platform | `secrets`, `settings`, `background`, `beacon`, `i18n` | Secret storage, preferences, running in the tray, the Windows pre-login beacon, language of backend messages |
+| Connect | `connect/` | Discovery, pairing and the encrypted link between two Portway installations |
+
+## A request from start to finish
+
+Opening the Nginx screen shows the general flow.
+
+1. The interface calls a backend command with the server and the user of the active session.
+2. The command looks up that session and runs `nginx -T` over an SSH exec channel. The output is the configuration that nginx actually loads.
+3. The backend adds the sites of `sites-available` that are not enabled, reads the certificate that each site serves with `openssl s_client` and checks every proxy target with a TCP connection from the server.
+4. The result returns to the interface as one structure, which the screen draws as domain, nginx and target.
+5. A change, such as disabling a site, is written to the audit log and followed by `nginx -t`. When that test fails, the change is reverted.
+
+## Local data
+
+Configuration is stored in the application data folder of the user, for example `~/Library/Application Support/com.portway.app/` on macOS.
+
+| File | Content |
+|---|---|
+| `servers.json` | Saved servers and accounts, without passwords |
+| `tunnels.json` | Tunnel profiles |
+| `http.json` | Saved requests and history, with secrets removed |
+| `settings.json` | Preferences such as language and theme |
+| `audit.jsonl` | The audit log, one JSON object per line |
+| `connect.json` | Whether Connect is on, the public identity of this machine and the paired machines; the private key is kept in the secret store |
+
+<Aside type="note">
+  The debug trace is different from the audit log. It is kept in memory only and is described in [SSH sessions and command execution](/docs/internals/ssh-sessions/).
+</Aside>

@@ -101,7 +101,7 @@ function resourceItems(s: Stats): StatItem[] {
       hintTone: memPct >= 85 ? 'var(--danger)' : undefined,
     },
     {
-      label: 'Disk /',
+      label: t('Ổ đĩa /'),
       value: formatPercent(diskPct),
       hint: t('còn {size}', { size: formatBytes(s.diskAvail) }),
       hintTone: diskPct >= 85 ? 'var(--warn)' : undefined,
@@ -134,7 +134,7 @@ function Resources({ server, user }: { server: Server; user: string }) {
   )
 }
 
-const PROC_COLS = 'minmax(140px,1.5fr) 96px 96px minmax(70px,1fr) 64px'
+const PROC_COLS = 'minmax(0,1.6fr) minmax(0,84px) minmax(0,96px) minmax(64px,1fr) 56px'
 
 const barColor = (v: number) => (v >= 85 ? 'var(--danger)' : v >= 70 ? 'var(--warn)' : 'var(--ink2)')
 
@@ -157,10 +157,10 @@ function TopProcesses({ server, user }: { server: Server; user: string }) {
       </div>
 
       <div className="grid gap-3 px-0.5 text-[11px] text-muted" style={{ gridTemplateColumns: PROC_COLS }}>
-        <span>{t('Tiến trình')}</span>
-        <span>User</span>
-        <span>Container</span>
-        <span>{t('CPU (% hiện tại)')}</span>
+        <span className="truncate">{t('Tiến trình')}</span>
+        <span className="truncate">User</span>
+        <span className="truncate">Container</span>
+        <span className="truncate">{t('CPU (% hiện tại)')}</span>
         <span className="text-right">RAM</span>
       </div>
 
@@ -211,11 +211,11 @@ export function Overview({ server, user }: { server: Server; user: string }) {
   return (
     <div className="flex flex-col gap-4">
       <Resources server={server} user={user} />
-      <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))' }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))' }}>
         <TopProcesses server={server} user={user} />
         <HealthCard server={server} user={user} />
       </div>
-      <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
         <PortsCard server={server} user={user} />
         <DisksCard server={server} user={user} />
       </div>

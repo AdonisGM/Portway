@@ -86,7 +86,7 @@ export function ServicesScreen({ server, user }: { server: Server; user: string 
   const failed = (list ?? []).filter((u) => u.activeState === 'failed').length
 
   if (nav.servicesView === 'jobs') {
-    return <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">{t('Tác vụ định kỳ sẽ làm ở bước tiếp theo')}</div>
+    return <div className="flex h-60 items-center justify-center rounded-xl border border-dashed border-line2 text-muted">{t('Chưa hỗ trợ tác vụ định kỳ (cron và systemd timer) trong phiên bản này')}</div>
   }
 
   return (

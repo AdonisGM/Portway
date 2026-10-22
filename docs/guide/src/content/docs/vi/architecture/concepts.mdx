@@ -1,0 +1,60 @@
+---
+title: Ý tưởng thiết kế
+description: Những ý tưởng đứng sau thiết kế của Portway và ý nghĩa của từng ý tưởng trong sử dụng hằng ngày.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Portway tuân theo một số ít ý tưởng. Hiểu chúng sẽ giải thích vì sao ứng dụng hoạt động như hiện tại.
+
+## Truy cập không cần agent
+
+Portway không cài gì lên server. Ứng dụng mở một kết nối SSH và chạy các lệnh đã có sẵn ở đó, như `sftp`, `systemctl`, `docker`, `nginx`, `ufw`, `firewall-cmd`, `openssl` và `curl`. Server chỉ cần có OpenSSH và công cụ của tính năng đang dùng. Tính năng thiếu công cụ được báo là không khả dụng, còn các tính năng khác vẫn hoạt động.
+
+Hệ quả là Portway không có gì để cập nhật trên server, không để lại gì khi bị gỡ bỏ, và có thể quản lý một server chưa từng được chuẩn bị cho nó.
+
+## Lệnh luôn hiển thị rõ
+
+Trước khi thực hiện một thay đổi, Portway hiển thị đúng lệnh sẽ chạy, kèm server, user và việc có cần sudo hay không.
+
+<Figure
+  src="vi/services-confirm.webp"
+  alt="Hộp thoại xác nhận khởi động lại redis-server.service, hiển thị server, user, việc không cần sudo và lệnh chính xác systemctl restart redis-server.service."
+  caption="Hình 1. Hộp thoại xác nhận nêu rõ lệnh chính xác."
+/>
+
+Có thể sao chép đoạn văn bản đó vào một terminal và nhận được kết quả như nhau. Không có thao tác nào diễn ra dưới dạng không thể tái hiện bằng tay.
+
+## Mọi thay đổi đều được ghi lại
+
+Các hành động Portway thực hiện thay người dùng được ghi vào [nhật ký thao tác](/docs/vi/servers/audit-log/) cùng kết quả. Một nhật ký gỡ lỗi riêng, chỉ nằm trong bộ nhớ, giải thích vì sao một màn hình chậm. Lệnh gõ trong terminal được mở từ Portway không nằm trong nhật ký thao tác.
+
+## Trạng thái thật của server
+
+Portway đọc những gì server thực sự dùng, thay vì những gì một tệp cấu hình tuyên bố. Site Nginx lấy từ `nginx -T`, lệnh in ra cấu hình mà nginx đã nạp. Các socket đang lắng nghe lấy từ `/proc/net`. Chứng chỉ được đọc từ những gì site đang phục vụ. Cổng Docker được đối chiếu với rule firewall, nên một cổng mà Docker mở trước firewall được hiển thị là đang bị phơi ra ngoài.
+
+## Biện pháp an toàn quanh các thay đổi rủi ro
+
+- Hộp thoại xác nhận nêu vai trò của đối tượng bị ảnh hưởng, ví dụ một cơ sở dữ liệu mà các container khác phụ thuộc vào.
+- Việc tắt một site Nginx được hoàn tác tự động khi `nginx -t` báo lỗi sau đó.
+- Khi bật firewall, Portway thêm trước một rule cho phép SSH, rồi mở một kết nối SSH mới để chứng minh quyền truy cập vẫn còn, và hoàn tác nếu không.
+- Dừng dịch vụ SSH, xoá volume hay xoá rule firewall cuối cùng cho phép SSH đều yêu cầu gõ lại tên.
+
+## Phiên và sudo
+
+Một phiên thuộc về một server và một user. Mỗi server có thể có nhiều tài khoản, và mỗi tài khoản mở một phiên riêng. Quyền nâng cao là một chế độ của phiên, không phải một lần đăng nhập riêng: [sudo được bật một cách tường minh](/docs/vi/servers/sudo/), mật khẩu chỉ nằm trong bộ nhớ cho phiên đó, và chỉ những hành động cần đến mới chạy qua sudo.
+
+## Ưu tiên dữ liệu cục bộ
+
+Portway không có tài khoản và không có máy chủ trung gian. Danh sách server, cấu hình tunnel và tuỳ chọn được lưu trên máy tính. Mật khẩu và passphrase được lưu trong Keychain trên macOS và trong Credential Manager trên Windows. Chi tiết được mô tả trong bài [Bảo mật và dữ liệu](/docs/vi/internals/security-and-data/).
+
+## Quy ước quen thuộc
+
+Portway dùng lại các quy ước mà người dùng SSH đã biết: khoá máy chủ được đối chiếu với `~/.ssh/known_hosts`, host có thể nhập từ `~/.ssh/config`, jump host hoạt động như `ssh -J`, và tunnel tương ứng với `ssh -L`, `ssh -D` và `ssh -R`. Nhiều màn hình hiển thị lệnh tương đương.
+
+<Aside type="note">
+  Về phía kỹ thuật của các ý tưởng này, xem [Tổng quan kiến trúc](/docs/vi/internals/architecture/) và [Phiên SSH và cách chạy lệnh](/docs/vi/internals/ssh-sessions/).
+</Aside>

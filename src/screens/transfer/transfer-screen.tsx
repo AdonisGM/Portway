@@ -387,7 +387,7 @@ export function TransferScreen() {
         />
       </div>
 
-      <span className="flex-none text-[11px] text-muted">
+      <span className="flex-none text-[11px] text-muted" style={transfers.length > 0 ? { maxWidth: 'calc(100% - 536px)', minHeight: 28 } : undefined}>
         {t('Phím tắt: ⇥ đổi pane · ↑↓ di chuyển (⇧ chọn dải) · Space chọn · ↵ mở thư mục · ⌫ lên thư mục cha · ⌘A chọn hết · ⌘→ ⌘← chép sang bên kia')}
       </span>
 

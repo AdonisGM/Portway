@@ -1,0 +1,36 @@
+---
+title: Follow log files
+description: Follow a log file of the server in real time, with filtering, pausing and copying.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+**Follow (tail -f)** in the side panel of the Files screen streams the lines of a log file to Portway as they are written. It runs `tail -F` on the server, which keeps following the file after it is rotated. The same viewer opens from the Nginx screen for the access and error logs.
+
+## Open the viewer
+
+Select one readable file and choose **Follow (tail -f)**. The viewer opens with the most recent lines, and new lines appear at the bottom. A line in the header states whether the follow runs as the user or through sudo. When the user cannot read the file, the action is disabled with a note that sudo must be turned on first.
+
+## Controls
+
+| Control | Effect |
+|---|---|
+| **Pause** and **Resume** | Freezes the view while lines keep arriving. The header states how many new lines wait |
+| **Filter lines** | Shows only the lines that match some text, or a regular expression written as `/pattern/` |
+| **All**, **Errors + warnings**, **Errors** | Filters by the level that is detected in the line |
+| **Don't wrap lines**, **Wrap long lines** | Changes how long lines are shown |
+| **Copy the lines shown** | Copies the lines that match the current filter |
+| **Clear the screen** | Empties the view. The file on the server is not touched |
+| **Jump to latest** | Scrolls to the newest line after scrolling up |
+
+When a file is written faster than the viewer can show, Portway skips lines, and the header states how many were skipped.
+
+## Limits
+
+Each followed file holds one SSH channel until the viewer is closed or the session drops. A session allows a limited number of followed files at the same time, and Portway reports it when the limit is reached.
+
+<Aside type="note">
+  Following a log is written to the [audit log](/docs/servers/audit-log/), but the content of the log is not.
+</Aside>

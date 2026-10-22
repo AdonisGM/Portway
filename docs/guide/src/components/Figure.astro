@@ -1,0 +1,26 @@
+---
+// A screenshot with a visible caption. `src` is relative to public/img (for example "en/audit.webp").
+// The intrinsic size is read from the file, so the page reserves the right space and small crops are not upscaled.
+import sharp from 'sharp';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+interface Props {
+  src: string;
+  alt: string;
+  caption: string;
+  /** Overrides the size read from the file. */
+  width?: number;
+  height?: number;
+}
+const { src, alt, caption } = Astro.props;
+const meta = await sharp(readFileSync(join(process.cwd(), 'public/img', src))).metadata();
+const width = Astro.props.width ?? meta.width ?? 1400;
+const height = Astro.props.height ?? meta.height ?? 880;
+const url = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/img/${src}`;
+---
+
+<figure>
+  <img src={url} alt={alt} width={width} height={height} style={`max-width:${width}px`} loading="lazy" decoding="async" />
+  <figcaption>{caption}</figcaption>
+</figure>

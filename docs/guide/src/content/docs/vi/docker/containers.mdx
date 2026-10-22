@@ -1,0 +1,70 @@
+---
+title: Container Docker
+description: Đọc trạng thái container, phát hiện vấn đề ngay lập tức, xem log và quản lý các container của một server.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Mục **Docker** của một server xuất hiện khi Docker đã được cài. Trang đầu tiên của mục này liệt kê các container. Portway chạy lệnh `docker` trên server, nên hiển thị đúng những gì `docker ps` và `docker inspect` báo cáo.
+
+<Figure
+  src="vi/docker.webp"
+  alt="Danh sách container được gom theo dự án Compose shop và theo container lẻ, với trạng thái, các cổng được đánh dấu là công khai, CPU và RAM, cùng bảng chi tiết của container đang chọn."
+  caption="Hình 1. Danh sách container."
+/>
+
+## Đọc danh sách
+
+Các container được gom theo dự án Compose, tiếp theo là nhóm **Container lẻ** cho những container được chạy bằng `docker run`. Tiêu đề mỗi nhóm đếm số container đang chạy.
+
+| Cột | Nội dung |
+|---|---|
+| **Container** | Tên, chính sách restart và image |
+| **Trạng thái** | Trạng thái và, khi container có health check, kết quả của nó |
+| **Cổng (host → container)** | Các cổng được publish. Cổng mở trên mọi địa chỉ được đánh dấu `công khai` |
+| **CPU %** và **RAM** | Mức dùng hiện tại. CPU được hiển thị so với số nhân |
+
+Các giá trị trạng thái gồm `Đang chạy`, `Đang chạy · healthy`, `Đang chạy · unhealthy`, `Đã chạy xong` cho job chạy một lần, `Đã dừng · exit N`, `Lỗi · exit N` và `Khởi động lại liên tục · N lần`. Dấu hiệu khởi động lại liên tục giúp tìm các container khởi động rồi lại sập lặp đi lặp lại.
+
+Cổng mở trên mọi địa chỉ được đánh dấu kèm lời giải thích. Docker tự thêm rule `iptables` của nó, nên `ufw` không chặn được cổng như vậy. Cơ sở dữ liệu hoặc cache nên được gắn vào `127.0.0.1`. Bài [Firewall](/docs/vi/web/firewall/) hướng dẫn cách sửa.
+
+## Chi tiết của một container
+
+Chọn một dòng để mở bảng bên phải. Bảng hiển thị trạng thái và health check, các cổng, các volume đã gắn, biến môi trường, số lần restart, lệnh và thời điểm tạo. Giá trị biến môi trường bị ẩn cho đến khi bấm vào, vì chúng thường chứa bí mật.
+
+## Hành động
+
+| Hành động | Tác dụng |
+|---|---|
+| **Log** | Mở trình xem log của container |
+| **Terminal** | Mở một terminal trên máy tính này chạy `docker exec -it` trong container |
+| **Khởi động lại** | Khởi động lại container |
+| **Dừng** | Dừng container |
+| **Chạy** và **Chạy lại** | Chạy một container đã dừng, hoặc chạy lại một job chạy một lần |
+| **Mở tunnel tới cổng** | Tạo một [tunnel](/docs/vi/tunnels/create/) tới một cổng đã publish |
+
+Khởi động lại, dừng và chạy lại đều yêu cầu xác nhận. Hộp thoại nêu vai trò của container, ví dụ một cơ sở dữ liệu, và cảnh báo rằng các container phụ thuộc có thể lỗi trong lúc nó khởi động lại. Việc chạy lại một job cảnh báo rằng tác vụ chạy với cùng image và biến môi trường, nên phải an toàn khi lặp lại.
+
+## Trình xem log
+
+<Figure
+  src="vi/docker-log.webp"
+  alt="Trình xem log của container shop-api-1 với các bộ lọc Tất cả, Cảnh báo + lỗi, Lỗi, ô lọc chữ, nút Theo dõi trực tiếp và các dòng log."
+  caption="Hình 2. Trình xem log của một container."
+/>
+
+Trình xem hiển thị 300 dòng gần nhất kèm dấu thời gian. Các bộ lọc thu hẹp các dòng theo cảnh báo và lỗi hoặc theo lỗi, còn ô lọc chữ khớp với mọi đoạn chữ. **Theo dõi trực tiếp** chuyển các dòng mới khi container đang chạy, và **Mở trong Terminal** tiếp tục trong một terminal. Với container không chạy, chỉ có log cũ.
+
+## Khi không đọc được Docker
+
+- **Docker chưa được cài.** Trang nêu điều này và hiển thị script cài đặt chính thức.
+- **User không thuộc nhóm `docker`.** Trang giải thích rằng không đọc được `/var/run/docker.sock` và đề nghị dùng kết nối root. Bật [sudo](/docs/vi/servers/sudo/) cũng được.
+- **Daemon không chạy.** Trang đề nghị khởi động `docker.service`. Container có chính sách restart `always` hoặc `unless-stopped` sẽ chạy theo.
+
+## Các bài liên quan
+
+- [Dự án Docker Compose](/docs/vi/docker/compose/)
+- [Image và volume Docker](/docs/vi/docker/images-and-volumes/)

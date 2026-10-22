@@ -1,0 +1,51 @@
+---
+title: Giao thức Connect
+description: Cách tìm máy, ghép đôi, mã hoá và xử lý thông điệp giữa hai bản Portway trong cùng một mạng.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Connect liên kết hai bản Portway trong cùng một mạng cục bộ, và dành cho hai máy tính của cùng một người. Tính năng này tắt theo mặc định. Khi tắt, không có cổng nào lắng nghe và không có thông báo nào được phát đi.
+
+## Tìm máy
+
+Khi Connect được bật, Portway mở một cổng TCP (mặc định 47615, hoặc cổng khác nếu cổng này đã bị chiếm) và thông báo một mã định danh ngẫu nhiên qua mDNS với loại dịch vụ `_portway._tcp.local.`. Thông báo chứa phiên bản giao thức nhưng không chứa tên máy. Tên máy và mọi thông tin khác chỉ được gửi cho các máy đã ghép đôi.
+
+## Kênh mã hoá
+
+Hai máy giao tiếp qua một bước bắt tay Noise chạy trên bất kỳ luồng byte nào.
+
+| Mục | Giá trị |
+|---|---|
+| Mẫu | `Noise_XX_25519_ChaChaPoly_BLAKE2s` |
+| Đóng khung | Độ dài 16 bit, theo sau là đúng số byte đó, nên một khung mang tối đa 65.535 byte |
+| Thông điệp | JSON, mỗi thông điệp có một byte loại. Trong một kết nối, thông điệp điều khiển và dữ liệu tệp dùng chung cách đóng khung |
+| Phiên bản giao thức | 3 |
+
+Mỗi bên biết được khoá tĩnh của bên kia trong lúc bắt tay. Việc khoá đó có đáng tin hay không được quyết định ở lớp phía trên, thông qua ghép đôi hoặc danh sách các máy đã ghép đôi. Thông điệp mà một máy không nhận ra sẽ bị bỏ qua thay vì làm đứt liên kết, nên thêm một loại thông điệp mới không cần nâng phiên bản giao thức.
+
+## Ghép đôi
+
+Việc ghép đôi chỉ diễn ra một lần. Sau bước bắt tay, cả hai màn hình hiển thị cùng một mã sáu chữ số, và cả hai người chọn xác nhận. Để máy ở giữa không đoán trước được mã, hai bên trao số ngẫu nhiên dưới dạng cam kết trước rồi mới tiết lộ. Khoá riêng của máy được lưu trong Keychain trên macOS và trong Credential Manager trên Windows.
+
+## Liên kết
+
+Máy đã ghép đôi được truy cập qua đường nhanh nhất tìm được: cáp, Wi-Fi hoặc địa chỉ nhập tay. Độ trễ được đo sau mỗi 5 giây. Mỗi máy giữ một liên kết tại một thời điểm.
+
+## Những gì đi qua liên kết
+
+- **Tệp.** Mỗi lần truyền mở một kết nối mã hoá riêng. Bên nhận luôn được hỏi chấp nhận hay từ chối. Tệp được ghi dưới tên tạm và chỉ được đổi tên sau khi mã băm BLAKE2s khớp. Tên tệp từ máy kia được làm sạch, đường dẫn chứa `..` bị từ chối, và tệp đã tồn tại không bao giờ bị ghi đè. Việc truyền thư mục bị giới hạn ở 20.000 tệp, và lần truyền bị gián đoạn không thể tiếp tục.
+- **Clipboard văn bản.** Việc gửi và nhận đều tắt theo mặc định và được đặt riêng cho từng máy. Bên nhận xác nhận từng thông điệp. Văn bản mà ứng dụng nguồn đánh dấu là nhạy cảm, chẳng hạn mục lấy từ trình quản lý mật khẩu, không bao giờ được tự động gửi. Văn bản dài hơn khoảng 40.000 ký tự bị từ chối kèm thông báo thay vì bị cắt.
+- **Tệp trong clipboard.** Khi sao chép tệp, chỉ tên và kích thước được gửi, dưới dạng một lease có mã ngẫu nhiên. Nội dung chỉ di chuyển khi máy kia dán, trên một kết nối riêng. Máy gửi chỉ phục vụ lease còn nằm trên clipboard của nó, chỉ cho máy đã được báo, và chỉ theo số thứ tự của mục, không bao giờ theo đường dẫn. Khi clipboard thay đổi, lease bị thu hồi.
+- **Đo tốc độ.** Một kết nối mã hoá riêng gửi dữ liệu thử trong khoảng 1,5 giây mỗi chiều, tối đa 200 MB. Kết quả đã bao gồm chi phí của việc mã hoá.
+- **Wake-on-LAN.** Sau khi ghép đôi, hai máy trao cho nhau địa chỉ MAC của card có dây và card không dây. Yêu cầu đánh thức gửi một magic packet bằng UDP broadcast qua cổng 9 và 7.
+
+## Đặc thù của Windows
+
+Trên Windows, một dịch vụ nhỏ tên `PortwayBeacon` có thể thông báo rằng máy đang bật trước khi có ai đăng nhập, để máy kia hiển thị trạng thái chờ đăng nhập sau khi đánh thức bằng Wake-on-LAN. Dịch vụ chỉ thông báo. Dịch vụ không lắng nghe kết nối, không truyền tệp và không truy cập clipboard, vì khoá của Connect thuộc về người dùng đã đăng nhập.
+
+<Aside type="caution">
+  Việc dán tệp trong Windows Explorer và beacon trước khi đăng nhập đã được cài đặt, nhưng chưa được kiểm chứng trên một máy Windows thật.
+</Aside>

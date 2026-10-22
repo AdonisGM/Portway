@@ -1,0 +1,68 @@
+---
+title: Dịch vụ systemd
+description: Theo dõi các dịch vụ đã chọn, đọc trạng thái và journal, chạy, dừng và khởi động lại chúng, và điều khiển việc khởi động cùng hệ thống.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Mục **Dịch vụ** xuất hiện với các server dùng systemd. Thay vì liệt kê hàng trăm unit, Portway hiển thị những unit đã được chọn để theo dõi, nhờ đó màn hình trả lời câu hỏi các dịch vụ quan trọng có khoẻ không.
+
+<Figure
+  src="vi/services.webp"
+  alt="Danh sách Dịch vụ với sáu unit đang theo dõi, mỗi unit hiển thị mô tả, trạng thái như Đang chạy hoặc Lỗi, việc có khởi động cùng hệ thống không, mức dùng bộ nhớ, và nút Log cùng menu thêm."
+  caption="Hình 1. Các dịch vụ đang theo dõi."
+/>
+
+## Chọn những gì cần theo dõi
+
+Lần đầu sử dụng, Portway chọn sẵn các unit đang lỗi, cùng những unit phổ biến như máy chủ web, cơ sở dữ liệu, `redis`, `ssh`, `cron`, `fail2ban` và `docker`. **Theo dõi unit** mở ô tìm kiếm trên các unit dịch vụ của server, ví dụ `postgres` hoặc `redis`, và **Bỏ theo dõi** trong menu của một dòng loại unit khỏi danh sách. Phần đầu đếm số unit đang theo dõi và số unit đã lỗi.
+
+## Đọc danh sách
+
+| Cột | Nội dung |
+|---|---|
+| **Unit** | Tên của unit dịch vụ |
+| **Mô tả** | Mô tả lấy từ tệp unit |
+| **Trạng thái** | `Đang chạy`, `Không chạy`, `Đang khởi động`, `Đang dừng`, `Đang nạp lại`, `Đã chạy xong`, hoặc một lỗi như `Lỗi · exit 3`, `Lỗi · bị kill`, `Lỗi · quá thời gian` hay `Lỗi · khởi động lại quá nhiều lần` |
+| **Khi khởi động** | Unit có chạy khi server khởi động hay không |
+| **RAM** | Bộ nhớ mà unit dùng |
+
+Unit đang tự khởi động lại được hiển thị kèm số lần. Trạng thái `masked` đánh dấu một unit bị chặn cho tới khi được unmask. Ở cột **Khi khởi động**, `static` nghĩa là unit không có phần `[Install]` và chỉ chạy khi một unit khác gọi tới, còn `indirect` nghĩa là nó được bật thông qua một unit khác.
+
+## Chi tiết của một unit
+
+<Figure
+  src="vi/services-detail.webp"
+  alt="Danh sách Dịch vụ với unit redis-server.service được chọn, và bảng bên phải hiển thị tên hiển thị, các hành động Xem log, Khởi động lại, Dừng, Bỏ theo dõi, cùng bảng chạy từ, PID, RAM, số lần restart, khi khởi động và user."
+  caption="Hình 2. Bảng chi tiết của một unit đang chọn."
+/>
+
+Bảng bên phải hiển thị thời gian chạy, số tiến trình, bộ nhớ, số lần restart, việc khởi động cùng hệ thống và user chạy unit. **Tên hiển thị** có thể sửa, việc này chỉ đổi nhãn trong Portway. **Xem file** hiển thị tệp unit, còn **Xem log** mở journal của unit với các bộ lọc **Tất cả**, **Cảnh báo + lỗi** và **Lỗi**, ô lọc chữ và **Theo dõi trực tiếp**. Unit bị lỗi có thêm **Xoá trạng thái lỗi**.
+
+Journal chỉ đọc được bằng root hoặc bằng user thuộc nhóm `systemd-journal` hay `adm`. Với user khác, Portway nêu điều đó, và bật [sudo](/docs/vi/servers/sudo/) sẽ giải quyết được.
+
+## Chạy, dừng, khởi động lại và khởi động cùng hệ thống
+
+Mỗi unit có **Khởi động lại**, **Dừng** và, khi đang dừng, **Chạy**. Các thay đổi cần root hoặc sudo, vì nếu không `systemctl` sẽ hỏi `polkit`, mà qua SSH không có ai trả lời. Công tắc ở cột **Khi khởi động** bật hoặc tắt unit và cần cùng quyền đó.
+
+<Figure
+  src="vi/services-confirm.webp"
+  alt="Hộp thoại xác nhận khởi động lại redis-server.service với lệnh chính xác systemctl restart redis-server.service."
+  caption="Hình 3. Hộp thoại xác nhận hiển thị lệnh chính xác."
+/>
+
+Hộp thoại xác nhận giải thích tác động, và lời giải thích phụ thuộc vào unit.
+
+- Khởi động lại `docker` dừng mọi container rồi chạy lại theo chính sách restart của chúng.
+- Dừng `nginx` làm mọi website mà nó phục vụ ngừng hoạt động.
+- Dừng một cơ sở dữ liệu hoặc cache làm các ứng dụng dùng nó lỗi cho tới khi nó chạy lại.
+- Khởi động lại `ssh` giữ nguyên các phiên đang mở, nhưng cấu hình `sshd` bị lỗi có thể khiến không kết nối lại được.
+
+Dừng dịch vụ SSH cần thêm một bước: phải gõ lại tên unit, và hộp thoại nêu rằng chính Portway dùng SSH để tới server. Chỉ làm khi có cách khác vào server, như console của nhà cung cấp.
+
+<Aside type="note">
+  Tác vụ định kỳ (cron và systemd timer) chưa có. Menu đã có sẵn một mục cho chúng, và trang ghi rằng chúng chưa được hỗ trợ.
+</Aside>

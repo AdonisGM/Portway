@@ -1,0 +1,57 @@
+---
+title: Connect troubleshooting
+description: What to do when a computer is not found, cannot be reached or refuses to pair.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Portway explains most Connect failures on the screen and suggests a fix that fits the kind of failure. This page collects them.
+
+## The other computer is not listed
+
+- Open Portway on the other computer, and turn Connect on there. Connect works only while Portway runs and the switch is on.
+- Check that both computers are on the same network, and that the network does not isolate its clients, as guest networks often do.
+- If **Connect** cannot see this computer itself after a few seconds, the network may block multicast, or this Mac may lack the local network permission. Pairing by IP address still works.
+- Enter the address under **Or by IP address**, for example `10.10.10.2`. A port can be added, as in `10.10.10.2:47615`.
+
+## The other computer is visible but cannot be reached
+
+| Cause | What to do |
+|---|---|
+| The other computer does not accept connections | Open Portway there and turn Connect on |
+| Its firewall blocks the connection (common on Windows) | In the first firewall dialog tick both Private and Public, or change the network to Private. On Windows, an elevated PowerShell can add a rule for the port, and the screen shows the command |
+| No route to the other computer | Check that both are on the same network and that the cable or Wi-Fi is connected, or enter the IP address |
+| This Mac has no local network permission | Open **System Settings › Privacy & Security › Local Network** and turn Portway on. If Portway is not in the list, quit it completely and open it again |
+| The other computer is busy | It already has a link or another pairing request. Try again in a few seconds |
+
+A route can show as `no answer`, `no route` or `refused`. The three differ: a timeout is usually a firewall that drops packets, no route is usually a missing permission or a different network, and refusal means that nothing listens there.
+
+## Pairing fails
+
+| Message | Meaning and fix |
+|---|---|
+| Pairing was declined | One side pressed **Doesn't match**. Compare the codes carefully and try again |
+| Timed out comparing the code | Both sides must press **Matches** within 2 minutes. Try again |
+| This address isn't the machine you picked | The computer that answered has another identifier. Try again, or enter the right IP address |
+| Another pairing request is in progress | Finish or cancel the first request, then try again |
+| The other machine's key has changed | The other computer may have reinstalled Portway, or another machine may be impersonating it. Unpair, pair again and compare the code carefully |
+| The other machine is no longer paired with this one | Unpair on both computers, then pair again |
+
+## The link drops, or the two versions differ
+
+- If the connection dropped midway, try again. If it repeats, check that both computers run the same version of Portway.
+- When the two versions differ, features can be missing, and the page says which ones. Update Portway on both computers.
+
+## Problems that Connect cannot start
+
+| Message | Fix |
+|---|---|
+| Couldn't open the port for incoming connections | Another program uses the port, or it is blocked. Turn Connect off and on again |
+| Couldn't start looking for machines on the network | Check that the computer is on a network, then turn Connect off and on again |
+| Couldn't save this machine's key | Allow Portway to use the Keychain when the system asks, then try again |
+
+<Aside type="note">
+  The default port is 47615. When it is taken, Portway uses another port, and the other computer finds it through the announcement on the network.
+</Aside>

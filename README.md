@@ -26,6 +26,7 @@ Kết nối, duyệt tệp, truyền dữ liệu, mở tunnel và quản trị d
 - [Server thử nghiệm](#server-thử-nghiệm)
 - [Đóng gói](#đóng-gói)
 - [Ghi chú khi làm Portway Connect](#ghi-chú-khi-làm-portway-connect)
+- [Trang web (docs/)](#trang-web-docs)
 - [Quy ước của dự án](#quy-ước-của-dự-án)
 - [Cấu trúc thư mục](#cấu-trúc-thư-mục)
 - [Công nghệ sử dụng](#công-nghệ-sử-dụng)
@@ -90,6 +91,8 @@ Portway là ứng dụng desktop giúp quản trị các server Linux thông qua
 - **Màn hình theo dõi**: tốc độ tải lên và tải xuống theo thời gian thực, độ trễ SSH, biểu đồ 1/5/15 phút, danh sách kết nối đang mở kèm **ứng dụng trên máy Mac** đã tạo ra kết nối, đích thật của từng kết nối SOCKS và lý do của các kết nối thất bại.
 
 ### Connect (hai Portway trong cùng mạng)
+
+Connect dành cho **một người dùng hai máy tính của mình trong cùng một mạng LAN** (ví dụ một máy Mac và một máy Windows trên cùng bàn làm việc), để chuyển tệp, chia sẻ clipboard, đánh thức máy kia và đo mạng giữa hai máy cho thuận tiện. Đây không phải công cụ để chia sẻ giữa những người khác nhau và không hoạt động qua internet.
 
 - Tắt mặc định. Khi bật, Portway mở một cổng (mặc định 47615) và thông báo một ID ngẫu nhiên qua mDNS (`_portway._tcp`); tên máy và thông tin khác chỉ gửi cho máy đã ghép đôi.
 - **Ghép đôi** một lần: Noise XX (khoá công khai trao qua kênh mã hoá), sau đó hai màn hình hiện cùng mã 6 số và cả hai người bấm Khớp. Mã chỉ hiện sau khi hai bên đã trao số ngẫu nhiên theo kiểu cam kết rồi mới tiết lộ, để máy ở giữa không dò được mã. Khoá riêng nằm trong Keychain hoặc Credential Manager.
@@ -310,6 +313,29 @@ Portway chỉ chẩn đoán và gợi ý, không tự sửa tường lửa hay p
 | Connection refused | Máy kia chưa mở Portway hoặc Connect đang tắt | Mở Portway ở máy kia |
 | Không thấy qua mDNS | Khác mạng, chặn multicast, máy kia tắt | Nhập IP tay |
 
+## Trang web (docs/)
+
+Thư mục `docs/` chứa trang web `portway.nmtung.dev`, là một workspace pnpm tách khỏi ứng dụng:
+
+| Thư mục | Nội dung | Địa chỉ |
+|---|---|---|
+| `docs/landing/` | Trang giới thiệu (Vite + React, dựng sẵn HTML cho SEO) | `/` (English), `/vi/` (tiếng Việt) |
+| `docs/guide/` | Tài liệu hướng dẫn (Astro Starlight) | `/docs/` (English), `/docs/vi/` (tiếng Việt) |
+
+English là ngôn ngữ mặc định, giao diện tối là mặc định (có nút đổi sang sáng).
+
+```sh
+cd docs
+pnpm install
+pnpm dev       # landing ở http://localhost:5180, /docs được chuyển tiếp tới guide
+pnpm build     # gộp hai phần vào docs/site (thư mục để triển khai)
+pnpm preview   # phục vụ docs/site tại http://localhost:4173
+```
+
+Ảnh trong tài liệu được cắt từ ảnh chụp toàn cửa sổ ứng dụng bằng `node docs/guide/scripts/make-doc-shots.mjs <thư mục ảnh>` (thư mục có `real/` và `real2/`, mỗi thư mục chứa `en/` và `vi/`). Ảnh của landing được cắt từ ảnh chụp toàn cửa sổ ứng dụng bằng `pnpm --filter portway-landing shots <thư mục ảnh>` (thư mục có hai thư mục con `en/` và `vi/`); ảnh gốc không nằm trong kho mã. Tên và toạ độ cắt nằm trong `docs/landing/scripts/make-shots.mjs`.
+
+Tài liệu chia thành hai tab (Hướng dẫn, Kiến trúc và ý tưởng) bằng `starlight-sidebar-topics`; cấu hình ở `docs/guide/astro.config.mjs`. Bài hướng dẫn nằm trong `docs/guide/src/content/docs/` (bản tiếng Việt trong thư mục `vi/`). Ảnh chụp màn hình đặt trong `docs/guide/public/img/<ngôn ngữ>/` và được chèn bằng component `Figure`. Mỗi ảnh chụp ở chế độ tối, đúng ngôn ngữ của bài.
+
 ## Quy ước của dự án
 
 ### Version
@@ -354,6 +380,7 @@ portway/
 │   └── tauri.conf.json
 ├── scripts/                # dev, build, bump version, kiểm tra i18n, server thử
 │   └── connect-probe/      # Probe LAN tạm cho Portway Connect (crate riêng)
+├── docs/                   # Trang web: landing (React) và tài liệu (Starlight)
 └── dev/test-servers/       # Dockerfile và cấu hình của server thử nghiệm
 ```
 

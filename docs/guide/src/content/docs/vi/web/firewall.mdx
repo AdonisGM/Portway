@@ -1,0 +1,86 @@
+---
+title: Firewall
+description: Đọc và thay đổi rule ufw và firewalld, đồng thời đối chiếu với các cổng đang thực sự lắng nghe.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Mục **Firewall** hiển thị các rule của server và, hữu ích hơn, cho biết các rule đó thực sự bảo vệ những cổng nào đang lắng nghe. Portway đọc `ufw`, `firewalld` và `iptables` cùng lúc, chọn công cụ đang quản lý firewall, và hiển thị rule của nó theo một dạng thống nhất.
+
+<Figure
+  src="vi/firewall.webp"
+  alt="Màn hình Firewall cho firewalld ở zone public, với bảng rule hiển thị cổng hoặc service, nguồn, hành động và ghi chú, cùng nút Mở cổng."
+  caption="Hình 1. Các rule của một zone firewalld."
+/>
+
+## Công cụ được hỗ trợ
+
+| Công cụ | Đọc | Thay đổi |
+|---|---|---|
+| `ufw` | Có | Có |
+| `firewalld` | Có, gồm service, port và rich rule của zone | Có |
+| `iptables` thuần | Chỉ các cổng đang lắng nghe | Không. Portway nêu rằng server dùng `iptables` trực tiếp |
+
+Khi hai công cụ firewall cùng bật, Portway cảnh báo rằng chúng ghi đè rule của nhau, quản lý công cụ phù hợp với bản phân phối, và khuyên tắt công cụ còn lại. Khi không có `ufw` lẫn `firewalld`, Portway nói bản phân phối thường dùng công cụ nào. Rule được đọc bằng quyền root, nên user thường cần [sudo](/docs/vi/servers/sudo/).
+
+## Các rule
+
+Bảng liệt kê mỗi rule kèm cổng hoặc service, nguồn, hành động và ghi chú. `ufw` áp dụng rule khớp đầu tiên từ trên xuống. `firewalld` không xét thứ tự rule. Một rule có thể bị đánh dấu là không có hiệu lực, ví dụ khi một rule trước đó đã khớp, hoặc khi Docker đã mở cổng trước firewall. Rule mà chính Portway dùng cho kết nối SSH của nó được đánh dấu `Portway đang dùng (SSH)`.
+
+Menu của một rule cho phép sửa nó, chuyển sang **Giới hạn** (chỉ với `ufw`, chặn một IP mở quá 6 kết nối trong 30 giây, để chống dò mật khẩu), hoặc xoá. `ufw` và `firewalld` không sửa rule tại chỗ, nên Portway xoá rule cũ và thêm rule mới. Rule phức tạp liên quan đến interface, log hoặc route thì được sửa trong terminal.
+
+## Mở một cổng
+
+<Steps>
+
+1. Chọn **Mở cổng**.
+
+2. Nhập một cổng, một dải như `6000:6010`, hoặc nhiều cổng cách nhau bằng dấu phẩy. Chọn TCP, UDP hoặc cả hai. Dải cổng hoặc nhiều cổng cần chọn TCP hoặc UDP.
+
+3. Chọn nguồn: mọi nơi, một IP hoặc một dải CIDR. Chọn cho phép hay chặn. `ufw` còn lưu ghi chú, còn `firewalld` thì không.
+
+   <Figure
+     src="vi/firewall-open.webp"
+     alt="Hộp thoại Mở cổng với cổng 8081, TCP, nguồn Mọi nơi, hành động Cho phép và các lệnh firewall-cmd chính xác sẽ chạy."
+     caption="Hình 2. Hộp thoại Mở cổng hiển thị các lệnh chính xác."
+   />
+
+4. Kiểm tra **Lệnh chính xác sẽ chạy** và chọn **Mở cổng**.
+
+</Steps>
+
+Với `firewalld`, thay đổi được áp dụng vào cấu hình đang chạy trước, và chỉ được ghi vào cấu hình vĩnh viễn sau khi một kết nối SSH mới vẫn hoạt động.
+
+## Bật hoặc tắt firewall
+
+Việc bật firewall được bảo vệ để không khoá mất user. Portway thêm trước một rule cho phép cổng SSH, nếu chưa có. Sau khi firewall đã bật, Portway mở một kết nối SSH mới, và tắt lại firewall nếu kết nối đó thất bại. Kết nối vào không khớp rule nào sẽ nhận chính sách mặc định mà hộp thoại nêu. Việc xoá rule duy nhất cho phép SSH yêu cầu gõ lại tên server, và Portway thử một kết nối mới sau đó, hoàn tác thay đổi nếu thất bại.
+
+Tắt firewall làm mọi cổng đang lắng nghe trên địa chỉ công khai truy cập được từ internet. Các rule vẫn được giữ, để chúng có hiệu lực trở lại khi bật lại firewall.
+
+## Những gì trang đối chiếu
+
+Bên dưới các rule, trang đối chiếu rule với các cổng đang lắng nghe.
+
+| Phần | Ý nghĩa |
+|---|---|
+| **Mở ra internet vì firewall đang tắt** | Các tiến trình lắng nghe trên địa chỉ công khai mà không có gì chặn |
+| **Mở ra internet, không đi qua firewall** | Các cổng Docker. Docker mở chúng trước firewall, nên rule không có tác dụng |
+| **Lắng nghe công khai nhưng bị firewall chặn** | An toàn: tiến trình bind địa chỉ công khai nhưng không có rule cho phép |
+| **Chỉ truy cập trong server (127.0.0.1)** | Không mở ra ngoài. Mỗi dòng có **Mở tunnel** và **Lệnh ssh** để truy cập từ máy tính này |
+| **Rule thừa** | Rule cho phép một cổng mà không tiến trình nào lắng nghe |
+
+Tên tiến trình của user khác cần quyền root, nên user thường thấy `cần root để biết tiến trình` ở một số dòng.
+
+### Sửa một cổng Docker đang mở ra internet
+
+Với cổng container vượt qua firewall, Portway đưa ra hai cách sửa.
+
+- **Bind vào 127.0.0.1 (khuyên dùng).** Sửa tệp compose để cổng được publish trên `127.0.0.1`, chạy **Up** cho dự án để tạo lại container, và truy cập từ máy tính này qua một tunnel.
+- **Chặn trong chain DOCKER-USER.** Giữ nguyên container và thêm một rule `iptables` mà Docker tôn trọng. Cách này chỉ áp dụng cho IPv4, và hộp thoại hiển thị rule cùng cách giữ nó sau khi khởi động lại.
+
+<Aside type="caution">
+  Firewall của nhà cung cấp cloud, như security group, nằm ngoài server. Portway không nhìn thấy nó, và màn hình Tổng quan cùng màn hình này đều nêu điều đó.
+</Aside>

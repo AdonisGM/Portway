@@ -323,7 +323,7 @@ function SpeedTest({ peer, linked }: { peer: ConnectPeer; linked: boolean }) {
           {running ? t('Đang đo…') : t('Đo tốc độ')}
         </Button>
         <span className="min-w-0 flex-1 text-[11.5px] leading-normal text-muted">
-          {why ?? t('Gửi dữ liệu thử khoảng 3 giây mỗi chiều, đã mã hoá như khi truyền tệp.')}
+          {why ?? t('Gửi dữ liệu thử khoảng 1,5 giây mỗi chiều, đã mã hoá như khi truyền tệp.')}
         </span>
       </div>
       {speed && speed.stage !== 'failed' && (

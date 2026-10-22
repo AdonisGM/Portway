@@ -1,0 +1,55 @@
+---
+title: Request HTTP
+description: Gửi request HTTP từ chính server và đọc phản hồi cùng thời gian của từng giai đoạn.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Mục **HTTP (curl)** là một trình dựng request theo phong cách Postman, với một điểm khác biệt: request được chạy bằng `curl` **ngay trên server**. Request tới được các dịch vụ chỉ lắng nghe trên `localhost`, các dịch vụ trong container và các dịch vụ trong mạng nội bộ, và nhận phản hồi như chính server nhận được.
+
+<Figure
+  src="vi/http.webp"
+  alt="Màn hình HTTP với request GET tới https://example.com/, các danh sách đã lưu và lịch sử, các tab của request, và phản hồi có trạng thái 200 OK cùng biểu đồ thời gian của DNS, kết nối TCP, TLS, chờ phản hồi và tải nội dung."
+  caption="Hình 1. Một request và tab Thời gian của phản hồi."
+/>
+
+Server phải có curl. Khi thiếu, Portway hiển thị lệnh cài: `apt install curl` trên Debian và Ubuntu, `dnf install curl` trên RHEL, hoặc `apk add curl` trên Alpine.
+
+## Dựng một request
+
+1. Chọn method và nhập URL. URL phải bắt đầu bằng `http://` hoặc `https://`, và URL không có scheme được hiểu là `http://`. Dòng **Đang nghe trên server** hiển thị các cổng đang lắng nghe trên server, và chọn một cổng sẽ điền vào địa chỉ.
+2. Dùng các tab để hoàn thiện request.
+   - **Params**: tham số truy vấn, luôn đồng bộ với URL.
+   - **Headers**: header của request. `Content-Type` được thêm theo loại body nếu không được đặt tường minh.
+   - **Body**: không có, JSON, dữ liệu form (`application/x-www-form-urlencoded`) hoặc văn bản thuần.
+   - **Auth**: bearer token hoặc xác thực basic.
+   - **Tuỳ chọn**: theo dõi chuyển hướng, timeout, bỏ qua kiểm tra chứng chỉ cho chứng chỉ tự ký hoặc khi gọi bằng IP, nhận nội dung nén, và kết nối tới một IP nhất định trong khi vẫn giữ tên miền trong URL (`curl --resolve`), ví dụ `127.0.0.1` để thử một site Nginx ngay trên server.
+3. Chọn **Gửi**, hoặc nhấn `⌘↵`.
+
+## Đọc phản hồi
+
+Phần đầu của phản hồi hiển thị trạng thái, tổng thời gian, kích thước, địa chỉ đã tới và phiên bản HTTP. Tiếp theo là bốn tab.
+
+| Tab | Nội dung |
+|---|---|
+| **Body** | Nội dung phản hồi, với JSON được định dạng tự động. Body lớn hơn 2 MB chỉ hiển thị 2 MB đầu, và nội dung nhị phân không hiển thị dạng chữ |
+| **Headers** | Header của phản hồi |
+| **Thời gian** | Các giai đoạn: tra cứu tên (DNS), kết nối TCP, bắt tay TLS, chờ phản hồi (xử lý ở server) và tải nội dung |
+| **Lệnh curl** | Lệnh chạy giống hệt trong terminal trên server |
+
+Thời gian được đo bởi `curl` trên server, nên đó là thời gian từ server tới đích, không tính đường đi từ máy tính này.
+
+## Lưu request
+
+**Lưu** giữ lại một request, và các danh sách bên trái hiển thị request đã lưu và lịch sử của server này. Một request đã lưu có thể dùng cho mọi server thay vì chỉ server hiện tại. Token, mật khẩu và header bí mật được cất trong Keychain, phần còn lại được lưu trên máy tính này.
+
+## Cách bí mật được chuyển đi
+
+Token, mật khẩu và header được đưa cho `curl` qua một tệp cấu hình tạm có quyền `600`, được xoá ngay sau đó. Chúng không nằm trên dòng lệnh, nên user khác trên server không thấy được qua `ps`. Tab **Lệnh curl** chứa các bí mật khi request có dùng, vì vậy cần cẩn thận với nó.
+
+<Aside type="note">
+  Request gửi từ màn hình này không nằm trong [nhật ký thao tác](/docs/vi/servers/audit-log/). Chúng được giữ trong lịch sử của màn hình này.
+</Aside>

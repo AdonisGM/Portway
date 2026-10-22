@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* The website in docs/ is a separate project; keep Tailwind from scanning it. */
+@source not "../../docs";
 @import './tokens.css';
 
 /* Map tokens to Tailwind utilities: bg-surface, text-ink, border-line ... */

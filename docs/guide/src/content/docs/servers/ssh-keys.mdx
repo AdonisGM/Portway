@@ -1,0 +1,52 @@
+---
+title: SSH keys
+description: List, create and copy SSH keys, and see which accounts use each key.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+The **SSH keys** screen lists the key pairs that are stored in `~/.ssh` on this computer. Open it from the **Connections** area, next to the server list.
+
+<Figure
+  src="en/keys.webp"
+  alt="The SSH keys screen with three keys, each showing its type, creation date, comment, fingerprint, a Copy public key button and the number of accounts that use it."
+  caption="Figure 1. The list of SSH keys."
+/>
+
+Private keys stay in `~/.ssh`. Portway reads only the public keys to obtain the type and the fingerprint, and it writes a private key only when it generates one.
+
+## Reading the list
+
+Each key shows its name and path, its type (for example `ED25519` or `RSA 3072`), the creation month, the comment and the SHA256 fingerprint. The line below the key shows how many accounts and servers use it. Select **Accounts using this key** to list them. A key whose file is missing is flagged, because servers that use it cannot sign in.
+
+The filters above the list narrow it by type and by use: all keys, keys in use and unused keys. The search field matches the name, the path and the fingerprint. **Rescan ~/.ssh** reads the folder again after keys were added outside Portway.
+
+## Create a key
+
+<Figure
+  src="en/key-new.webp"
+  alt="The New key dialog with the key type ED25519 selected, a file name, a comment, passphrase fields and the equivalent ssh-keygen command."
+  caption="Figure 2. The New key dialog."
+/>
+
+1. Select **New key**.
+2. Choose the type. **ED25519** is recommended: it is short, fast and accepted by every current OpenSSH server. **RSA 4096** is for older servers that do not accept ED25519.
+3. Enter a file name. The pair is saved as `~/.ssh/<name>` and `~/.ssh/<name>.pub`. A name may contain only letters without accents, digits, dots, underscores and hyphens, and it cannot start with a dot or match an existing file.
+4. Optionally enter a comment. When it is empty, `user@hostname` is used, as with `ssh-keygen`.
+5. Optionally enter a passphrase twice.
+6. Check the **Equivalent command** and select **Create key**.
+
+## Authorize a key on a server
+
+**Copy public key** copies the public key. Paste it as a new line into `~/.ssh/authorized_keys` of the user on the server. After that, an account of that server can use the key as its sign-in method.
+
+## Keys with a passphrase
+
+When a key is protected by a passphrase, Portway asks for it at connection time. Selecting **Save in this Mac's Keychain** stores it, so that the question is not repeated. On Windows the passphrase is stored in Credential Manager.
+
+<Aside type="note">
+  An error such as a permission denial at sign-in usually means that the public key is not yet in `~/.ssh/authorized_keys` of that user on the server.
+</Aside>

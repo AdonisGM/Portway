@@ -1,0 +1,61 @@
+---
+title: Troubleshooting
+description: Common messages when connecting to servers and using features, with their causes and fixes.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Portway turns low-level errors into messages that name the likely cause. This page lists the common ones. For problems with two computers, see [Connect troubleshooting](/docs/connect/troubleshooting/).
+
+## Connecting to a server
+
+| Message | Cause and fix |
+|---|---|
+| The server did not respond within 10 seconds | The server is off, on an unreachable network, or the SSH port is blocked. Check the address, the network and the firewall |
+| The server refused the connection on port N | SSH is not running, or it listens on another port. Check the port in the connection form |
+| Couldn't find the address | The domain name is wrong or cannot be resolved. Check the spelling and the DNS |
+| Permission denied, or the key is rejected | The public key is not in `~/.ssh/authorized_keys` of that user on the server. Copy it from [SSH keys](/docs/servers/ssh-keys/) |
+| The key file is not on this computer | Edit the account and choose another key, or restore the file in `~/.ssh` |
+| The key file is damaged or in an unsupported format | Use a key that `ssh-keygen` can read, or create a new one |
+| The server wants two-step sign-in | Portway cannot answer the second step. Use an SSH key for this account |
+| The host key changed | The server may have been reinstalled, but the connection could also be intercepted. See below |
+
+### A changed host key
+
+Portway refuses to connect when the key that the server presents differs from the one saved in `~/.ssh/known_hosts`. The message shows the line of the file. If the server was reinstalled, remove the old key with the command that is shown, `ssh-keygen -R`, and connect again. When the change is not expected, do not continue, and check the server by another way.
+
+### Through a jump host
+
+Errors that name the jump host mean that the first hop failed. Connect to the jump host directly once, to trust its host key and to save its password or passphrase, and check that its `sshd` allows `AllowTcpForwarding`. A chain that is too long or that loops back is refused. See [Jump hosts](/docs/servers/jump-hosts/).
+
+## Features that say they are unavailable
+
+| Feature | Message | Fix |
+|---|---|---|
+| Files | The server couldn't start SFTP | The `sftp` subsystem is disabled in `sshd`. Enable it, or use another feature |
+| Files | A folder cannot be read | The user lacks permission. Use [root access](/docs/files/permissions-and-root/) |
+| Docker | Docker is not installed, or the user is not in the `docker` group, or the daemon is not running | See [Docker containers](/docs/docker/containers/) |
+| Services | The server doesn't use systemd | The Services section needs systemd |
+| Journal | The user cannot read the system journal | Turn on [sudo](/docs/servers/sudo/) |
+| Nginx | Root access is needed to read the configuration | Turn on sudo, or connect as root |
+| Firewall | Neither `ufw` nor `firewalld`, or the rules cannot be read | See [Firewall](/docs/web/firewall/) |
+| HTTP | curl is not installed on the server | Install `curl` with the command that is shown |
+| Updates | Not supported on this distro yet | Updates are read from `apt` and `apk` only |
+
+## Tunnels
+
+See the table in [Create tunnels](/docs/tunnels/create/#common-errors). A tunnel that does not start by itself needs its password or passphrase saved in the Keychain, or a connected server.
+
+## Slow screens
+
+Open the **Debug log** and look at the columns **Wait** and **Duration**. A long wait means that several operations competed for the limited SSH channels of the session. A long duration means that the command was slow on the server. See [Audit log and debug log](/docs/servers/audit-log/).
+
+## Keychain prompts on macOS
+
+When a build is signed differently from the previous one, macOS treats it as a new application and asks again for access to saved secrets. Choosing **Always Allow** applies to that build only.
+
+## Reporting a problem
+
+Report problems and ideas on the [issues page of the project](https://github.com/AdonisGM/Portway/issues). Include the version from **Settings › About**, the operating system, and the relevant lines from the debug log. Remove secrets before sharing anything.

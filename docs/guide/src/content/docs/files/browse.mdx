@@ -1,0 +1,67 @@
+---
+title: Browse and manage files
+description: Navigate folders over SFTP, select items, upload, download, rename, change permissions and delete.
+sidebar:
+  order: 1
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+The **Files (SFTP)** section of a server is a file manager for the server. It works as the user of the session. [Permissions and root access](/docs/files/permissions-and-root/) explains what that user may do, and how to work as root.
+
+<Figure
+  src="en/files.webp"
+  alt="The Files screen for the folder /etc/nginx, with the path bar, the filter field, the file table and a side panel for the selected file nginx.conf with its actions and information."
+  caption="Figure 1. The Files screen with one file selected."
+/>
+
+## The path bar and the toolbar
+
+- The **path bar** shows the current folder as clickable parts. Select an empty spot in it to type a path, and press Enter to go there.
+- **Upload**, **New file** and **New folder** act on the current folder.
+- **Copy to another machine** opens the [Transfer](/docs/files/transfer/) screen with this folder on the left.
+- The last button opens this folder in a terminal.
+- The **filter field** narrows the list by name and supports patterns such as `*.log`.
+- The **Hidden files** button shows or hides dot files and states how many exist in the folder.
+
+## Select items
+
+Click an item to select it. Hold `Ctrl` (`⌘` on macOS) and click to add to the selection, hold `Shift` and click to select a range, and use the checkbox in the header to select all items. The header shows how many items are selected. Double-click a folder to open it, or a file to [edit it in a local application](/docs/files/edit-locally/).
+
+## The side panel
+
+The panel on the right describes the selection.
+
+- **Your access** states what the user may do with the item, calculated from the owner, the group and the mode.
+- **Actions** lists what can be done: rename, change permissions, change owner, download, edit on this computer, open with another application, follow (`tail -f`), copy the path, open in a terminal and delete.
+- **Info** shows the path, the kind, the size, the owner and the times. For a symbolic link it shows the target and whether the link is broken, and for a folder it can count the items and the total size.
+
+## Upload
+
+Drag files or folders from the file manager of the computer onto the list, or use **Upload**. The title of the drop area states the destination folder. When items with the same names already exist, a dialog offers **Skip duplicates** or **Replace**. Replacing overwrites the files on the server, and folders with the same name are merged, which means that matching files inside are overwritten as well.
+
+Large copies are tracked in the [transfer queue](/docs/files/transfer/#the-transfer-queue).
+
+## Download
+
+Select items and choose **Download**. By default Portway asks where to save each download. This can be changed to saving directly into a default folder, as described in [Settings](/docs/app/settings/). Names that already exist get a suffix such as `(1)`.
+
+## Create, rename, change permissions and owner
+
+| Action | Details |
+|---|---|
+| **New file**, **New folder** | Names may not be empty, contain `/` or be `.` or `..` |
+| **Rename** | Works on one item at a time and needs write permission on the folder |
+| **Change permissions** | Shows the mode in numeric form and as checkboxes. A folder can apply the change to everything inside it (`-R`). Only the owner or root can change permissions |
+| **Change owner** | Only root can do this. Turn on [sudo](/docs/servers/sudo/) for the session, or connect as root |
+
+Dialogs show the equivalent command before it runs.
+
+## Delete
+
+**Delete** asks for confirmation and states that it cannot be undone. A folder is deleted together with everything in it, and for a symbolic link only the link itself is deleted.
+
+<Aside type="note">
+  A folder that the user cannot read shows a message that names the owner, the group and the mode. When root access is available, the message offers **Open with the root connection**.
+</Aside>

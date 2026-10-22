@@ -1,0 +1,65 @@
+---
+title: Làm quen với giao diện
+description: Bố cục cửa sổ Portway và vị trí của từng tính năng.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Trang này mô tả bố cục của cửa sổ, để các bài về từng tính năng có thể gọi tên các vị trí.
+
+<Figure
+  src="vi/overview.webp"
+  alt="Cửa sổ Portway với thanh biểu tượng bên trái, cột thứ hai hiển thị server đang kết nối cùng các mục của nó, và màn hình Tổng quan ở vùng chính."
+  caption="Hình 1. Cửa sổ Portway khi một server đang được kết nối."
+/>
+
+## Thanh biểu tượng
+
+Cột hẹp bên trái chuyển giữa các khu vực chính.
+
+| Biểu tượng | Khu vực | Nội dung |
+|---|---|---|
+| Lưới | Quản lý kết nối | [Danh sách server](/docs/vi/servers/manage-servers/) và [khoá SSH](/docs/vi/servers/ssh-keys/) |
+| Server | Server đang kết nối | Các server đang có phiên mở |
+| Thư mục | Chuyển tệp | [Màn hình sao chép hai khung](/docs/vi/files/transfer/) |
+| Mũi tên | Tunnel | [Cấu hình tunnel](/docs/vi/tunnels/create/) và màn hình theo dõi |
+| Máy tính | Connect | [Ghép đôi và liên kết](/docs/vi/connect/overview/) giữa hai máy tính của chính mình |
+| Bánh răng | Cài đặt | [Tuỳ chọn](/docs/vi/app/settings/) |
+| Con bọ | Nhật ký gỡ lỗi | Một cửa sổ riêng liệt kê mọi lệnh, lời gọi SFTP và lần truyền tệp |
+
+Một huy hiệu nhỏ trên biểu tượng cho biết số mục đang hoạt động, ví dụ số tunnel đang chạy.
+
+## Cột thứ hai
+
+Cột cạnh thanh biểu tượng thay đổi theo khu vực.
+
+- Ở **Quản lý kết nối**, cột này liệt kê danh sách server và khoá SSH.
+- Ở một server đang kết nối, cột này liệt kê các phiên của server đó, mỗi user một dòng, và bên dưới là các mục mà server cung cấp.
+
+Các mục của một server phụ thuộc vào những gì có trên nó. Server không có Nginx thì không có mục Nginx, và server không có systemd thì không có mục Dịch vụ. Các mục có thể có là Tổng quan, Tệp (SFTP), Nginx, HTTP (curl), Dịch vụ, Docker và Firewall.
+
+## Phần đầu của màn hình server
+
+Mọi màn hình server đều bắt đầu bằng tên server, trạng thái kết nối, user, địa chỉ, hệ điều hành đã nhận diện và thời gian hoạt động. Ba hành động luôn có sẵn.
+
+- **Ghim** giữ server ở đầu danh sách.
+- **Sao chép lệnh SSH** sao chép lệnh `ssh` tương ứng với phiên.
+- **Mở Terminal** mở terminal của máy tính với lệnh đó.
+
+## Các khay ở đáy cửa sổ
+
+Hai khay xuất hiện phía trên mép dưới của cửa sổ khi cần.
+
+- **Đang sửa trên máy** liệt kê các tệp đang được sửa bằng ứng dụng cục bộ, kèm trạng thái tải lên. Xem [Sửa tệp bằng ứng dụng trên máy](/docs/vi/files/edit-locally/).
+- **Hàng đợi chuyển tệp** hiển thị các lần tải lên, tải xuống và sao chép kèm tiến độ và tốc độ. Xem [Chuyển tệp](/docs/vi/files/transfer/).
+
+## Thanh tiêu đề
+
+Thanh tiêu đề hiển thị tên ứng dụng và màn hình đang mở, gồm tên server theo sau là tên màn hình. Cửa sổ theo giao diện được chọn trong [Cài đặt](/docs/vi/app/settings/).
+
+<Aside type="note">
+  Ảnh chụp trong tài liệu này lấy từ bản macOS. Trên Windows, cửa sổ dùng thanh tiêu đề gốc của hệ điều hành, và các màn hình xuất hiện ở cùng vị trí.
+</Aside>

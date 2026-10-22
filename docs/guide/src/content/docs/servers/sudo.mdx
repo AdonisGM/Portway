@@ -1,0 +1,51 @@
+---
+title: Sudo
+description: Turn on sudo for a session, what it changes and how the password is handled.
+sidebar:
+  order: 5
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+Many reads and changes need root: the firewall, the processes of other users, Docker for users outside the `docker` group, the nginx configuration and system logs. When a session is signed in as a regular user, sudo gives access to them without signing in as root.
+
+## Turn on sudo
+
+<Steps>
+
+1. Open the Overview of the session and select **Use sudo for this session** in the notice at the top, or use the same action wherever a screen reports that it needs sudo.
+
+2. Enter the sudo password of the user. Leave the field empty when sudo does not ask for a password (`NOPASSWD`).
+
+   <Figure
+     src="en/sudo.webp"
+     alt="The dialog Use sudo for deploy@web-prod with a password field, a note that an empty field is allowed for NOPASSWD, and the buttons Cancel and Turn on sudo."
+     caption="Figure 1. The sudo dialog."
+   />
+
+3. Select **Turn on sudo**.
+
+</Steps>
+
+Portway first tries `sudo -n true`, which succeeds when no password is needed. Otherwise it validates the password with `sudo -S -k -p ''`. A wrong password or a user that is not allowed to use sudo is reported with the reason.
+
+## How the password is handled
+
+- The password stays in the memory of Portway for this session only and is not saved.
+- It is passed to `sudo` through standard input, so it does not appear in a command line, in the audit log or in the debug log.
+- When the session ends, the password is gone.
+
+## What changes while sudo is on
+
+Commands that need elevated rights run through `sudo`, and only when an action requires it. The dialog of such an action states `Sudo` and shows the exact command, which starts with `sudo`. Reads that do not need elevated rights still run as the user.
+
+Files are a separate decision. Turning on sudo does not make file operations run as root. A [root access switch](/docs/files/permissions-and-root/) in the Files screen does that, because files that are created as root belong to root.
+
+## Turn it off
+
+**Turn off sudo** ends the mode. It runs `sudo -k`, which discards the cached credential, and the action is written to the audit log. Disconnecting the session also ends it.
+
+<Aside type="note">
+  A user that is already `root` does not need sudo. For such a session, dialogs state that sudo is not needed.
+</Aside>

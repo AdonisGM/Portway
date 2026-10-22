@@ -216,7 +216,7 @@ const en: Dict = {
   'Độ trễ hiện tại': 'Latency now',
   'Gửi clipboard sang máy này': 'Send clipboard to this machine',
   'Gửi đi': 'Upload',
-  'Gửi dữ liệu thử khoảng 3 giây mỗi chiều, đã mã hoá như khi truyền tệp.': 'Sends test data for about 3 seconds each way, encrypted like a file transfer.',
+  'Gửi dữ liệu thử khoảng 1,5 giây mỗi chiều, đã mã hoá như khi truyền tệp.': 'Sends test data for about 1.5 seconds each way, encrypted like a file transfer.',
   'Gửi gói Wake-on-LAN qua mọi card mạng, rồi đợi máy lên.': 'Sends a Wake-on-LAN packet through every network card, then waits for the machine to come up.',
   'Gửi tệp và thư mục': 'Send files and folders',
   'Gửi văn bản đang copy. Có thể bật tự gửi mỗi khi bạn copy.': 'Sends the text you copied. You can also turn on sending it automatically whenever you copy.',

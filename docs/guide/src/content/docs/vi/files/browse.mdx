@@ -1,0 +1,67 @@
+---
+title: Duyệt và quản lý tệp
+description: Điều hướng thư mục qua SFTP, chọn mục, tải lên, tải xuống, đổi tên, đổi quyền và xoá.
+sidebar:
+  order: 1
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Mục **Tệp (SFTP)** của một server là một trình quản lý tệp cho server đó. Mục này làm việc với quyền của user trong phiên. Bài [Quyền truy cập và quyền root](/docs/vi/files/permissions-and-root/) giải thích user đó được làm gì, và cách làm việc bằng root.
+
+<Figure
+  src="vi/files.webp"
+  alt="Màn hình Tệp cho thư mục /etc/nginx, với thanh đường dẫn, ô lọc, bảng tệp và bảng bên phải mô tả tệp nginx.conf đang được chọn cùng các thao tác và thông tin của nó."
+  caption="Hình 1. Màn hình Tệp khi một tệp đang được chọn."
+/>
+
+## Thanh đường dẫn và thanh công cụ
+
+- **Thanh đường dẫn** hiển thị thư mục hiện tại thành các phần có thể bấm. Chọn một chỗ trống trong thanh để gõ đường dẫn, rồi nhấn Enter để tới đó.
+- **Tải lên**, **Tệp mới** và **Thư mục mới** tác động lên thư mục hiện tại.
+- **Chép sang máy khác** mở màn hình [Chuyển tệp](/docs/vi/files/transfer/) với thư mục này ở bên trái.
+- Nút cuối cùng mở thư mục này trong một terminal.
+- **Ô lọc** thu hẹp danh sách theo tên và hỗ trợ mẫu như `*.log`.
+- Nút **Tệp ẩn** hiện hoặc ẩn các tệp bắt đầu bằng dấu chấm, và cho biết trong thư mục có bao nhiêu tệp như vậy.
+
+## Chọn mục
+
+Bấm vào một mục để chọn. Giữ `Ctrl` (`⌘` trên macOS) và bấm để thêm vào vùng chọn, giữ `Shift` và bấm để chọn một dải, và dùng ô chọn ở tiêu đề để chọn mọi mục. Tiêu đề cho biết số mục đã chọn. Bấm đúp một thư mục để mở, hoặc bấm đúp một tệp để [sửa bằng ứng dụng trên máy](/docs/vi/files/edit-locally/).
+
+## Bảng bên phải
+
+Bảng bên phải mô tả phần đang chọn.
+
+- **Quyền của bạn** nêu user được làm gì với mục đó, tính theo chủ sở hữu, nhóm và quyền của mục.
+- **Thao tác** liệt kê những việc có thể làm: đổi tên, sửa quyền, đổi chủ sở hữu, tải xuống, sửa trên máy, mở bằng ứng dụng khác, theo dõi (`tail -f`), sao chép đường dẫn, mở trong terminal và xoá.
+- **Thông tin** hiển thị đường dẫn, loại, kích thước, chủ sở hữu và các mốc thời gian. Với liên kết tượng trưng, bảng hiển thị đích và việc liên kết có bị hỏng không, còn với thư mục, bảng có thể đếm số mục và tổng dung lượng.
+
+## Tải lên
+
+Kéo tệp hoặc thư mục từ trình quản lý tệp của máy tính vào danh sách, hoặc dùng **Tải lên**. Tiêu đề của vùng thả nêu thư mục đích. Khi đã có mục trùng tên, một hộp thoại đưa ra lựa chọn **Bỏ qua mục trùng** hoặc **Ghi đè**. Ghi đè thay thế các tệp trên server, và thư mục trùng tên được gộp, nghĩa là các tệp trùng nằm bên trong cũng bị ghi đè.
+
+Các lần sao chép lớn được theo dõi trong [hàng đợi truyền tệp](/docs/vi/files/transfer/#hàng-đợi-truyền-tệp).
+
+## Tải xuống
+
+Chọn các mục rồi chọn **Tải xuống**. Mặc định, Portway hỏi nơi lưu cho từng lần tải. Có thể đổi thành lưu thẳng vào một thư mục mặc định, như mô tả trong [Cài đặt](/docs/vi/app/settings/). Tên đã tồn tại sẽ được thêm hậu tố như `(1)`.
+
+## Tạo, đổi tên, đổi quyền và chủ sở hữu
+
+| Thao tác | Chi tiết |
+|---|---|
+| **Tệp mới**, **Thư mục mới** | Tên không được để trống, không chứa `/` và không được là `.` hay `..` |
+| **Đổi tên** | Làm được với một mục tại một thời điểm và cần quyền ghi trên thư mục |
+| **Sửa quyền** | Hiển thị quyền ở dạng số và dạng ô chọn. Với thư mục có thể áp dụng cho mọi thứ bên trong (`-R`). Chỉ chủ sở hữu hoặc root mới đổi được quyền |
+| **Đổi owner** | Chỉ root làm được. Hãy bật [sudo](/docs/vi/servers/sudo/) cho phiên, hoặc kết nối bằng root |
+
+Các hộp thoại hiển thị lệnh tương đương trước khi chạy.
+
+## Xoá
+
+**Xoá** yêu cầu xác nhận và nêu rõ rằng không thể hoàn tác. Thư mục bị xoá cùng toàn bộ nội dung bên trong, còn với liên kết tượng trưng thì chỉ bản thân liên kết bị xoá.
+
+<Aside type="note">
+  Thư mục mà user không đọc được sẽ hiển thị thông báo nêu chủ sở hữu, nhóm và quyền. Khi có quyền root, thông báo đưa ra nút **Mở bằng kết nối root**.
+</Aside>

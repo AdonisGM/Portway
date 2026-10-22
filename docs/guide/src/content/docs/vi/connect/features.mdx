@@ -1,0 +1,70 @@
+---
+title: Dùng liên kết
+description: Gửi tệp, chia sẻ clipboard, đánh thức máy, đo mạng và so sánh hai máy tính.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Chọn một máy đã ghép đôi trong màn hình Connect để mở trang của nó. Trang có một thẻ cho mỗi việc mà hai máy tính có thể làm cùng nhau. Một số thẻ cần liên kết đang hoạt động, và mỗi thẻ nêu rõ nó cần gì.
+
+## Thông số máy
+
+Hai cột so sánh **Máy này** và **Máy kia**: mẫu máy, hệ điều hành, bộ xử lý với số nhân và số luồng, card đồ hoạ, bộ nhớ, ổ đĩa, các card mạng kèm tốc độ, thời gian đã bật và phiên bản Portway. Mức tải CPU và bộ nhớ cập nhật sau mỗi vài giây khi liên kết đang hoạt động và được vẽ thành thanh và biểu đồ ngắn. Với máy đang tắt, trang giữ các thông số từ lần thấy gần nhất. Máy chạy bản Portway cũ không gửi thông số sẽ có ghi chú yêu cầu cập nhật.
+
+## Gửi tệp và thư mục
+
+Dùng **Gửi tệp…** trên dòng của một máy đang thấy trong mạng, hoặc **Gửi thư mục…** trong menu của nó. Việc gửi không cần liên kết đang mở. Mỗi lần gửi mở một kết nối mã hoá riêng.
+
+- Máy nhận luôn được hỏi **Nhận** hay **Từ chối**. Yêu cầu nêu tên máy gửi, số lượng và dung lượng tệp.
+- Tệp được lưu vào thư mục tải xuống mặc định. Một tệp không bao giờ thay thế tệp khác: tên trùng được thêm ` (1)`.
+- Tệp được ghi dưới tên tạm và chỉ được đổi tên khi mã kiểm tra khớp. Tệp bị hỏng bị loại bỏ.
+- Thư mục đến thành một thư mục, và tên đã tồn tại được thêm hậu tố thay vì gộp vào. Thư mục rỗng và liên kết bị bỏ qua. Một lần truyền giới hạn ở 20.000 tệp. Lần truyền bị gián đoạn không thể tiếp tục.
+
+Danh sách **Truyền tệp** hiển thị những gì đã gửi và đã nhận, kèm tiến độ và lựa chọn **Hiện trong thư mục**.
+
+## Clipboard
+
+Thẻ clipboard hiển thị hai máy với một mũi tên cho mỗi chiều, và các công tắc bên dưới quyết định điều thực sự xảy ra. Cả hai chiều đều tắt theo mặc định và được đặt riêng cho từng máy.
+
+| Tuỳ chọn | Tác dụng |
+|---|---|
+| **Gửi clipboard** | Gửi đoạn văn bản vừa được sao chép |
+| **Tự gửi sang máy kia** | Gửi văn bản mỗi khi có gì được sao chép, trong khi liên kết đang hoạt động |
+| **Nhận từ máy kia** | Cho phép máy kia ghi vào clipboard của máy này |
+
+Máy kia xác nhận từng lần chuyển. Thẻ cho biết văn bản đã đến hay vì sao chưa: máy kia chưa bật nhận, văn bản quá dài hoặc không ghi được vào clipboard. Văn bản giới hạn ở khoảng 40.000 ký tự và không bao giờ bị cắt âm thầm. Văn bản mà ứng dụng nguồn đánh dấu là nhạy cảm, như mục lấy từ trình quản lý mật khẩu, không bao giờ được tự động gửi. Nội dung không được ghi vào bất kỳ nhật ký nào.
+
+### Sao chép tệp ở máy này, dán ở máy kia
+
+Sao chép tệp hoặc thư mục trong Finder hay Explorer. Máy kia hiển thị rằng đã có mục được sao chép, kèm số lượng và dung lượng. Dán ở đó sẽ lấy tệp ngay lúc dán, hoặc **Lưu vào Downloads** để lưu chúng. Khi sao chép, chỉ tên và kích thước được gửi. Nội dung di chuyển lúc dán, trên một kết nối mã hoá riêng, và chỉ với những tệp còn nằm trên clipboard của máy gửi.
+
+- **Sang macOS**, lệnh dán trong Finder chờ tới khi tệp về, và có thể làm cửa sổ Portway không phản hồi trong thời gian đó.
+- **Sang Windows**, lệnh dán trong Explorer hiển thị hộp thoại tiến độ riêng. Việc dán cả thư mục chưa được hỗ trợ, nên hãy dùng **Lưu vào Downloads** cho thư mục.
+- Khi **Tự gửi** tắt, dùng **Gửi tệp đang copy** để báo các tệp.
+- Nếu máy kia sao chép thứ khác, các tệp trước đó không còn nữa.
+
+<Aside type="caution">
+  Việc dán tệp trong Windows Explorer đã được cài đặt, nhưng chưa được kiểm chứng trên một máy Windows thật.
+</Aside>
+
+## Đánh thức một máy
+
+**Đánh thức** gửi gói Wake-on-LAN qua mọi card mạng rồi chờ tối đa 2 phút để máy xuất hiện lại. Việc này cần địa chỉ MAC của máy kia, được trao đổi sau khi ghép đôi, hoặc lần đầu hai máy kết nối với nhau.
+
+Máy đích phải được chuẩn bị trước.
+
+- Wake-on-LAN phải được bật trong BIOS hoặc UEFI và trong cài đặt của card mạng. Trên Windows, hãy bật **Wake on Magic Packet** và tắt Fast Startup, vì nó thường làm việc đánh thức một máy đã tắt hẳn không hoạt động.
+- Mac chỉ thức dậy được từ trạng thái ngủ, qua cáp mạng, khi bật **Wake for network access**. Máy đã tắt hẳn, hoặc Mac dùng Wi-Fi, thường không đánh thức được.
+- Máy đích cần một dây cáp mạng cắm vào cùng mạng.
+
+Trên Windows, Portway chạy khi người dùng đăng nhập. Sau khi được đánh thức, máy dừng ở màn hình đăng nhập, nên chưa trả lời được cho tới khi có người đăng nhập, trừ khi bật tự đăng nhập. [Cài đặt](/docs/vi/app/settings/) có một dịch vụ tuỳ chọn thông báo rằng máy đã bật trước khi đăng nhập.
+
+## Đo mạng
+
+**Đo tốc độ** gửi dữ liệu thử qua một kết nối mã hoá riêng trong vài giây theo mỗi chiều. Kết quả là tốc độ mà Portway thực sự đạt được, đã tính cả chi phí mã hoá, và hiển thị tốc độ tải về, tải lên cùng thời điểm đo. Trang cũng hiển thị độ trễ hiện tại, trung bình và độ dao động kèm biểu đồ của một phút gần nhất, cùng các đường tới máy kia. Việc đo chỉ dùng được khi máy kia báo rằng nó hỗ trợ.
+
+<Aside type="note">
+  Tính năng nào đã sẵn sàng được nêu ở thẻ **Tính năng** của trang. Tính năng chưa dùng được kèm lý do, ví dụ máy kia chạy phiên bản cũ.
+</Aside>

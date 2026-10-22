@@ -1,0 +1,38 @@
+---
+title: Jump hosts
+description: Reach servers that do not expose SSH to the internet by connecting through a bastion.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A jump host, also called a bastion, is a server that is reachable from the internet and that can reach other servers on a private network. Portway connects to the jump host first and then continues to the target server through it. The behavior is the same as `ssh -J`.
+
+## Configure a jump host
+
+1. Save the jump host as an ordinary server and connect to it once directly.
+2. Open the form of the target server, or add it as a new server.
+3. In **Connect via (jump host)**, choose an account of the saved jump host. The default is **None, connect directly**.
+4. Enter the host and port of the target as they are seen **from the jump host**. This can be a private address that only the jump host can reach.
+5. Save the server and connect.
+
+The form shows the equivalent `ssh` command, which includes the jump host.
+
+## Requirements
+
+- The jump host must have been connected directly at least once, so that its host key is trusted and, when the account uses a password or a passphrase, so that the secret can be saved in the Keychain. Without this step, Portway reports that the host key of the jump host is not trusted or that a secret is missing, and asks for a direct connection first.
+- The `sshd` of the jump host must allow TCP forwarding (`AllowTcpForwarding`).
+- The host and port of the target must be correct as seen from the jump host.
+
+## What is not allowed
+
+A chain of jump hosts may not loop back to the server itself, and a chain that is too long is refused. The error message names the servers whose **Connect via** setting should be checked.
+
+## How it behaves
+
+The connection to the jump host is stored inside the session of the target. When the session is dropped, the whole chain is dropped. Tunnels and other features use the same route.
+
+<Aside type="note">
+  When hosts are imported from `~/.ssh/config`, the first hop of a `ProxyJump` setting becomes the **Connect via** setting, provided that it names another `Host` of the same file. See [Manage servers](/docs/servers/manage-servers/).
+</Aside>

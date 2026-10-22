@@ -1,0 +1,72 @@
+---
+title: Tổng quan kiến trúc
+description: Cách giao diện Portway, phần Rust phía sau và dữ liệu cục bộ phối hợp với nhau.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Portway là một ứng dụng Tauri 2. Giao diện React chạy trong web view của hệ điều hành, còn phần Rust phía sau thực hiện mọi thao tác liên quan tới mạng, hệ thống tệp và bí mật. Thông tin đăng nhập chỉ được lưu và sử dụng ở phía Rust, và giao diện không tự mở socket.
+
+## Các lớp
+
+```text
+Giao diện React (web view)
+   |  invoke(lệnh, tham số)          sự kiện: transfer, settings, trace, logtail
+   v
+Tauri IPC
+   v
+Phần Rust phía sau
+   |-- russh và russh-sftp         ->  phiên SSH, SFTP, tunnel
+   |-- kho bí mật của hệ điều hành ->  Keychain hoặc Credential Manager
+   `-- tệp JSON                    ->  server, tunnel, request, cài đặt, nhật ký thao tác
+```
+
+Giao diện gọi phần Rust qua một lớp có kiểu dữ liệu trong `src/lib/api.ts`. Tệp này cũng chứa một bản thay thế nhỏ dùng khi giao diện chạy trong trình duyệt thông thường lúc phát triển. Bản thay thế chỉ xử lý dữ liệu cục bộ như danh sách server, còn các thao tác cần kết nối thật chỉ có trong ứng dụng.
+
+## Giao diện
+
+- React 19 cùng Vite và Tailwind CSS. Biểu tượng lấy từ `lucide-react`.
+- Trạng thái dùng chung nằm trong các provider ở `src/app/`: server, kết nối, tunnel, truyền tệp, cài đặt, trace, Connect, tệp đang sửa trên máy và điều hướng.
+- Mỗi màn hình là một thư mục trong `src/screens/`, ví dụ servers, files, transfer, docker, services, nginx, firewall, http, tunnels, connect và settings.
+- Văn bản được viết một lần bằng tiếng Việt và đi qua một hàm dịch. Từ điển tiếng Anh nằm trong `src/i18n/en/`, và một script (`pnpm i18n:check`) báo lỗi khi thiếu mục dịch.
+
+## Các module phía Rust
+
+| Nhóm | Module | Trách nhiệm |
+|---|---|---|
+| Kết nối | `ssh`, `servers`, `keys`, `ssh_config`, `askpass` | Phiên SSH, danh sách server đã lưu, khoá trong `~/.ssh`, nhập từ `~/.ssh/config`, hỏi mật khẩu cho terminal mở trên Windows |
+| Tệp | `files`, `transfers`, `editing`, `local` | Thao tác SFTP, hàng đợi truyền tệp, sửa tệp từ xa bằng ứng dụng trên máy, thư mục trên máy tính này |
+| Tunnel | `tunnels`, `tunnel_stats` | Chuyển tiếp Local, SOCKS5 và Remote, cùng các số liệu trực tiếp của tunnel đang chạy |
+| Quản trị | `docker`, `services`, `nginx`, `firewall`, `firewalld`, `ports`, `disks`, `http`, `logtail` | Đọc và thay đổi server bằng chính các công cụ dòng lệnh của server |
+| Ghi nhận | `audit`, `trace` | Nhật ký thao tác và nhật ký gỡ lỗi |
+| Nền tảng | `secrets`, `settings`, `background`, `beacon`, `i18n` | Lưu bí mật, tuỳ chọn, chạy nền ở khay hệ thống, beacon trước khi đăng nhập trên Windows, ngôn ngữ của thông báo phía Rust |
+| Connect | `connect/` | Tìm máy, ghép đôi và kênh mã hoá giữa hai bản Portway |
+
+## Một yêu cầu từ đầu đến cuối
+
+Việc mở màn hình Nginx cho thấy luồng xử lý chung.
+
+1. Giao diện gọi một lệnh phía Rust, kèm server và user của phiên đang dùng.
+2. Lệnh tìm phiên tương ứng và chạy `nginx -T` qua kênh exec của SSH. Kết quả là cấu hình mà nginx đang thực sự nạp.
+3. Phía Rust bổ sung các site trong `sites-available` chưa được bật, đọc chứng chỉ mà từng site phục vụ bằng `openssl s_client`, và kiểm tra từng đích proxy bằng một kết nối TCP từ server.
+4. Kết quả trả về giao diện dưới dạng một cấu trúc duy nhất, và màn hình vẽ thành sơ đồ gồm tên miền, nginx và đích.
+5. Một thay đổi, chẳng hạn tắt một site, được ghi vào nhật ký thao tác rồi kiểm tra bằng `nginx -t`. Khi phép kiểm tra thất bại, thay đổi được hoàn tác.
+
+## Dữ liệu cục bộ
+
+Cấu hình được lưu trong thư mục dữ liệu ứng dụng của người dùng, ví dụ `~/Library/Application Support/com.portway.app/` trên macOS.
+
+| Tệp | Nội dung |
+|---|---|
+| `servers.json` | Server và tài khoản đã lưu, không chứa mật khẩu |
+| `tunnels.json` | Cấu hình tunnel |
+| `http.json` | Request đã lưu và lịch sử, đã lược bỏ bí mật |
+| `settings.json` | Tuỳ chọn như ngôn ngữ và giao diện |
+| `audit.jsonl` | Nhật ký thao tác, mỗi dòng là một đối tượng JSON |
+| `connect.json` | Trạng thái bật hoặc tắt của Connect, phần công khai của danh tính máy này và các máy đã ghép đôi; khoá riêng nằm trong kho bí mật |
+
+<Aside type="note">
+  Nhật ký gỡ lỗi khác với nhật ký thao tác. Nhật ký gỡ lỗi chỉ được giữ trong bộ nhớ và được mô tả trong bài [Phiên SSH và cách chạy lệnh](/docs/vi/internals/ssh-sessions/).
+</Aside>

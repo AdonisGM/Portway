@@ -1,0 +1,62 @@
+---
+title: Tài liệu Portway
+description: Hướng dẫn cài đặt Portway, kết nối tới server Linux qua SSH và quản lý tệp, tunnel, Docker, Nginx, firewall.
+template: splash
+hero:
+  tagline: Ứng dụng desktop quản trị server Linux qua SSH trên macOS và Windows. Không cần cài agent lên server, và mọi thay đổi do Portway thực hiện đều được ghi vào nhật ký thao tác.
+  actions:
+    - text: Cài đặt Portway
+      link: /docs/vi/getting-started/install/
+      icon: right-arrow
+    - text: Thêm server đầu tiên
+      link: /docs/vi/getting-started/add-server/
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Giới thiệu
+
+<CardGrid>
+  <LinkCard title="Portway là gì" description="Tổng quan ngắn về ứng dụng và những gì nó làm." href="/docs/vi/introduction/what-is-portway/" />
+  <LinkCard title="Vì sao có Portway" description="Nhu cầu đứng sau, đối tượng sử dụng và giới hạn phạm vi." href="/docs/vi/introduction/why-portway/" />
+  <LinkCard title="Ý tưởng thiết kế" description="Truy cập không agent, lệnh hiển thị rõ, nhật ký thao tác và các biện pháp an toàn." href="/docs/vi/architecture/concepts/" />
+</CardGrid>
+
+## Bắt đầu
+
+<CardGrid>
+  <LinkCard title="Cài đặt Portway" description="Yêu cầu và cách cài đặt trên macOS và Windows." href="/docs/vi/getting-started/install/" />
+  <LinkCard title="Thêm server và kết nối" description="Tạo kết nối và xác minh khoá máy chủ." href="/docs/vi/getting-started/add-server/" />
+  <LinkCard title="Làm quen với giao diện" description="Bố cục cửa sổ và vị trí của từng tính năng." href="/docs/vi/getting-started/interface-tour/" />
+</CardGrid>
+
+## Hướng dẫn
+
+<CardGrid>
+  <Card title="Server và truy cập" icon="laptop">
+    [Quản lý server](/docs/vi/servers/manage-servers/), [jump host](/docs/vi/servers/jump-hosts/), [khoá SSH](/docs/vi/servers/ssh-keys/), [tổng quan](/docs/vi/servers/overview/), [sudo](/docs/vi/servers/sudo/) và [nhật ký thao tác](/docs/vi/servers/audit-log/).
+  </Card>
+  <Card title="Tệp" icon="document">
+    [Duyệt tệp](/docs/vi/files/browse/), [quyền và root](/docs/vi/files/permissions-and-root/), [sửa trên máy](/docs/vi/files/edit-locally/), [log](/docs/vi/files/follow-logs/) và [chuyển tệp](/docs/vi/files/transfer/).
+  </Card>
+  <Card title="Tunnel" icon="random">
+    [Tạo tunnel](/docs/vi/tunnels/create/) và đọc [màn hình theo dõi](/docs/vi/tunnels/monitor/).
+  </Card>
+  <Card title="Docker" icon="rocket">
+    [Container](/docs/vi/docker/containers/), [Compose](/docs/vi/docker/compose/), [image và volume](/docs/vi/docker/images-and-volumes/).
+  </Card>
+  <Card title="Dịch vụ, web và firewall" icon="setting">
+    [systemd](/docs/vi/services/systemd/), [Nginx](/docs/vi/web/nginx/), [firewall](/docs/vi/web/firewall/) và [request HTTP](/docs/vi/web/http/).
+  </Card>
+  <Card title="Connect" icon="puzzle">
+    Dành cho hai máy tính của cùng một người trong một mạng: [tổng quan](/docs/vi/connect/overview/), [ghép đôi](/docs/vi/connect/pairing/), [tính năng](/docs/vi/connect/features/) và [khắc phục sự cố](/docs/vi/connect/troubleshooting/).
+  </Card>
+</CardGrid>
+
+## Tài liệu kỹ thuật
+
+<CardGrid>
+  <LinkCard title="Kỹ thuật bên trong" description="Kiến trúc, phiên SSH, giao thức Connect, cùng cách bảo vệ bí mật và dữ liệu." href="/docs/vi/internals/architecture/" />
+  <LinkCard title="Ứng dụng" description="Cài đặt và khắc phục sự cố." href="/docs/vi/app/settings/" />
+</CardGrid>

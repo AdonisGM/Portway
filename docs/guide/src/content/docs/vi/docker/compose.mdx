@@ -1,0 +1,34 @@
+---
+title: Dự án Docker Compose
+description: Chạy, cập nhật, khởi động lại và dừng mọi container của một dự án Compose cùng lúc.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Các container được chạy bằng `docker compose` thuộc về một dự án. Trang **Compose** liệt kê các dự án của server và cung cấp hành động cho cả dự án. Các hành động này cũng xuất hiện ở tiêu đề của từng nhóm dự án trên [danh sách container](/docs/vi/docker/containers/).
+
+<Figure
+  src="vi/docker-compose.webp"
+  alt="Trang Compose với một dự án shop, hiển thị 4/4 đang chạy và 1 job xong, đường dẫn tệp compose, tên các container và các nút Up, Pull + Up, Restart, Down."
+  caption="Hình 1. Trang Compose."
+/>
+
+Mỗi dự án hiển thị tên, số container đang chạy, đường dẫn tệp `docker-compose.yml` trên server và tên các container của nó. Portway tìm tệp compose từ các nhãn mà Docker gắn lên container. Khi thiếu các nhãn đó, dự án được hiển thị không có đường dẫn tệp và các hành động cần tệp sẽ không dùng được.
+
+## Hành động
+
+| Hành động | Lệnh và tác dụng |
+|---|---|
+| **Up** | `docker compose up -d`. Tạo lại các container có cấu hình thay đổi và chạy các container đã dừng |
+| **Pull + Up** | Tải image mới nhất theo tag trong tệp compose, rồi tạo lại các container có image thay đổi |
+| **Restart** | Khởi động lại mọi container của dự án. Dịch vụ bị gián đoạn trong lúc khởi động lại. Các job đã chạy xong của dự án cũng chạy lại, vì `docker compose restart` bao gồm chúng |
+| **Down** | Dừng và xoá các container của dự án và xoá network của nó. Volume được giữ lại, và image không bị xoá. Chạy **Up** để tạo lại các container |
+
+Mỗi hành động hiển thị một hộp xác nhận với lệnh chính xác và danh sách những gì bị ảnh hưởng, ví dụ tên các container bị xoá. Hộp xác nhận cũng nêu các tệp của dự án trên server.
+
+<Aside type="note">
+  Nếu không tìm thấy tệp compose trên server, Portway báo rằng dự án có thể đã được chạy từ máy khác hoặc các tệp đã bị chuyển đi. Các hành động cần tệp đó.
+</Aside>

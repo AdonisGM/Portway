@@ -1,0 +1,38 @@
+---
+title: Jump host
+description: Truy cập các server không mở SSH ra internet bằng cách đi qua một bastion.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Jump host, còn gọi là bastion, là một server truy cập được từ internet và có thể tới được các server khác trong mạng riêng. Portway kết nối tới jump host trước rồi đi tiếp tới server đích thông qua nó. Hành vi giống `ssh -J`.
+
+## Cấu hình jump host
+
+1. Lưu jump host như một server bình thường và kết nối thẳng tới nó một lần.
+2. Mở biểu mẫu của server đích, hoặc thêm nó như một server mới.
+3. Ở **Kết nối qua (jump host)**, chọn một tài khoản của jump host đã lưu. Giá trị mặc định là **Không, kết nối thẳng**.
+4. Nhập host và cổng của đích như được thấy **từ jump host**. Đó có thể là địa chỉ nội bộ mà chỉ jump host mới tới được.
+5. Lưu server rồi kết nối.
+
+Biểu mẫu hiển thị lệnh `ssh` tương đương, trong đó có jump host.
+
+## Yêu cầu
+
+- Jump host phải từng được kết nối thẳng ít nhất một lần, để khoá máy chủ của nó được tin cậy và, khi tài khoản dùng mật khẩu hoặc passphrase, để bí mật được lưu vào Keychain. Nếu thiếu bước này, Portway báo khoá máy chủ của jump host chưa được tin cậy hoặc thiếu bí mật, và yêu cầu kết nối thẳng trước.
+- `sshd` của jump host phải cho phép chuyển tiếp TCP (`AllowTcpForwarding`).
+- Host và cổng của đích phải đúng như được thấy từ jump host.
+
+## Những trường hợp không được phép
+
+Chuỗi jump host không được vòng lại chính server đó, và chuỗi quá dài bị từ chối. Thông báo lỗi nêu tên các server cần kiểm tra lại mục **Kết nối qua**.
+
+## Cách hoạt động
+
+Kết nối tới jump host được lưu bên trong phiên của server đích. Khi phiên bị huỷ, cả chuỗi bị huỷ theo. Tunnel và các tính năng khác dùng cùng đường đi này.
+
+<Aside type="note">
+  Khi nhập host từ `~/.ssh/config`, bước nhảy đầu tiên của thiết lập `ProxyJump` trở thành mục **Kết nối qua**, với điều kiện nó trỏ tới một `Host` khác trong cùng tệp. Xem [Quản lý server](/docs/vi/servers/manage-servers/).
+</Aside>

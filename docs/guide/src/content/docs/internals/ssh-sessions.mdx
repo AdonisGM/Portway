@@ -1,0 +1,56 @@
+---
+title: SSH sessions and command execution
+description: How Portway keeps SSH sessions, verifies host keys, runs commands, uses sudo and records what it does.
+sidebar:
+  order: 3
+---
+
+## Sessions
+
+Portway keeps one SSH session for every combination of server and user, built on the `russh` library. A session owns the connection and the state that belongs to it: the channels that are open, the sudo mode, the SFTP channels and the counters that are used to turn totals into rates.
+
+- A keep-alive message is sent every 15 seconds, and the session is considered lost after three unanswered messages.
+- When a server is reached through a jump host, the connection to the jump host is stored inside the session. Dropping the session drops the whole chain.
+- Tunnels do not share these sessions. Each running tunnel opens its own SSH connection with the saved credential, so it keeps running when the server tab is closed.
+
+## Host keys
+
+Host keys are checked against `~/.ssh/known_hosts`, in the same way as OpenSSH.
+
+| Situation | Behavior |
+|---|---|
+| The key is known and matches | The connection continues |
+| The host is not in `known_hosts` | The fingerprint is shown, and the key is added only after the user confirms it |
+| The saved key differs from the presented key | The connection is refused, and the new fingerprint and the command that removes the old entry are shown |
+
+## Channels
+
+An SSH connection accepts a limited number of channels at the same time, and OpenSSH allows 10 by default. Portway keeps a smaller limit per session, so that several screens can read in parallel without exceeding the limit of the server. The overview alone reads several values at once. Requests that exceed the limit wait for a free channel.
+
+## Running commands
+
+Every administrative read or change is a shell command sent over an exec channel. The backend parses the output, and no agent or helper program is installed on the server.
+
+- Reads use only what exists on every Linux system. For example, listening sockets are read from `/proc/net`, and the owning processes from `/proc/<pid>/fd`, which other users can read only as root.
+- When sudo is turned on for a session, privileged commands run through `sudo -n` when no password is needed, or through `sudo -S -k -p ''` with the password written to standard input. The password never appears in a command line.
+- Quoting follows POSIX rules, and the command that is stored in the logs is the same text that the interface previews.
+
+## Files over SFTP
+
+SFTP uses its own long-lived channel, which is opened the first time that it is needed. Operations run as the user of the session.
+
+When the user turns on root access, Portway opens a second SFTP channel that runs `sudo sftp-server`, so that browsing, uploading, downloading, editing and deleting run with root privileges. Changing the owner of a file always goes through a shell, because SFTP cannot map user names.
+
+A copy between two servers is streamed through the local computer. Data is read from one SFTP session and written to the other without a temporary file.
+
+When a file is edited in a local application, the downloaded copy is stored in a folder that is named after the server, the user and a hash of the server, host, port, user and remote path. Each save is uploaded in place, so the owner and mode of the file stay the same. The upload stops when the file on the server changed after Portway read it, and the user decides whether to overwrite it.
+
+## The audit log and the debug trace
+
+| | Audit log | Debug trace |
+|---|---|---|
+| Content | Actions that Portway performed on the user's behalf: connecting, trusting a host key, sudo, opening a terminal, following a log, and changes to files, services, Docker, firewall rules, sites and tunnels. Requests sent from the HTTP screen are kept in the request history instead | Every remote command, SFTP call, connection step and transfer, with the time spent waiting and running |
+| Storage | `audit.jsonl` in the data folder, newest 1000 entries kept | Memory only, newest 2000 entries kept |
+| Purpose | Review what Portway changed | Explain why a screen is slow |
+
+Commands that the user types in a terminal opened from Portway are not part of the audit log.

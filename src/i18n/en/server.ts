@@ -227,6 +227,7 @@ const en: Dict = {
   'Mạng': 'Network',
   'ra {out} · vào {in} {unit}/s': 'out {out} · in {in} {unit}/s',
   'Tài nguyên': 'Resources',
+  'Ổ đĩa /': 'Disk /',
   'Tiến trình dùng nhiều nhất': 'Top processes',
   'Ảnh chụp lúc {time}': 'Snapshot at {time}',
   'Đang đọc danh sách tiến trình…': 'Reading the process list…',

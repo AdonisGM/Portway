@@ -22,9 +22,9 @@ const CACHE_KEY = 'portway.lang'
 
 function cached(): Lang {
   try {
-    return localStorage.getItem(CACHE_KEY) === 'en' ? 'en' : 'vi'
+    return localStorage.getItem(CACHE_KEY) === 'vi' ? 'vi' : 'en'
   } catch {
-    return 'vi'
+    return 'en'
   }
 }
 

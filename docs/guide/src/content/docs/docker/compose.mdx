@@ -1,0 +1,34 @@
+---
+title: Docker Compose projects
+description: Start, update, restart and stop all containers of a Compose project at once.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+Containers that were started with `docker compose` belong to a project. The **Compose** page lists the projects of the server and offers actions for a whole project. The same actions also appear in the header of each project group on the [container list](/docs/docker/containers/).
+
+<Figure
+  src="en/docker-compose.webp"
+  alt="The Compose page with one project, shop, which shows 4 of 4 running and 1 job done, the path of its compose file, the container names and the buttons Up, Pull and Up, Restart and Down."
+  caption="Figure 1. The Compose page."
+/>
+
+Each project shows its name, how many containers run, the path of its `docker-compose.yml` on the server and the names of its containers. Portway finds the compose file from the labels that Docker puts on the containers. When those labels are missing, the project is shown without a file path and the actions that need the file are unavailable.
+
+## Actions
+
+| Action | Command and effect |
+|---|---|
+| **Up** | `docker compose up -d`. Recreates containers whose configuration changed and starts the stopped ones |
+| **Pull + Up** | Pulls the latest images for the tags in the compose file, then recreates the containers whose image changed |
+| **Restart** | Restarts every container of the project. Services are interrupted while they restart. Finished jobs of the project run again as well, because `docker compose restart` includes them |
+| **Down** | Stops and removes the containers of the project and removes its network. Volumes are kept, and images are not removed. Run **Up** to create the containers again |
+
+Every action shows a confirmation with the exact command and a list of what will be affected, for example the names of the containers that are removed. The confirmation also names the project files on the server.
+
+<Aside type="note">
+  If the compose file is not found on the server, Portway reports that the project may have been started from another machine or that the files were moved. The actions need that file.
+</Aside>

@@ -1,0 +1,52 @@
+---
+title: Ghép đôi hai máy tính
+description: Bật Connect, tìm máy kia và ghép đôi một lần bằng cách so sánh mã sáu chữ số trên cả hai màn hình.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Việc ghép đôi chỉ diễn ra một lần cho mỗi cặp máy tính. Sau đó, hai máy nhận ra nhau và kết nối mà không cần mã khác. Cả hai máy tính phải ở gần cùng một người, vì mã xuất hiện trên cả hai màn hình.
+
+## Trước khi bắt đầu
+
+- Portway chạy trên cả hai máy tính, với các phiên bản tương thích.
+- Cả hai máy tính ở cùng một mạng cục bộ.
+- Lần đầu bật Connect, hệ điều hành có thể hỏi quyền. Trên macOS, hãy cho phép Portway tại **System Settings › Privacy & Security › Local Network**. Trên Windows, hãy cho phép Portway qua tường lửa cho mạng riêng tư. Khi hộp thoại đưa ra lựa chọn mạng riêng tư và mạng công cộng, hãy tích cả hai, hoặc đổi mạng đó sang Private.
+
+## Ghép đôi
+
+<Steps>
+
+1. Trên cả hai máy tính, mở **Connect** từ thanh biểu tượng và bật **Cho phép các Portway trong mạng thấy nhau**. Khi đó Portway mở một cổng nhận kết nối và thông báo một mã định danh ngẫu nhiên lên mạng. Tên máy và mọi thông tin khác chỉ được gửi cho các máy đã ghép đôi.
+
+2. Trên máy thứ nhất, tìm máy kia trong mục **Máy chưa ghép đôi** và chọn **Ghép đôi**. Nếu máy kia không xuất hiện, hãy chờ vài giây, hoặc thêm địa chỉ của nó ở mục **Hoặc theo địa chỉ IP**, ví dụ `10.10.10.2` hoặc `10.10.10.2:47615`.
+
+3. Một hộp thoại trên cả hai máy hiển thị cùng một **Mã ghép đôi** gồm sáu chữ số. Máy bắt đầu việc ghép đôi ghi `Bạn đã yêu cầu ghép đôi`, còn máy kia ghi rằng có một máy muốn ghép đôi với nó.
+
+4. So sánh hai mã. Khi chúng giống hệt nhau, và chính bạn đã bắt đầu việc ghép đôi, chọn **Khớp** trên cả hai máy. Nếu chúng khác nhau, hoặc bạn không phải người bắt đầu, chọn **Không khớp**.
+
+5. Khi cả hai bên đã bấm **Khớp**, một thông báo cho biết hai máy đã được ghép đôi.
+
+</Steps>
+
+Cả hai bên phải xác nhận trong vòng 2 phút. Lần ghép đôi bị từ chối hoặc hết hạn có thể thực hiện lại.
+
+## Vì sao mã quan trọng
+
+Mã chứng minh rằng hai màn hình đang nói chuyện với nhau chứ không phải với một máy thứ ba ở giữa. Mã được tính toán sao cho một máy ở giữa không đoán trước được nó trước khi cả hai bên đã cam kết phần của mình. Chỉ chọn **Khớp** khi hai mã giống nhau, và khi chính bạn đã bắt đầu việc ghép đôi.
+
+## Sau khi ghép đôi
+
+Máy đã ghép đôi xuất hiện trong mục **Máy đã ghép đôi**, kèm trạng thái: `Đang kết nối` cùng độ trễ, `Thấy trong mạng`, hoặc `Không thấy`. Chọn **Kết nối** để mở một liên kết. Mỗi máy chỉ có một liên kết tại một thời điểm. Liên kết dùng đường nhanh nhất tìm được: cáp, Wi-Fi hoặc địa chỉ nhập tay, và độ trễ được đo sau mỗi vài giây. Chọn một dòng để mở trang của máy đó, được mô tả trong bài [Dùng liên kết](/docs/vi/connect/features/).
+
+Nếu mDNS không tìm thấy một máy đã ghép đôi, menu của dòng đó có **Thêm địa chỉ IP**. Cách này dùng được cho các máy đã ghép đôi khi mạng chặn multicast.
+
+## Bỏ ghép đôi
+
+**Bỏ ghép đôi** gỡ bỏ sự tin cậy. Máy kia mất quyền kết nối tới máy này ngay lập tức. Muốn dùng lại, hai máy phải ghép đôi lại với một lần so mã mới. Máy kia vẫn còn nhớ máy này cho đến khi cũng được bỏ ghép đôi ở đó, vì vậy hãy bỏ ghép đôi trên cả hai máy.
+
+<Aside type="note">
+  Nếu khoá của một máy đã ghép đôi thay đổi, ví dụ vì Portway được cài lại, Connect từ chối liên kết và khuyên bỏ ghép đôi rồi ghép đôi lại, kèm việc so mã thật cẩn thận.
+</Aside>

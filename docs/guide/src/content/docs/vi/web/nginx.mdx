@@ -1,0 +1,50 @@
+---
+title: Nginx
+description: Xem mọi site Nginx dưới dạng sơ đồ từ tên miền tới đích, kiểm tra chứng chỉ và upstream, và bật, tắt, kiểm tra site một cách an toàn.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Mục **Nginx** xuất hiện với các server chạy nginx. Mục này biến cấu hình thành một sơ đồ, để các site, đích của chúng và vấn đề của chúng hiện ra ngay.
+
+<Figure
+  src="vi/nginx.webp"
+  alt="Màn hình Nginx với sáu site được vẽ từ tên miền qua nginx tới đích, và bảng bên phải của site api.portway.test đang chọn báo rằng upstream không phản hồi."
+  caption="Hình 1. Sơ đồ Nginx và bảng của một site đang chọn."
+/>
+
+## Dữ liệu được đọc thế nào
+
+Portway đọc cấu hình mà nginx đang thực sự nạp, bằng `nginx -T`, và bổ sung các tệp trong `sites-available` chưa được bật. Chứng chỉ được đọc từ những gì nginx phục vụ, bằng `openssl s_client` với đúng tên server. Các đích proxy nằm trên server được kiểm tra bằng một kết nối TCP. Việc đọc cấu hình cần quyền root. Với user thường, Portway nêu điều đó và đề nghị dùng [sudo](/docs/vi/servers/sudo/).
+
+## Sơ đồ
+
+Mỗi site là một dòng gồm ba phần.
+
+- **Tên miền** hiển thị tên và trạng thái chứng chỉ: `Không SSL`, `SSL còn N ngày` hoặc `SSL hết hạn sau N ngày`, với màu sắc đánh dấu chỗ cần chú ý.
+- **Nginx** hiển thị các cổng lắng nghe và các tính năng như `:443 SSL`, `gzip`, `websocket` hay `HTTP→HTTPS`.
+- **Đích** hiển thị site làm gì: reverse proxy kèm địa chỉ, site tĩnh kèm thư mục, chuyển hướng, hoặc phản hồi cố định. Proxy có upstream không trả lời hiển thị `không phản hồi`.
+
+Các site đang tắt được hiển thị mờ. Phần đầu tóm tắt phiên bản nginx, việc nó có chạy không, có bao nhiêu site và có bao nhiêu chứng chỉ sắp hết hạn.
+
+## Bảng của một site
+
+Chọn một site để xem chi tiết: site đang bật hay tắt, loại, các cổng, đích proxy kèm cảnh báo khi không có gì lắng nghe ở đó (khách truy cập sẽ gặp lỗi 502), và chứng chỉ kèm thời hạn. Bảng cũng cảnh báo về chứng chỉ tự ký, chứng chỉ không chứa tên của site, và cổng HTTP đang phục vụ nội dung thay vì chuyển hướng sang HTTPS. Mục **Log** có **Theo dõi** cho log truy cập và log lỗi trong [trình xem log](/docs/vi/files/follow-logs/), còn mục **Tệp cấu hình** hiển thị đường dẫn, kèm **Xem cấu hình**, **Sửa trên máy** và **Mở thư mục trong Tệp**.
+
+## Kiểm tra, nạp lại, bật và tắt
+
+| Hành động | Tác dụng |
+|---|---|
+| **Kiểm tra cấu hình** | Chạy `nginx -t`. Chỉ đọc và kiểm tra cú pháp, không đổi gì |
+| **Reload** | Kiểm tra cấu hình trước và không reload nếu lỗi. Kết nối đang mở không bị ngắt |
+| **Bật site** | Tạo liên kết trong `sites-enabled`, kiểm tra cấu hình rồi reload. Nếu `nginx -t` lỗi, liên kết được gỡ lại ngay |
+| **Tắt site** | Gỡ liên kết trong `sites-enabled`, tệp trong `sites-available` vẫn giữ, kiểm tra cấu hình rồi reload. Nếu `nginx -t` lỗi, liên kết được đặt lại |
+
+Việc sửa tệp cấu hình bằng **Sửa trên máy** tải lên mỗi lần lưu, như mô tả trong bài [Sửa tệp bằng ứng dụng trên máy](/docs/vi/files/edit-locally/). Sau khi sửa, hãy chạy **Kiểm tra cấu hình** rồi **Reload**. Site có tệp không nằm trong `sites-available` thì Portway không bật hay tắt được.
+
+<Aside type="note">
+  Khi `nginx -t` lỗi, Portway hiển thị nội dung lỗi và không đọc các site. nginx tiếp tục chạy bằng cấu hình cũ cho đến khi lỗi được sửa.
+</Aside>

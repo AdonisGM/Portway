@@ -1,0 +1,75 @@
+---
+title: Chuyển tệp giữa máy tính và server
+description: Sao chép tệp và thư mục giữa máy tính này và một server, hoặc giữa hai server, bằng hai khung.
+sidebar:
+  order: 5
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Màn hình **Chuyển tệp** sao chép tệp giữa hai nơi. Mỗi khung trong hai khung hiển thị hoặc máy tính này hoặc một tài khoản server, nên cùng một màn hình đảm nhiệm việc tải lên, tải xuống và sao chép giữa hai server.
+
+<Figure
+  src="vi/transfer-select.webp"
+  alt="Màn hình Chuyển tệp với máy tính này bên trái và tài khoản root@web-prod bên phải, hai tệp được chọn ở bên trái và mũi tên sao chép đã sáng."
+  caption="Hình 1. Hai tệp được chọn ở bên trái, sẵn sàng sao chép sang server ở bên phải."
+/>
+
+## Thiết lập hai khung
+
+1. Mở **Chuyển tệp** từ thanh biểu tượng.
+2. Trong menu nguồn ở đầu một khung, chọn **Máy này** hoặc một trong các tài khoản, ví dụ `root@web-prod`. Server phải được kết nối trước khi có thể chọn.
+3. Dùng thanh đường dẫn của từng khung để tới một thư mục. Chọn một chỗ trống và gõ đường dẫn.
+
+Mỗi khung có nút làm mới, nút hiện hoặc ẩn tệp ẩn, nút tạo thư mục và nút mở thư mục trong terminal. **Đổi hai bên** đổi chỗ hai khung.
+
+## Sao chép
+
+Chọn các mục ở một khung rồi dùng mũi tên giữa hai khung. Mũi tên cho biết số mục đang chọn. Kéo vùng chọn sang khung kia cũng cho kết quả tương tự, và các phím tắt được liệt kê ở cuối màn hình.
+
+| Phím tắt | Hành động |
+|---|---|
+| `Tab` | Đổi khung |
+| `↑` `↓` | Di chuyển; kèm `Shift` để chọn một dải |
+| `Space` | Chọn |
+| `Enter` | Mở thư mục |
+| `Backspace` | Lên thư mục cha |
+| `⌘A` | Chọn hết |
+| `⌘→` `⌘←` | Chép sang bên kia |
+
+Thư mục được sao chép đệ quy. Khi hai khung hiển thị cùng một thư mục, hoặc khi đích không ghi được, mũi tên bị khoá và một ghi chú nêu lý do.
+
+## Sao chép giữa hai server
+
+Khi cả hai khung hiển thị server, Portway đọc tệp từ server này và ghi sang server kia **thông qua máy tính đang dùng**. Không có tệp tạm nào được lưu, và tốc độ phụ thuộc vào kết nối của máy tính này tới cả hai server. Các khung nêu điều này, vì hai server không kết nối trực tiếp với nhau.
+
+## Trùng tên
+
+Các mục đã tồn tại ở đích được đánh dấu `trùng tên`. Khi một lần sao chép sẽ ghi đè chúng, một hộp thoại so sánh các bản theo kích thước và thời gian.
+
+<Figure
+  src="vi/transfer-conflict.webp"
+  alt="Hộp thoại 2 mục đã có ở đích, với bảng so sánh kích thước và thời gian cùng các lựa chọn Giữ cả hai, Ghi đè và Bỏ qua mục trùng."
+  caption="Hình 2. Hộp thoại xử lý trùng tên."
+/>
+
+- **Giữ cả hai** chép thành tên mới, ví dụ `db-dump (1).sql`.
+- **Ghi đè** thay bản ở đích và không hoàn tác được. Thư mục trùng tên được gộp: tệp trùng bên trong bị thay, tệp khác giữ nguyên.
+- **Bỏ qua mục trùng** chỉ chép các mục không trùng. Lựa chọn này không dùng được khi mọi mục đều trùng.
+
+Một tệp và một thư mục cùng tên là hai loại khác nhau, nên cả hai đều được giữ.
+
+## Hàng đợi truyền tệp
+
+Mỗi lần truyền xuất hiện trong hàng đợi ở đáy cửa sổ kèm nguồn, đích, tiến độ, dung lượng và tốc độ. Hàng đợi cho biết khi mọi việc đã hoàn tất và có bao nhiêu mục lỗi hoặc bị bỏ qua, ví dụ liên kết và tệp đặc biệt. **Xoá mục đã xong** làm trống các dòng đã xong, và lần truyền đã xong trên máy tính này có thể được mở trong trình quản lý tệp.
+
+<Figure
+  src="vi/transfer-done.webp"
+  alt="Màn hình Chuyển tệp sau khi sao chép, với hàng đợi truyền tệp ở góc dưới bên phải hiển thị hai lần tải lên đã xong và thông báo Đã chuyển xong."
+  caption="Hình 3. Hàng đợi truyền tệp sau khi hai tệp được sao chép."
+/>
+
+<Aside type="note">
+  Khi một phiên làm việc bằng root thông qua sudo, khung của phiên đó nêu điều này, vì tệp ghi lên server khi đó sẽ thuộc về root.
+</Aside>

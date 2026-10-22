@@ -1,0 +1,65 @@
+---
+title: Interface tour
+description: The layout of the Portway window and where each feature is found.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+This page describes the layout of the window, so that the pages about individual features can refer to places by name.
+
+<Figure
+  src="en/overview.webp"
+  alt="The Portway window with the icon rail on the left, a second column with the connected server and its sections, and the Overview screen in the main area."
+  caption="Figure 1. The Portway window while a server is connected."
+/>
+
+## The icon rail
+
+The narrow column on the left switches between the main areas.
+
+| Icon | Area | Content |
+|---|---|---|
+| Grid | Connections | The [server list](/docs/servers/manage-servers/) and the [SSH keys](/docs/servers/ssh-keys/) |
+| Server | Connected servers | The servers that currently have an open session |
+| Folders | Transfer | The [two-pane copy screen](/docs/files/transfer/) |
+| Arrows | Tunnel | [Tunnel profiles](/docs/tunnels/create/) and their monitor |
+| Computer | Connect | [Pairing and links](/docs/connect/overview/) between two of your own computers |
+| Gear | Settings | [Preferences](/docs/app/settings/) |
+| Bug | Debug log | A separate window that lists every command, SFTP call and transfer |
+
+A small badge on an icon shows how many items are active, for example how many tunnels are running.
+
+## The second column
+
+The column next to the rail changes with the area.
+
+- Under **Connections**, it lists the server list and the SSH keys.
+- Under a connected server, it lists the sessions of that server, one row for each user, and below them the sections that the server offers.
+
+The sections of a server depend on what exists on it. A server without Nginx has no Nginx section, and a server without systemd has no Services section. The possible sections are Overview, Files (SFTP), Nginx, HTTP (curl), Services, Docker and Firewall.
+
+## The server header
+
+Every server screen starts with the name of the server, its connection state, the user, the address, the detected operating system and the uptime. Three actions are always available.
+
+- **Pin** keeps the server at the top of the list.
+- **Copy SSH command** copies the `ssh` command that corresponds to the session.
+- **Open Terminal** opens the terminal of the computer with that command.
+
+## Docks at the bottom
+
+Two panels appear above the bottom edge of the window when they are needed.
+
+- **Editing on this Mac** lists files that are being edited in a local application, with their upload status. See [Edit files locally](/docs/files/edit-locally/).
+- **Transfer queue** shows uploads, downloads and copies with progress and speed. See [Transfer](/docs/files/transfer/).
+
+## The title bar
+
+The title bar shows the name of the application and the screen that is open, which states the server name followed by the screen. The window follows the theme that is chosen in [Settings](/docs/app/settings/).
+
+<Aside type="note">
+  The screenshots in this guide use the macOS version. On Windows the window uses the native title bar, and the same screens appear in the same places.
+</Aside>

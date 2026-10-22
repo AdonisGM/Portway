@@ -10,6 +10,7 @@ const en: Dict = {
     'Requests run with curl on {name} itself, so they reach services that only listen on localhost, inside containers or on the private network. ⌘↵ to send.',
   'Request mới': 'New request',
   'Đã lưu': 'Saved',
+  'Nhập URL, ví dụ http://127.0.0.1:3000/api/health': 'Enter a URL, for example http://127.0.0.1:3000/api/health',
   'Bấm Lưu để giữ request hay dùng.': 'Click Save to keep requests you use often.',
   'Xoá request đã lưu': 'Delete saved request',
   'Lịch sử': 'History',

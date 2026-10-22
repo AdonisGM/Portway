@@ -1,0 +1,61 @@
+---
+title: Khắc phục sự cố
+description: Các thông báo thường gặp khi kết nối tới server và dùng các tính năng, kèm nguyên nhân và cách sửa.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Portway chuyển các lỗi cấp thấp thành những thông báo nêu nguyên nhân có khả năng nhất. Trang này liệt kê các thông báo thường gặp. Với sự cố liên quan đến hai máy tính, xem [Khắc phục sự cố Connect](/docs/vi/connect/troubleshooting/).
+
+## Kết nối tới server
+
+| Thông báo | Nguyên nhân và cách sửa |
+|---|---|
+| Máy chủ không phản hồi sau 10 giây | Server đang tắt, ở mạng không tới được, hoặc cổng SSH bị chặn. Kiểm tra địa chỉ, mạng và firewall |
+| Máy chủ từ chối kết nối ở cổng N | SSH chưa chạy, hoặc đang nghe ở cổng khác. Kiểm tra cổng trong biểu mẫu kết nối |
+| Không tìm thấy địa chỉ | Tên miền sai hoặc không phân giải được. Kiểm tra chính tả và DNS |
+| Permission denied, hoặc khoá bị từ chối | Khoá công khai chưa nằm trong `~/.ssh/authorized_keys` của user đó trên server. Sao chép nó từ [Khoá SSH](/docs/vi/servers/ssh-keys/) |
+| Tệp khoá không có trên máy này | Sửa tài khoản và chọn khoá khác, hoặc khôi phục tệp trong `~/.ssh` |
+| Tệp khoá hỏng hoặc có định dạng chưa được hỗ trợ | Dùng khoá mà `ssh-keygen` đọc được, hoặc tạo khoá mới |
+| Server đòi xác thực 2 bước | Portway không trả lời được bước thứ hai. Hãy dùng khoá SSH cho tài khoản này |
+| Khoá máy chủ đã thay đổi | Server có thể vừa được cài lại, nhưng kết nối cũng có thể đang bị chặn nghe lén. Xem bên dưới |
+
+### Khoá máy chủ đã thay đổi
+
+Portway từ chối kết nối khi khoá mà server trình ra khác với khoá đã lưu trong `~/.ssh/known_hosts`. Thông báo hiển thị dòng của tệp. Nếu server đã được cài lại, hãy xoá khoá cũ bằng lệnh được hiển thị, `ssh-keygen -R`, rồi kết nối lại. Khi thay đổi không như dự kiến, đừng tiếp tục, và hãy kiểm tra server bằng cách khác.
+
+### Qua jump host
+
+Các lỗi nêu tên jump host có nghĩa là bước nhảy đầu tiên thất bại. Hãy kết nối thẳng tới jump host một lần để tin cậy khoá máy chủ của nó và lưu mật khẩu hoặc passphrase, và kiểm tra `sshd` của nó cho phép `AllowTcpForwarding`. Chuỗi quá dài hoặc vòng lại bị từ chối. Xem [Jump host](/docs/vi/servers/jump-hosts/).
+
+## Tính năng báo là không khả dụng
+
+| Tính năng | Thông báo | Cách sửa |
+|---|---|---|
+| Tệp | Server không mở được SFTP | Subsystem `sftp` bị tắt trong `sshd`. Hãy bật nó, hoặc dùng tính năng khác |
+| Tệp | Không đọc được một thư mục | User thiếu quyền. Dùng [quyền root](/docs/vi/files/permissions-and-root/) |
+| Docker | Docker chưa được cài, hoặc user không thuộc nhóm `docker`, hoặc daemon không chạy | Xem [Container Docker](/docs/vi/docker/containers/) |
+| Dịch vụ | Server không dùng systemd | Mục Dịch vụ cần systemd |
+| Journal | User không đọc được journal hệ thống | Bật [sudo](/docs/vi/servers/sudo/) |
+| Nginx | Cần quyền root để đọc cấu hình | Bật sudo, hoặc kết nối bằng root |
+| Firewall | Không có `ufw` lẫn `firewalld`, hoặc không đọc được rule | Xem [Firewall](/docs/vi/web/firewall/) |
+| HTTP | Server chưa có curl | Cài `curl` bằng lệnh được hiển thị |
+| Bản cập nhật | Chưa hỗ trợ bản phân phối này | Bản cập nhật chỉ được đọc từ `apt` và `apk` |
+
+## Tunnel
+
+Xem bảng trong bài [Tạo tunnel](/docs/vi/tunnels/create/#các-lỗi-thường-gặp). Tunnel không tự mở được cần mật khẩu hoặc passphrase đã lưu trong Keychain, hoặc một server đang kết nối.
+
+## Màn hình chậm
+
+Mở **Nhật ký gỡ lỗi** và xem các cột **Đợi** và **Thời gian**. Thời gian đợi dài nghĩa là nhiều thao tác đã cạnh tranh nhau số kênh SSH có hạn của phiên. Thời gian chạy dài nghĩa là lệnh chạy chậm trên server. Xem [Nhật ký thao tác và nhật ký gỡ lỗi](/docs/vi/servers/audit-log/).
+
+## Hộp thoại Keychain trên macOS
+
+Khi một bản build được ký khác với bản trước, macOS coi nó là một ứng dụng mới và hỏi lại quyền truy cập các bí mật đã lưu. Việc chọn **Always Allow** chỉ áp dụng cho bản build đó.
+
+## Báo cáo sự cố
+
+Hãy báo sự cố và ý tưởng tại [trang issues của dự án](https://github.com/AdonisGM/Portway/issues). Kèm theo phiên bản trong **Cài đặt › Giới thiệu**, hệ điều hành và các dòng liên quan trong nhật ký gỡ lỗi. Hãy xoá bí mật trước khi chia sẻ bất cứ thứ gì.

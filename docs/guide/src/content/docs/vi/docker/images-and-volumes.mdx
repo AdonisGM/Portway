@@ -1,0 +1,52 @@
+---
+title: Image và volume Docker
+description: Xem image và volume nào đang được dùng, thu hồi dung lượng ổ đĩa an toàn và xoá volume kèm xác nhận.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Image và volume âm thầm chiếm dung lượng ổ đĩa. Các trang **Images** và **Volumes** cho biết thứ gì được container nào dùng, và thứ gì có thể xoá.
+
+## Image
+
+Trang **Images** liệt kê mọi image kèm mã định danh, dung lượng, ngày tạo và việc sử dụng. Cột sử dụng nêu những container nào dùng một image, hoặc đánh dấu nó là `không dùng` hay `lơ lửng`. Image lơ lửng không có tag. Thường đó là bản build cũ đã bị bản mới ghi đè, và không container nào dùng nó. Phần chân trang nêu tổng dung lượng, phần lơ lửng và phần không dùng.
+
+### Dọn image thừa
+
+**Dọn image thừa** mở một hộp thoại với hai lựa chọn.
+
+<Figure
+  src="vi/docker-prune.webp"
+  alt="Hộp thoại Dọn image thừa với lựa chọn Chỉ image lơ lửng (an toàn) được chọn, danh sách image sẽ bị xoá, dung lượng sẽ thu hồi, lệnh docker image prune -f, và hai nút Huỷ, Xoá 1 image."
+  caption="Hình 1. Hộp thoại Dọn image thừa."
+/>
+
+| Lựa chọn | Tác dụng |
+|---|---|
+| **Chỉ image lơ lửng (an toàn)** | Xoá các image không có tag mà không container nào dùng |
+| **Tất cả image không dùng** | Xoá thêm các image còn tag mà không container nào dùng. Đó có thể là những image cần để rollback, nên hộp thoại đưa ra cảnh báo |
+
+Hộp thoại liệt kê các image sẽ bị xoá, dung lượng sẽ thu hồi và lệnh chính xác. Volume không bị xoá.
+
+## Volume
+
+<Figure
+  src="vi/docker-volumes.webp"
+  alt="Trang Volumes với ba volume, mỗi volume hiển thị đường dẫn, dung lượng và container đang gắn nó, hoặc Không gắn container nào."
+  caption="Hình 2. Trang Volumes."
+/>
+
+Trang **Volumes** liệt kê các volume kèm đường dẫn trên server, dung lượng và container đang gắn chúng. Dung lượng được tính trên server và có thể mất vài giây. Volume không được gắn vào đâu được hiển thị là `Không gắn container nào`.
+
+Menu của một volume sao chép đường dẫn của nó hoặc xoá nó. Bản thân trang chỉ để xem.
+
+### Xoá một volume
+
+Việc xoá volume xoá vĩnh viễn toàn bộ dữ liệu của nó. Hộp thoại nêu dung lượng dữ liệu, nói rõ không thể hoàn tác, và yêu cầu gõ lại tên volume. Volume đang gắn trong một container không xoá được. Hộp thoại nêu tên container, và container phải được dừng và xoá trước.
+
+<Aside type="caution">
+  Hãy sao lưu trước khi xoá một volume chứa dữ liệu, như cơ sở dữ liệu. Portway không khôi phục được dữ liệu.
+</Aside>

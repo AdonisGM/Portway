@@ -1,0 +1,51 @@
+---
+title: Bảo mật và dữ liệu
+description: Nơi Portway lưu bí mật, web view có những quyền nào và các biện pháp bảo vệ chính hoạt động ra sao.
+sidebar:
+  order: 5
+---
+
+## Bí mật
+
+Mật khẩu, passphrase của khoá, mật khẩu SOCKS và bí mật trong các request HTTP đã lưu được lưu trong kho bí mật của hệ điều hành: Keychain trên macOS và Credential Manager trên Windows. Chúng không được ghi vào các tệp của Portway.
+
+Credential Manager giới hạn mỗi mục khoảng 1.280 ký tự. Giá trị dài hơn, chẳng hạn các token của một request HTTP, được chia thành nhiều mục, và mục chính chỉ giữ một dấu hiệu kèm số phần.
+
+Có thể chạy song song một bản Portway thứ hai bằng cách đặt `PORTWAY_PROFILE`. Bản đó dùng thư mục dữ liệu riêng và các mục bí mật riêng.
+
+## Sudo
+
+Mật khẩu sudo được chuyển tới server qua đầu vào chuẩn, nên không xuất hiện trong dòng lệnh hay trong nhật ký thao tác. Khi bật sudo, Portway thử `sudo -n true` trước, lệnh này thành công nếu không cần mật khẩu, và nếu không thì xác thực mật khẩu bằng `sudo -S -k -p ''`.
+
+## Terminal và SSH_ASKPASS
+
+Trên macOS, khi mở Terminal cho một tài khoản dùng mật khẩu hoặc khoá có passphrase, `ssh` lấy bí mật đã lưu thông qua một chương trình `SSH_ASKPASS` tạm thời. Chương trình này không chứa bí mật. Nó chỉ biết mục nào trong kho bí mật trả lời câu hỏi nào, và hệ điều hành hỏi xin phép trước khi mục đó được đọc. Bí mật chưa được lưu sẽ được hỏi trong terminal như bình thường.
+
+Trên Windows, chính `portway.exe` đóng vai trò chương trình `SSH_ASKPASS`, vì `ssh.exe` được khởi động mà không có shell Unix. Mỗi bí mật chỉ được điền một lần cho mỗi terminal, nên mật khẩu sai sẽ được hỏi lại ngay trên console thay vì bị thử lặp lại.
+
+## Web view
+
+Giao diện chạy với một Content Security Policy chặt chẽ.
+
+| Chỉ thị | Giá trị |
+|---|---|
+| `default-src` | `'self'` |
+| `script-src` | `'self'` |
+| `style-src` | `'self' 'unsafe-inline'` |
+| `img-src` | `'self' data: blob:` |
+| `font-src` | `'self' data:` |
+| `connect-src` | `'self' ipc: http://ipc.localhost` |
+| `object-src`, `base-uri`, `form-action`, `frame-src` | `'none'` |
+
+Web view chỉ nhận những quyền được khai báo trong `src-tauri/capabilities/`.
+
+## Các quyết định tin cậy
+
+- Khoá máy chủ lạ chỉ được thêm vào `~/.ssh/known_hosts` sau khi người dùng xác nhận vân tay, và khoá đã thay đổi luôn bị từ chối.
+- Một bản Portway khác chỉ được tin cậy sau khi ghép đôi, trong đó hai người đối chiếu cùng một mã sáu chữ số.
+- Các loại tệp chạy được như `.sh`, `.command`, `.bat` và `.exe` không bao giờ được để hệ điều hành tự mở từ các thao tác mở và sửa của Portway.
+- Tệp gửi tới qua Connect chỉ được nhận sau khi bên nhận xác nhận.
+
+## Những gì rời khỏi máy tính
+
+Portway không có hệ thống tài khoản và không có máy chủ trung gian. Lưu lượng mạng của ứng dụng chủ yếu gồm các kết nối SSH tới những server người dùng đã lưu, lưu lượng mạng cục bộ của Connect khi được bật, và các request người dùng gửi từ màn hình HTTP, vốn chạy trên server.

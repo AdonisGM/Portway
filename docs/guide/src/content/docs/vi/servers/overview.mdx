@@ -1,0 +1,72 @@
+---
+title: Tổng quan server
+description: Mỗi phần của màn hình Tổng quan hiển thị gì, làm mới bao lâu một lần và thông tin được thu thập thế nào.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Tổng quan là màn hình đầu tiên mở ra cho một server đang kết nối. Màn hình trả lời câu hỏi server có khoẻ không và chỉ ra những chỗ cần chú ý.
+
+<Figure
+  src="vi/overview.webp"
+  alt="Màn hình Tổng quan với các phần Tài nguyên, Tiến trình dùng nhiều nhất, Tình trạng, Cổng mạng và firewall, Ổ đĩa."
+  caption="Hình 1. Tổng quan của một server."
+/>
+
+## Tài nguyên
+
+Bốn ô hiển thị trạng thái hiện tại.
+
+| Ô | Nội dung |
+|---|---|
+| **CPU (% hiện tại)** | Mức tải của bộ xử lý, kèm load trung bình và số nhân |
+| **RAM** | Phần trăm đang dùng, kèm dung lượng đã dùng và tổng |
+| **Disk /** | Phần trăm đã dùng của hệ thống tệp gốc, và dung lượng còn trống |
+| **Mạng** | Lưu lượng hiện tại theo hai chiều |
+
+Phần này được làm mới sau mỗi vài giây khi màn hình đang mở, và nhãn `trực tiếp` cho biết điều đó. Giá trị CPU và mạng là tốc độ được tính từ chênh lệch giữa hai lần đọc.
+
+## Tiến trình dùng nhiều nhất
+
+Bảng liệt kê các tiến trình dùng nhiều tài nguyên nhất, kèm user, container Docker sở hữu tiến trình khi có, mức dùng CPU và bộ nhớ. Một dòng dưới tiêu đề cho biết thời điểm chụp. **htop trong Terminal** mở một terminal trên server với `htop`.
+
+## Tình trạng
+
+| Dòng | Nội dung |
+|---|---|
+| **Docker** | Số container đang chạy trên tổng số, kèm dấu hiệu lỗi và các job đã xong. Dòng này cho biết khi Docker chưa được cài |
+| **Dịch vụ** | Số unit dịch vụ systemd và số unit đang ở trạng thái failed. Dòng này cho biết khi server không dùng systemd |
+| **Bản cập nhật** | Số gói có bản mới và số bản cập nhật bảo mật. Số liệu tính đến lần cập nhật danh sách gói gần nhất, và thời điểm đó được hiển thị |
+
+Bản cập nhật được đọc từ `apt` trên Debian và Ubuntu, và từ `apk` trên Alpine. Với các bản phân phối khác, dòng này cho biết bản phân phối chưa được hỗ trợ.
+
+## Cổng mạng và firewall
+
+Phần này cho biết có bao nhiêu cổng đang lắng nghe và bao nhiêu cổng nằm trên địa chỉ công khai, cùng trạng thái của firewall. Cảnh báo xuất hiện khi một dịch vụ quen thuộc như cơ sở dữ liệu lắng nghe trên địa chỉ công khai, hoặc khi một cổng Docker vượt qua firewall. Bài [Firewall](/docs/vi/web/firewall/) giải thích các phát hiện này. Phần này cũng nhắc rằng firewall của nhà cung cấp cloud, như security group, nằm ngoài server nên không kiểm tra được.
+
+## Ổ đĩa
+
+Mọi hệ thống tệp đã gắn đều hiển thị kèm mức dùng. Khi có Docker, một khối thứ hai hiển thị dung lượng của image, container, volume và build cache, kèm phần có thể thu hồi. Việc tính dung lượng Docker có thể mất vài giây.
+
+## Thao tác qua Portway
+
+Phần cuối liệt kê các hành động Portway đã thực hiện trên server này. Phần này được mô tả trong bài [Nhật ký thao tác](/docs/vi/servers/audit-log/).
+
+## Khi user không phải root
+
+Phiên đăng nhập bằng user thường hiển thị một thông báo ở đầu. Firewall, Docker và tiến trình của user khác có thể cần quyền root, nên một phần thông tin bị giới hạn.
+
+<Figure
+  src="vi/overview-deploy.webp"
+  alt="Phần đầu của Tổng quan cho phiên đăng nhập bằng user deploy, có thông báo thông tin bị giới hạn và nút Dùng sudo cho phiên này."
+  caption="Hình 2. Thông báo dành cho user thường."
+/>
+
+**Dùng sudo cho phiên này** gỡ bỏ giới hạn đó. Xem bài [Sudo](/docs/vi/servers/sudo/).
+
+<Aside type="note">
+  Mỗi lần làm mới chạy các lệnh chỉ đọc trên server. Chúng được liệt kê trong [nhật ký gỡ lỗi](/docs/vi/servers/audit-log/) và không nằm trong nhật ký thao tác.
+</Aside>

@@ -1,0 +1,56 @@
+---
+title: Phiên SSH và cách chạy lệnh
+description: Cách Portway duy trì phiên SSH, xác minh khoá máy chủ, chạy lệnh, dùng sudo và ghi lại những gì đã làm.
+sidebar:
+  order: 3
+---
+
+## Phiên
+
+Portway giữ một phiên SSH cho mỗi cặp server và user, xây dựng trên thư viện `russh`. Mỗi phiên sở hữu kết nối và các trạng thái gắn với nó: các kênh đang mở, chế độ sudo, các kênh SFTP và các bộ đếm dùng để đổi tổng số thành tốc độ.
+
+- Một gói keep-alive được gửi sau mỗi 15 giây, và phiên bị coi là mất khi ba gói liên tiếp không được trả lời.
+- Khi server được truy cập qua jump host, kết nối tới jump host được lưu bên trong phiên. Huỷ phiên đồng nghĩa với huỷ cả chuỗi kết nối.
+- Tunnel không dùng chung các phiên này. Mỗi tunnel đang chạy mở một kết nối SSH riêng bằng thông tin đăng nhập đã lưu, nên tunnel vẫn chạy khi tab server bị đóng.
+
+## Khoá máy chủ
+
+Khoá máy chủ được đối chiếu với `~/.ssh/known_hosts`, tương tự OpenSSH.
+
+| Tình huống | Hành vi |
+|---|---|
+| Khoá đã biết và khớp | Kết nối tiếp tục |
+| Host chưa có trong `known_hosts` | Vân tay được hiển thị, và khoá chỉ được thêm sau khi người dùng xác nhận |
+| Khoá đã lưu khác với khoá server trình ra | Kết nối bị từ chối, đồng thời hiển thị vân tay mới và lệnh xoá mục cũ |
+
+## Kênh
+
+Một kết nối SSH chỉ chấp nhận một số lượng kênh nhất định cùng lúc, và OpenSSH mặc định cho phép 10. Portway đặt giới hạn thấp hơn cho mỗi phiên, để nhiều màn hình có thể đọc song song mà không vượt quá giới hạn của server. Riêng màn hình tổng quan đã đọc nhiều giá trị cùng lúc. Các yêu cầu vượt giới hạn sẽ chờ đến khi có kênh trống.
+
+## Chạy lệnh
+
+Mọi thao tác đọc hoặc thay đổi trong phần quản trị đều là một lệnh shell gửi qua kênh exec. Phía Rust phân tích kết quả, và không có agent hay chương trình phụ nào được cài lên server.
+
+- Các thao tác đọc chỉ dùng những gì có trên mọi hệ thống Linux. Ví dụ, các socket đang lắng nghe được đọc từ `/proc/net`, và tiến trình sở hữu được đọc từ `/proc/<pid>/fd`, nơi người dùng khác chỉ đọc được khi là root.
+- Khi sudo được bật cho một phiên, các lệnh cần đặc quyền chạy qua `sudo -n` nếu không cần mật khẩu, hoặc qua `sudo -S -k -p ''` với mật khẩu được ghi vào đầu vào chuẩn. Mật khẩu không bao giờ xuất hiện trong dòng lệnh.
+- Đối số được đặt trong dấu nháy theo quy tắc của shell POSIX, và lệnh được lưu trong nhật ký chính là đoạn văn bản mà giao diện hiển thị ở phần xem trước.
+
+## Tệp qua SFTP
+
+SFTP dùng một kênh riêng tồn tại lâu dài, được mở ở lần đầu tiên cần đến. Các thao tác chạy với quyền của user trong phiên.
+
+Khi người dùng bật quyền root cho tệp, Portway mở thêm một kênh SFTP chạy `sudo sftp-server`, nhờ đó việc duyệt, tải lên, tải xuống, sửa và xoá đều chạy với quyền root. Việc đổi chủ sở hữu của tệp luôn đi qua shell, vì SFTP không ánh xạ được tên người dùng.
+
+Việc sao chép giữa hai server được truyền qua máy tính đang dùng. Dữ liệu được đọc từ một phiên SFTP và ghi sang phiên còn lại mà không dùng tệp tạm.
+
+Khi một tệp được sửa bằng ứng dụng trên máy, bản tải về được lưu trong thư mục đặt tên theo server, user và một mã băm của server, host, cổng, user cùng đường dẫn từ xa. Mỗi lần lưu được tải lên ngay tại chỗ, nên chủ sở hữu và quyền của tệp được giữ nguyên. Việc tải lên dừng lại nếu tệp trên server đã thay đổi sau khi Portway đọc, và người dùng quyết định có ghi đè hay không.
+
+## Nhật ký thao tác và nhật ký gỡ lỗi
+
+| | Nhật ký thao tác | Nhật ký gỡ lỗi |
+|---|---|---|
+| Nội dung | Các hành động Portway thực hiện thay người dùng: kết nối, tin tưởng khoá máy chủ, sudo, mở terminal, theo dõi nhật ký, và các thay đổi với tệp, dịch vụ, Docker, rule firewall, site và tunnel. Request gửi từ màn hình HTTP được giữ trong lịch sử request thay vì nhật ký này | Mọi lệnh từ xa, lời gọi SFTP, bước kết nối và lần truyền tệp, kèm thời gian chờ và thời gian chạy |
+| Nơi lưu | `audit.jsonl` trong thư mục dữ liệu, giữ 1000 mục mới nhất | Chỉ trong bộ nhớ, giữ 2000 mục mới nhất |
+| Mục đích | Xem lại những gì Portway đã thay đổi | Giải thích vì sao một màn hình chậm |
+
+Lệnh do người dùng gõ trong terminal được mở từ Portway không nằm trong nhật ký thao tác.

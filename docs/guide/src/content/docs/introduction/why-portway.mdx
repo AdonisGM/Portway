@@ -1,0 +1,45 @@
+---
+title: Why Portway
+description: The needs that Portway is built for, who it is meant for, and where its scope ends.
+sidebar:
+  order: 2
+---
+
+## The need
+
+Anyone who runs a few Linux servers, such as virtual private servers for a product, a client or a home lab, repeats the same small tasks every week: reading a log, copying a file, restarting a service, checking whether a certificate is about to expire, or reaching a database that listens only on the server. Each task needs a different command, and each command is easy to mistype.
+
+Two kinds of problems appear in daily work.
+
+- **Scattered tools.** `ssh`, `scp` or `sftp`, `docker`, `systemctl`, `nginx`, `ufw` or `firewalld` and `curl` each have their own syntax and output. Keeping several terminal windows in sync for several servers is slow.
+- **Silent mistakes.** A port that is open to the internet, a Docker container that bypasses the firewall, a site whose upstream stopped answering, or a certificate that expires next week do not announce themselves. They are found by reading and comparing the output of several commands.
+
+Portway is built to remove both problems without adding infrastructure: it uses SSH, which is already available, and it shows the state of a server in a form that can be read at a glance.
+
+## Who it is meant for
+
+- Developers and freelancers who maintain their own servers.
+- Small teams that do not have a dedicated operations platform.
+- People who run a home lab and want a graphical view of it.
+- Anyone who works on both macOS and Windows and wants the same tool on both.
+
+## Typical tasks
+
+| Task | Where in Portway |
+|---|---|
+| Check whether a server is healthy | [Overview](/docs/servers/overview/) |
+| Upload a release or download a backup | [Files](/docs/files/browse/) and [Transfer](/docs/files/transfer/) |
+| Edit a configuration file with a local editor | [Edit files locally](/docs/files/edit-locally/) |
+| Reach a database that listens only on the server | [Tunnels](/docs/tunnels/create/) |
+| Find a crashing container or read its log | [Docker containers](/docs/docker/containers/) |
+| Check which sites are served and when certificates expire | [Nginx](/docs/web/nginx/) |
+| Find ports that are open to the internet | [Firewall](/docs/web/firewall/) |
+| Test an internal API from the server | [HTTP](/docs/web/http/) |
+| Move files and text between two of your own computers | [Connect](/docs/connect/overview/) |
+
+## Where its scope ends
+
+- Portway manages servers that people operate by hand. It is not a tool for configuring hundreds of machines, and it does not keep a history of metrics. Use a configuration management system or a monitoring system for that work.
+- The targets are Linux servers with OpenSSH. The application itself runs on macOS and Windows.
+- Some features are limited by what the server provides. For example, pending package updates are read from `apt` (Debian, Ubuntu) and `apk` (Alpine), and firewall rules are edited only for `ufw` and `firewalld`. Plain `iptables` rules are not read yet, and only the listening ports are shown for such servers.
+- Scheduled jobs (cron and systemd timers) are not available yet.

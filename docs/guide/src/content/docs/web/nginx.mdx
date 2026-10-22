@@ -1,0 +1,50 @@
+---
+title: Nginx
+description: See every Nginx site as a map from domain to target, check certificates and upstreams, and enable, disable and test sites safely.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+The **Nginx** section appears for servers that run nginx. It turns the configuration into a map, so that the sites, their targets and their problems are visible at a glance.
+
+<Figure
+  src="en/nginx.webp"
+  alt="The Nginx screen with six sites drawn from domain through nginx to target, and a side panel for the selected site api.portway.test that reports that its upstream is not responding."
+  caption="Figure 1. The Nginx map and the panel of a selected site."
+/>
+
+## How the data is read
+
+Portway reads the configuration that nginx actually loads, with `nginx -T`, and adds the files of `sites-available` that are not enabled. Certificates are read from what nginx serves, with `openssl s_client` and the right server name. The proxy targets that lie on the server are checked with a TCP connection. Reading the configuration needs root. For a regular user, Portway states that and offers [sudo](/docs/servers/sudo/).
+
+## The map
+
+Each site is one row with three parts.
+
+- **Domain** shows the name and the state of the certificate: `No SSL`, `SSL valid for N more days` or `SSL expires in N days`, with colors that mark what needs attention.
+- **Nginx** shows the listening ports and features such as `:443 SSL`, `gzip`, `websocket` or `HTTP→HTTPS`.
+- **Target** shows what the site does: a reverse proxy with its address, a static site with its folder, a redirect, or a fixed response. A proxy whose upstream does not answer shows `not responding`.
+
+Sites that are disabled are dimmed. The header summarizes the nginx version, whether it runs, how many sites exist and how many certificates expire soon.
+
+## The panel of a site
+
+Selecting a site shows its details: whether it is on, the type, the ports, the proxy target with a warning when nothing listens there (visitors would get a 502), and the certificate with its expiry time. The panel also warns about a self-signed certificate, a certificate that does not include the site name, and an HTTP port that serves content instead of redirecting to HTTPS. **Logs** offers **Follow** for the access and error logs in the [log viewer](/docs/files/follow-logs/), and **Configuration file** shows the path, with **View configuration**, **Edit on this Mac** and **Open folder in Files**.
+
+## Test, reload, enable and disable
+
+| Action | What it does |
+|---|---|
+| **Test configuration** | Runs `nginx -t`. It reads and checks the syntax, and changes nothing |
+| **Reload** | Tests the configuration first and does not reload if the test fails. Open connections are not dropped |
+| **Enable site** | Creates a link in `sites-enabled`, tests the configuration, then reloads. If `nginx -t` fails, the link is removed right away |
+| **Disable site** | Removes the link in `sites-enabled`, which keeps the file in `sites-available`, tests the configuration, then reloads. If `nginx -t` fails, the link is put back |
+
+Editing a configuration file with **Edit on this Mac** uploads each save, as described in [Edit files locally](/docs/files/edit-locally/). After editing, run **Test configuration** and then **Reload**. A site whose file is not in `sites-available` cannot be enabled or disabled from Portway.
+
+<Aside type="note">
+  When `nginx -t` fails, Portway shows the error text and does not read the sites. nginx keeps running on its old configuration until the error is fixed.
+</Aside>

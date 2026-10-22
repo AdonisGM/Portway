@@ -1,0 +1,47 @@
+---
+title: Theo dõi tunnel
+description: Đọc tốc độ, độ trễ và các kết nối theo thời gian thực của một tunnel, kể cả ứng dụng tạo ra từng kết nối.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Chọn một dòng tunnel, hoặc **Xem lưu lượng và kết nối** trong menu của nó, để mở màn hình theo dõi. Màn hình trả lời ba câu hỏi: có bao nhiêu dữ liệu đi qua, kết nối SSH khoẻ ra sao, và ứng dụng nào đứng sau từng kết nối.
+
+<Figure
+  src="vi/tunnel.webp"
+  alt="Màn hình theo dõi tunnel với năm số liệu ở trên, biểu đồ tải về, tải lên và độ trễ SSH, và bảng các kết nối đang mở hiển thị ứng dụng curl cùng đích của nó."
+  caption="Hình 1. Màn hình theo dõi một tunnel trong lúc đang tải dữ liệu."
+/>
+
+## Các số liệu
+
+| Số liệu | Ý nghĩa |
+|---|---|
+| **Tải về** | Tốc độ hiện tại từ server, kèm đỉnh và trung bình |
+| **Tải lên** | Tốc độ hiện tại tới server, kèm đỉnh và trung bình |
+| **Độ trễ SSH** | Thời gian khứ hồi giữa máy tính này và server |
+| **Kết nối** | Số kết nối đang mở, tổng số, và số lần tunnel đã kết nối lại |
+| **Đã truyền** | Lượng dữ liệu theo hai chiều kể từ khi tunnel bắt đầu |
+
+## Biểu đồ
+
+Biểu đồ hiển thị tải về, tải lên và độ trễ SSH trong 1, 5 hoặc 15 phút gần nhất. Chọn khoảng thời gian bằng các nút phía trên biểu đồ. Phần trên hiển thị tốc độ, và phần dưới hiển thị độ trễ.
+
+## Các kết nối
+
+Ba tab liệt kê các kết nối.
+
+- **Đang mở** liệt kê các kết nối đang mở, kèm ứng dụng và số tiến trình của nó, đích, thời gian đã mở, tốc độ và tổng.
+- **Theo ứng dụng** gom các kết nối theo ứng dụng.
+- **Gần đây** liệt kê các kết nối vừa đóng, kèm thời điểm đóng, thời lượng và tổng, và đếm số kết nối bị lỗi. Số liệu tính trên các kết nối đang mở và 100 kết nối đã đóng gần nhất.
+
+Với tunnel Local, ứng dụng là chương trình trên máy tính này đã mở kết nối, ví dụ một ứng dụng cơ sở dữ liệu hoặc một trình duyệt. Portway tìm nó bằng `lsof` trên macOS và bằng bảng kết nối TCP trên Windows. Khi một kết nối đóng trước lúc kịp nhận diện, mục đó ghi `Không rõ tiến trình`. Kết nối đến từ thiết bị khác trong mạng được gắn nhãn `máy khác trong mạng`. Với tunnel Remote, các kết nối đến từ server.
+
+Mỗi dòng cũng hiển thị thời gian mở kênh SSH cho kết nối, và các kết nối lỗi hiển thị lý do. Ô lọc thu hẹp danh sách theo ứng dụng hoặc đích.
+
+<Aside type="note">
+  Số liệu bắt đầu từ lúc tunnel bật và được giữ trong bộ nhớ đến khi tunnel tắt. Chúng không được ghi ra đĩa.
+</Aside>

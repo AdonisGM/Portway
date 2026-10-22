@@ -1,0 +1,62 @@
+---
+title: Portway documentation
+description: Learn how to install Portway, connect to Linux servers over SSH and manage files, tunnels, Docker, Nginx and firewalls.
+template: splash
+hero:
+  tagline: A desktop app for managing Linux servers over SSH on macOS and Windows. No agent is installed on the server, and every change that Portway makes is recorded in an audit log.
+  actions:
+    - text: Install Portway
+      link: /docs/getting-started/install/
+      icon: right-arrow
+    - text: Add your first server
+      link: /docs/getting-started/add-server/
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Introduction
+
+<CardGrid>
+  <LinkCard title="What is Portway" description="A short overview of the application and what it does." href="/docs/introduction/what-is-portway/" />
+  <LinkCard title="Why Portway" description="The needs behind it, who it is for and where its scope ends." href="/docs/introduction/why-portway/" />
+  <LinkCard title="Concepts" description="Agentless access, visible commands, audit and safety nets." href="/docs/architecture/concepts/" />
+</CardGrid>
+
+## Getting started
+
+<CardGrid>
+  <LinkCard title="Install Portway" description="Requirements and installation on macOS and Windows." href="/docs/getting-started/install/" />
+  <LinkCard title="Add a server and connect" description="Create a connection and verify the host key." href="/docs/getting-started/add-server/" />
+  <LinkCard title="Interface tour" description="The layout of the window and where each feature is." href="/docs/getting-started/interface-tour/" />
+</CardGrid>
+
+## Guides
+
+<CardGrid>
+  <Card title="Servers and access" icon="laptop">
+    [Manage servers](/docs/servers/manage-servers/), [jump hosts](/docs/servers/jump-hosts/), [SSH keys](/docs/servers/ssh-keys/), the [overview](/docs/servers/overview/), [sudo](/docs/servers/sudo/) and the [audit log](/docs/servers/audit-log/).
+  </Card>
+  <Card title="Files" icon="document">
+    [Browse](/docs/files/browse/), [permissions and root](/docs/files/permissions-and-root/), [local editing](/docs/files/edit-locally/), [logs](/docs/files/follow-logs/) and [transfer](/docs/files/transfer/).
+  </Card>
+  <Card title="Tunnels" icon="random">
+    [Create tunnels](/docs/tunnels/create/) and read the [monitor](/docs/tunnels/monitor/).
+  </Card>
+  <Card title="Docker" icon="rocket">
+    [Containers](/docs/docker/containers/), [Compose](/docs/docker/compose/), [images and volumes](/docs/docker/images-and-volumes/).
+  </Card>
+  <Card title="Services, web and firewall" icon="setting">
+    [systemd](/docs/services/systemd/), [Nginx](/docs/web/nginx/), [firewall](/docs/web/firewall/) and [HTTP requests](/docs/web/http/).
+  </Card>
+  <Card title="Connect" icon="puzzle">
+    For two computers of the same person on one network: [overview](/docs/connect/overview/), [pairing](/docs/connect/pairing/), [features](/docs/connect/features/) and [troubleshooting](/docs/connect/troubleshooting/).
+  </Card>
+</CardGrid>
+
+## Technical documentation
+
+<CardGrid>
+  <LinkCard title="Internals" description="The architecture, SSH sessions, the Connect protocol, and how secrets and data are protected." href="/docs/internals/architecture/" />
+  <LinkCard title="Application" description="Settings and troubleshooting." href="/docs/app/settings/" />
+</CardGrid>

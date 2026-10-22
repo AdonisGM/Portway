@@ -1,0 +1,52 @@
+---
+title: Tổng quan về Connect
+description: Connect của Portway dùng để làm gì, khi nào có ích, và những gì nó không làm.
+sidebar:
+  order: 1
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+**Connect liên kết hai máy tính thuộc về cùng một người và nằm trong cùng một mạng cục bộ.** Mục đích của nó là giúp công việc thuận tiện khi một người dùng hai máy tính cạnh nhau, ví dụ một máy Mac và một máy Windows trên cùng một bàn làm việc hoặc trong cùng một mạng gia đình, và muốn chúng hoạt động như các phần của một máy trạm duy nhất.
+
+<Aside type="caution" title="Connect không dành cho việc chia sẻ giữa những người khác nhau">
+  Connect không phải công cụ cộng tác và không phải cách để cấp cho người khác quyền truy cập vào một máy tính. Cả hai máy tính được hiểu là do cùng một người sử dụng, người có thể đọc mã ghép đôi trên cả hai màn hình. Connect cũng không hoạt động qua internet. Nó chỉ hoạt động trong một mạng cục bộ.
+</Aside>
+
+## Khi nào Connect có ích
+
+- **Chuyển tệp giữa hai máy tính.** Gửi một tệp hoặc một thư mục từ máy này sang máy kia mà không cần ổ USB, dịch vụ đám mây hay thư mục chia sẻ.
+- **Chia sẻ clipboard.** Sao chép văn bản ở máy này và dán ở máy kia, hoặc sao chép tệp trong Finder hay Explorer và dán ở máy kia.
+- **Đánh thức máy kia.** Gửi gói Wake-on-LAN từ một máy để bật máy còn lại.
+- **Kiểm tra mạng giữa hai máy.** Đo tốc độ thực giữa hai máy, đã tính cả mã hoá, và xem độ trễ cùng các card mạng được dùng.
+- **Nhìn nhanh máy kia.** Mẫu máy, bộ xử lý, bộ nhớ, ổ đĩa và mức tải hiện tại của cả hai máy hiển thị cạnh nhau.
+
+## Những gì Connect không làm
+
+- Connect không cho điều khiển từ xa máy tính kia và không chia sẻ màn hình.
+- Connect không hoạt động giữa các máy tính ở những mạng khác nhau và không dùng máy chủ trung gian.
+- Connect không cấp quyền truy cập cho ai khác. Một máy tính chỉ được tin cậy sau khi đã ghép đôi bằng một mã mà cả hai màn hình cùng hiển thị.
+- Connect không cần thiết để quản lý server. Mọi thứ khác trong Portway đều hoạt động mà không cần nó.
+
+## Đặc điểm
+
+- **Tắt theo mặc định.** Khi Connect tắt, Portway không mở cổng nào và không thông báo gì lên mạng.
+- **Được mã hoá.** Mọi liên kết và mọi lần truyền tệp đều được mã hoá giữa hai máy tính. Xem bài [Giao thức Connect](/docs/vi/internals/connect-protocol/).
+- **Hỏi trước khi hành động.** Máy nhận luôn được hỏi trước khi nhận tệp, và clipboard chỉ được chia sẻ theo những chiều mà mỗi máy cho phép.
+
+<Figure
+  src="vi/connect.webp"
+  alt="Màn hình Connect ở trạng thái mặc định, với công tắc cho phép các Portway trong mạng thấy nhau đang tắt."
+  caption="Hình 1. Màn hình Connect tắt theo mặc định."
+/>
+
+<Aside type="note">
+  Connect cần có Portway ở cả hai máy tính, với các phiên bản tương thích. Khi Portway báo phiên bản không khớp, hãy cập nhật ở cả hai máy. Việc ghép đôi và cách dùng liên kết được mô tả ở các bài tiếp theo.
+</Aside>
+
+<CardGrid>
+  <LinkCard title="Ghép đôi hai máy tính" description="Bật Connect và ghép đôi một lần bằng mã sáu chữ số." href="/docs/vi/connect/pairing/" />
+  <LinkCard title="Dùng liên kết" description="Gửi tệp, chia sẻ clipboard, đánh thức máy và đo mạng." href="/docs/vi/connect/features/" />
+  <LinkCard title="Khắc phục sự cố" description="Việc cần làm khi không thấy máy kia hoặc không kết nối được." href="/docs/vi/connect/troubleshooting/" />
+</CardGrid>

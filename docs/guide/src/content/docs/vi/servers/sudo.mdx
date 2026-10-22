@@ -1,0 +1,51 @@
+---
+title: Sudo
+description: Cách bật sudo cho một phiên, sudo thay đổi điều gì và mật khẩu được xử lý ra sao.
+sidebar:
+  order: 5
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../../components/Figure.astro';
+
+Nhiều thao tác đọc và thay đổi cần quyền root: firewall, tiến trình của user khác, Docker với user ngoài nhóm `docker`, cấu hình nginx và nhật ký hệ thống. Khi một phiên đăng nhập bằng user thường, sudo cho phép truy cập chúng mà không cần đăng nhập bằng root.
+
+## Bật sudo
+
+<Steps>
+
+1. Mở màn hình Tổng quan của phiên và chọn **Dùng sudo cho phiên này** trong thông báo ở đầu, hoặc dùng cùng hành động đó ở bất kỳ màn hình nào báo rằng cần sudo.
+
+2. Nhập mật khẩu sudo của user. Để trống ô này nếu sudo không hỏi mật khẩu (`NOPASSWD`).
+
+   <Figure
+     src="vi/sudo.webp"
+     alt="Hộp thoại Dùng sudo cho deploy@web-prod với ô mật khẩu, ghi chú rằng có thể để trống khi NOPASSWD, và hai nút Huỷ, Bật sudo."
+     caption="Hình 1. Hộp thoại sudo."
+   />
+
+3. Chọn **Bật sudo**.
+
+</Steps>
+
+Portway thử `sudo -n true` trước, lệnh này thành công khi không cần mật khẩu. Nếu không, Portway xác thực mật khẩu bằng `sudo -S -k -p ''`. Mật khẩu sai hoặc user không được phép dùng sudo sẽ được báo kèm lý do.
+
+## Mật khẩu được xử lý thế nào
+
+- Mật khẩu chỉ nằm trong bộ nhớ của Portway cho phiên này và không được lưu.
+- Mật khẩu được chuyển tới `sudo` qua đầu vào chuẩn, nên không xuất hiện trong dòng lệnh, trong nhật ký thao tác hay trong nhật ký gỡ lỗi.
+- Khi phiên kết thúc, mật khẩu cũng mất.
+
+## Điều thay đổi khi sudo đang bật
+
+Các lệnh cần quyền nâng cao chạy qua `sudo`, và chỉ khi hành động đó đòi hỏi. Hộp thoại của hành động như vậy ghi mục `Sudo` và hiển thị lệnh chính xác, bắt đầu bằng `sudo`. Các thao tác đọc không cần quyền nâng cao vẫn chạy bằng user.
+
+Tệp là một quyết định riêng. Bật sudo không làm các thao tác tệp chạy bằng root. Việc đó do [công tắc quyền root](/docs/vi/files/permissions-and-root/) trong màn hình Tệp đảm nhiệm, vì tệp tạo bằng root sẽ thuộc về root.
+
+## Tắt sudo
+
+**Tắt sudo** kết thúc chế độ này. Hành động chạy `sudo -k`, lệnh huỷ thông tin xác thực đã lưu tạm, và được ghi vào nhật ký thao tác. Ngắt kết nối phiên cũng kết thúc chế độ này.
+
+<Aside type="note">
+  User đã là `root` thì không cần sudo. Với phiên như vậy, hộp thoại ghi rằng không cần sudo.
+</Aside>

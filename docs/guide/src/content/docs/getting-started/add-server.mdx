@@ -1,0 +1,146 @@
+---
+title: Add a server and connect
+description: Create a server connection in Portway, verify the host key on the first connection and open the server overview.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Figure from '../../../components/Figure.astro';
+
+This page describes how to add a Linux server to Portway and open the first connection. Portway connects over SSH, so the server only needs a running OpenSSH service and an account that can sign in.
+
+## Before starting
+
+Prepare the following information:
+
+- The IP address or the domain name of the server.
+- The SSH port. The default is `22`.
+- The name of the account used to sign in.
+- A sign-in method for that account: an SSH key available on this computer, or a password.
+
+## Add the server
+
+<Steps>
+
+1. **Open the server list.**
+
+   Select **Connections** in the left sidebar and then **Server list**. A new installation shows an empty list.
+
+   <Figure
+     src="en/add-server-1-list.webp"
+     width={1400}
+     height={330}
+     alt="The Portway server list is empty and shows the buttons Import from ~/.ssh/config and Add server in the upper right corner."
+     caption="Figure 1. The empty server list."
+   />
+
+2. **Open the Add server form.**
+
+   Select **Add server** in the upper right corner. To reuse hosts that are already configured for the `ssh` command, select **Import from ~/.ssh/config** instead; Portway then reads the file, including `ProxyJump` settings.
+
+3. **Fill in the connection details.**
+
+   <Figure
+     src="en/add-server-2-form.webp"
+     width={518}
+     height={728}
+     alt="The Add server dialog with the display name Web production, group production, host 127.0.0.1, port 2202, account deploy using the key id_ed25519 and the tags nginx and docker."
+     caption="Figure 2. The Add server form with sample values."
+   />
+
+   | Field | Description |
+   |---|---|
+   | **Display name** | The name shown in the application. Required. |
+   | **Group** | An optional label that groups servers in the list, for example `production`. |
+   | **Host or IP** | The IP address or the domain name of the server. Required. |
+   | **Port** | The SSH port, from 1 to 65535. |
+   | **Connect via (jump host)** | An already saved server that is used as a bastion. Leave it as **None, connect directly** unless the server is only reachable through a bastion. |
+   | **Login accounts** | One or more accounts. Each account has a user name and a sign-in method: an SSH key found in `~/.ssh`, or a password. The first account is the default one. |
+   | **Tag** and **Note** | Optional text used for searching and for reminders. Tags are separated by commas. |
+
+   The **Equivalent SSH command** at the bottom of the form shows the `ssh` command that corresponds to the current values. It can be used to confirm that the values are entered as intended.
+
+   <Aside type="note">
+     A password is stored in the Keychain on macOS and in Credential Manager on Windows. It is never written to the configuration files of Portway.
+   </Aside>
+
+4. **Save the server.**
+
+   Select **Add server**. The server appears in the list with its host, user, tags and group. The operating system is detected on the first connection, so it is not entered manually.
+
+   <Figure
+     src="en/add-server-3-list.webp"
+     width={1400}
+     height={330}
+     alt="The server list contains one row: Web production, host 127.0.0.1:2202, user deploy, tags nginx and docker, group production."
+     caption="Figure 3. The server list after the server is added."
+   />
+
+</Steps>
+
+## Connect for the first time
+
+<Steps>
+
+1. **Select the account.**
+
+   In the row of the server, select the user button (here `deploy`). The row expands and lists the accounts of the server with their sign-in methods.
+
+   <Figure
+     src="en/add-server-4-account.webp"
+     width={1400}
+     height={340}
+     alt="The server row is expanded and shows the account deploy@127.0.0.1 with the key id_ed25519 and a Connect button."
+     caption="Figure 4. The expanded row with the Connect button."
+   />
+
+2. **Select Connect.**
+
+   Portway opens an SSH connection to the server.
+
+3. **Verify the host key.**
+
+   When this computer has never connected to the server, Portway asks for confirmation of the host key before it signs in.
+
+   <Figure
+     src="en/add-server-5-hostkey.webp"
+     width={498}
+     height={343}
+     alt="A dialog titled First connection to Web production shows the SHA256 fingerprint of the host key and the buttons Cancel and Trust and connect."
+     caption="Figure 5. The host key confirmation on the first connection."
+   />
+
+   Compare the fingerprint in the dialog with the key on the server. The command `ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub`, run on the server, prints the fingerprints of its host keys. When they match, select **Trust and connect**. The key is then saved to `~/.ssh/known_hosts`, in the same way as the `ssh` command does, and the confirmation is not requested again for this server.
+
+   <Aside type="caution" title="When the host key has changed">
+     If a server later presents a different key than the saved one, Portway refuses to connect and displays the new fingerprint. A changed key can mean that the server was reinstalled, but it can also mean that the connection is being intercepted. Portway shows the command `ssh-keygen -R '[host]:port'` that removes the old entry; run it only after the change has been confirmed to be legitimate.
+   </Aside>
+
+4. **Open the server overview.**
+
+   After the connection is established, the overview of the server is displayed.
+
+   <Figure
+     src="en/add-server-6-overview.webp"
+     width={1600}
+     height={900}
+     alt="The Overview of the connected server Web production shows CPU, RAM, disk and network usage, the top processes, the health of Docker, services and updates, ports and firewall, and disks."
+     caption="Figure 6. The overview of a connected server. Select the image to enlarge it."
+   />
+
+</Steps>
+
+## Reading the overview
+
+| Section | Content |
+|---|---|
+| **Resources** | CPU, memory, disk and network usage, refreshed every few seconds. |
+| **Top processes** | The processes that use the most resources, with the container they belong to when they run in Docker. |
+| **Health** | The state of Docker containers, system services and pending package updates. |
+| **Ports & firewall** | The ports that are listening, which of them are reachable from a public address, and the state of the firewall. |
+| **Disks** | The usage of each mounted disk and of the space taken by Docker images, containers and volumes. |
+
+<Aside type="note" title="Signing in as a user that is not root">
+  When the account is not root, the overview shows a notice that the firewall, Docker and the processes of other users can need root privileges, so part of the information is limited. Select **Use sudo for this session** to give Portway access to that information. The sudo password is passed to the server through standard input and does not appear in command lines or in the audit log.
+</Aside>

@@ -1,0 +1,70 @@
+---
+title: Use the link
+description: Send files, share the clipboard, wake a computer, measure the network and compare the two computers.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Select a paired computer in the Connect screen to open its page. The page has a card for each thing that the two computers can do together. Some cards need a live link, and each card states what it needs.
+
+## Machine details
+
+Two columns compare **This machine** and **The other machine**: the model, the operating system, the processor with its cores and threads, the graphics card, the memory, the disks, the network cards with their speed, the uptime and the Portway version. CPU and memory load update every few seconds while the link is live and are drawn as bars and short charts. For a machine that is off, the page keeps the details from the last time that it was seen. A computer that runs an older Portway that does not send details gets a note to update it.
+
+## Send files and folders
+
+Use **Send files…** on the row of a computer that is visible on the network, or **Send a folder…** in its menu. Sending does not need an open link. Each transfer opens its own encrypted connection.
+
+- The receiving computer is always asked to **Accept** or **Decline**. The request names the sender and the number and size of the files.
+- Files are saved into the default downloads folder. A file never replaces another one: a duplicate name gets ` (1)`.
+- A file is written under a temporary name and renamed only when its checksum matches. A file that is damaged is discarded.
+- A folder arrives as one folder, and a name that exists gets a suffix instead of merging. Empty folders and links are skipped. One transfer is limited to 20,000 files. An interrupted transfer cannot be resumed.
+
+The **File transfers** list shows what was sent and received, with progress and the choice **Show in folder**.
+
+## Clipboard
+
+The clipboard card shows the two computers with an arrow for each direction, and the switches below it decide what actually happens. Both directions are off by default and are set for each computer separately.
+
+| Option | Effect |
+|---|---|
+| **Send clipboard** | Sends the text that was copied just now |
+| **Auto-send to the other machine** | Sends text every time something is copied, while the link is live |
+| **Receive from the other machine** | Allows the other computer to write into this clipboard |
+
+The other computer confirms every delivery. The card tells whether the text arrived, or why not: receiving is not turned on there, the text is too long or the clipboard could not be written. Text is limited to about 40,000 characters and is never cut silently. Text that the source application marks as sensitive, such as an entry from a password manager, is never sent automatically. The content is not written to any log.
+
+### Copy files on one computer, paste on the other
+
+Copy files or folders in Finder or Explorer. The other computer shows that items were copied, with their count and size. Pasting there fetches the files at that moment, or **Save to Downloads** stores them. Only names and sizes are sent when copying. The content moves on paste, over a separate encrypted connection, and only for the files that are still on the clipboard of the sender.
+
+- **To macOS**, a paste in Finder waits until the files have arrived, which can make the Portway window unresponsive for that time.
+- **To Windows**, a paste in Explorer shows its own progress dialog. Pasting a whole folder is not supported yet, so use **Save to Downloads** for folders.
+- With **Auto-send** off, use **Send copied files** to announce the files.
+- If the other computer copies something else, the earlier files are no longer available.
+
+<Aside type="caution">
+  Pasting files in Windows Explorer has been implemented, but it has not yet been verified on a real Windows computer.
+</Aside>
+
+## Wake a computer
+
+**Wake up** sends a Wake-on-LAN packet through every network card and then waits up to 2 minutes for the computer to appear again. This needs the MAC addresses of the other computer, which are exchanged after pairing, or the first time that the two connect.
+
+The target computer must be prepared in advance.
+
+- Wake-on-LAN must be on in the BIOS or UEFI and in the settings of the network card. On Windows, enable **Wake on Magic Packet** and turn Fast Startup off, because it often prevents waking a computer that was shut down.
+- A Mac wakes only from sleep, over a network cable, with **Wake for network access** turned on. A computer that is fully shut down, or a Mac on Wi-Fi, usually cannot be woken.
+- The target needs a network cable that is connected to the same network.
+
+On Windows, Portway starts when the user signs in. After a wake the computer waits at the sign-in screen, so it cannot answer until someone signs in, unless automatic sign-in is on. [Settings](/docs/app/settings/) offers an optional service that announces that the computer is on before sign-in.
+
+## Measure the network
+
+**Measure speed** sends test data over a separate encrypted connection for a few seconds in each direction. The result is the speed that Portway really reaches, including the cost of encryption, and it shows the download, the upload and the time of the measurement. The page also shows the latency now, the average and the jitter with a chart of the last minute, and the routes to the other computer. The test works only when the other computer reports that it supports it.
+
+<Aside type="note">
+  Which features are ready is stated on the **Features** card of the page. A feature that is unavailable is marked with the reason, for example that the other computer runs an older version.
+</Aside>

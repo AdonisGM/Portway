@@ -6,6 +6,7 @@ import {
   ArrowLeftRight,
   ArrowUp,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronsRight,
   Copy,
@@ -205,6 +206,36 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
     return load(target)
   }
 
+  // Back and forward through the folders visited, like a browser. A folder
+  // that is opened any other way is added after the current one.
+  const [hist, setHist] = useState<{ stack: string[]; at: number }>({ stack: [], at: -1 })
+  useEffect(() => {
+    if (!path) return
+    setHist((h) => (h.stack[h.at] === path ? h : { stack: [...h.stack.slice(0, h.at + 1), path], at: h.at + 1 }))
+  }, [path])
+  const canBack = hist.at > 0
+  const canForward = hist.at < hist.stack.length - 1
+  const step = async (by: -1 | 1) => {
+    const to = hist.at + by
+    const target = hist.stack[to]
+    if (target === undefined) return
+    // The index moves first so the folder that opens is not added as a new visit.
+    setHist({ ...hist, at: to })
+    if (!(await go(target))) setHist(hist)
+  }
+  const stepRef = useRef(step)
+  stepRef.current = step
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey || e.altKey || e.ctrlKey || e.shiftKey || (e.key !== '[' && e.key !== ']')) return
+      if (document.querySelector('[role="dialog"]')) return
+      e.preventDefault()
+      void stepRef.current(e.key === '[' ? -1 : 1)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   // Dialogs.
   const [action, setAction] = useState<FileAction | null>(null)
   // A file followed with tail -F takes the place of the list until closed.
@@ -377,6 +408,12 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
     <div className="relative flex min-h-0 flex-1 flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
         {/* An empty path is the SFTP default folder: the user's home. */}
+        <ToolButton title={t('Quay lại (⌘[)')} onClick={() => void step(-1)} disabled={!canBack}>
+          <ChevronLeft size={16} strokeWidth={1.8} />
+        </ToolButton>
+        <ToolButton title={t('Tiến tới (⌘])')} onClick={() => void step(1)} disabled={!canForward}>
+          <ChevronRight size={16} strokeWidth={1.8} />
+        </ToolButton>
         <ToolButton title={t('Về thư mục home')} onClick={() => void go('')}>
           <House size={15} strokeWidth={1.8} />
         </ToolButton>

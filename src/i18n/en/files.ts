@@ -18,6 +18,8 @@ const en: Dict = {
   'Tệp mới': 'New file',
   'Thư mục mới': 'New folder',
   'Mở màn Chuyển tệp với thư mục này ở bên trái': 'Open Transfer with this folder on the left',
+  'Quay lại (⌘[)': 'Back (⌘[)',
+  'Tiến tới (⌘])': 'Forward (⌘])',
   'Về thư mục home': 'Go to home folder',
   'Chép sang máy khác': 'Copy to another machine',
   'Mở thư mục này trong Terminal': 'Open this folder in Terminal',

@@ -131,24 +131,25 @@ pub fn html() -> Option<String> {
             CloseClipboard();
             bytes
         };
-        return fragment_of_cf_html(&raw?);
+        return html_of_cf_html(&raw?);
     }
     #[allow(unreachable_code)]
     None
 }
 
 /// What Windows calls "HTML Format": a header with byte offsets, then the page.
-/// Gives back the copied fragment (or the whole page when the header names no fragment).
+/// Gives back the whole page (its head carries the styles Word relies on), or
+/// only the copied fragment when the header names no page.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn fragment_of_cf_html(data: &[u8]) -> Option<String> {
+pub fn html_of_cf_html(data: &[u8]) -> Option<String> {
     let head = String::from_utf8_lossy(&data[..data.len().min(1024)]).into_owned();
     let offset = |key: &str| -> Option<usize> {
         let at = head.find(key)? + key.len();
         head[at..].chars().take_while(char::is_ascii_digit).collect::<String>().parse().ok()
     };
-    let (start, end) = match (offset("StartFragment:"), offset("EndFragment:")) {
+    let (start, end) = match (offset("StartHTML:"), offset("EndHTML:")) {
         (Some(s), Some(e)) => (s, e),
-        _ => (offset("StartHTML:")?, offset("EndHTML:")?),
+        _ => (offset("StartFragment:")?, offset("EndFragment:")?),
     };
     let slice = data.get(start..end.min(data.len()))?;
     let text = String::from_utf8_lossy(slice).trim_end_matches('\0').to_string();
@@ -341,7 +342,7 @@ mod mac_lazy {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::fragment_of_cf_html;
+    use super::html_of_cf_html;
 
     /// What Windows puts there, built the way its header says: offsets count bytes.
     fn cf_html(fragment: &str) -> Vec<u8> {
@@ -355,26 +356,35 @@ mod tests {
     }
 
     #[test]
-    fn the_fragment_is_cut_out_of_windows_html_format_by_byte_offsets() {
-        let data = cf_html("<p>Xin <b>caf\u{e9}</b> 😀</p>");
-        assert_eq!(fragment_of_cf_html(&data).as_deref(), Some("<p>Xin <b>caf\u{e9}</b> 😀</p>"));
+    fn the_whole_page_is_cut_out_of_windows_html_format_by_byte_offsets() {
+        let data = cf_html("<p>Hello <b>caf\u{e9}</b> 😀</p>");
+        let page = "<html><body>\r\n<!--StartFragment--><p>Hello <b>caf\u{e9}</b> 😀</p><!--EndFragment-->\r\n</body></html>";
+        assert_eq!(html_of_cf_html(&data).as_deref(), Some(page));
         // A trailing NUL, as GlobalSize may include, is dropped.
         let mut with_nul = data.clone();
         with_nul.push(0);
-        assert_eq!(fragment_of_cf_html(&with_nul).as_deref(), Some("<p>Xin <b>caf\u{e9}</b> 😀</p>"));
+        assert_eq!(html_of_cf_html(&with_nul).as_deref(), Some(page));
     }
 
     #[test]
-    fn a_header_without_a_fragment_gives_the_page_and_garbage_gives_nothing() {
-        let page = "<html><body>hi</body></html>";
-        let head = "Version:0.9\r\nStartHTML:0000000055\r\nEndHTML:0000000083\r\n";
-        let data = format!("{head}{page}").into_bytes();
-        assert_eq!(head.len(), 55);
-        assert_eq!(fragment_of_cf_html(&data).as_deref(), Some(page));
-        assert_eq!(fragment_of_cf_html(b"no header at all"), None);
-        assert_eq!(fragment_of_cf_html(b""), None);
+    fn a_header_that_names_only_a_fragment_gives_the_fragment_and_garbage_gives_nothing() {
+        let head = |s: usize, e: usize| format!("Version:0.9\r\nStartFragment:{s:010}\r\nEndFragment:{e:010}\r\n");
+        let start = head(0, 0).len();
+        let ok = format!("{}<b>frag</b>", head(start, start + 11));
+        assert_eq!(html_of_cf_html(ok.as_bytes()).as_deref(), Some("<b>frag</b>"));
+        assert_eq!(html_of_cf_html(b"no header at all"), None);
+        assert_eq!(html_of_cf_html(b""), None);
         // Offsets pointing past the data are refused, not panicked on.
-        assert_eq!(fragment_of_cf_html(b"StartFragment:0000009999\r\nEndFragment:0000009999\r\n"), None);
+        assert_eq!(html_of_cf_html(b"StartHTML:0000009999\r\nEndHTML:0000009999\r\n"), None);
+    }
+
+    /// Run by hand with HTML copied from a web page (Cmd+C): it must be read back.
+    #[test]
+    #[ignore]
+    fn copied_html_is_read_back() {
+        let html = super::html().expect("copy something from a web page first");
+        assert!(!html.trim().is_empty());
+        println!("{} bytes of HTML", html.len());
     }
 
     /// Run by hand with a file copied in Finder (Cmd+C): its pasteboard URL is a file

@@ -353,7 +353,9 @@ impl Connect {
             speed_serving: false,
             next_token: 1,
         };
-        Self { inner: Arc::new(Inner { app, state: Mutex::new(state), sampler: Mutex::new(Sampler::new()) }) }
+        let this = Self { inner: Arc::new(Inner { app, state: Mutex::new(state), sampler: Mutex::new(Sampler::new()) }) };
+        this.purge_blobs();
+        this
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -1254,9 +1256,10 @@ impl Connect {
                         let reason = self.on_clip_image(&peer_id, lease, size);
                         if !reason.is_empty() && tx.send(&Msg::ClipAck { ok: false, reason: reason.into() }).await.is_err() { break; }
                     }
-                    Some(Msg::ClipRich { lease, size }) => {
-                        let reason = self.on_clip_rich(&peer_id, lease, size);
-                        if !reason.is_empty() && tx.send(&Msg::ClipAck { ok: false, reason: reason.into() }).await.is_err() { break; }
+                    Some(Msg::ClipRich { lease, size, upgrade }) => {
+                        let reason = self.on_clip_rich(&peer_id, lease, size, upgrade);
+                        // As an upgrade it is the plain text that was answered.
+                        if !reason.is_empty() && !upgrade && tx.send(&Msg::ClipAck { ok: false, reason: reason.into() }).await.is_err() { break; }
                     }
                     Some(Msg::ClipFilesGone { lease }) => self.on_clip_files_gone(&peer_id, &lease),
                     Some(Msg::ClipPrefs { receive, send }) => self.on_clip_prefs(&peer_id, receive, send),
@@ -1338,6 +1341,13 @@ impl Connect {
                 }
                 if let Some(out) = s.clip_out.as_mut() {
                     out.forget(&who);
+                    // A copied picture or rich text is kept only for the machine it was announced to.
+                    if out.blob && out.peers.is_empty() {
+                        for p in &out.paths {
+                            let _ = std::fs::remove_file(p);
+                        }
+                        s.clip_out = None;
+                    }
                 }
             }
         }

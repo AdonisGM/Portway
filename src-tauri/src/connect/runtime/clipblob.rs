@@ -116,7 +116,7 @@ impl Connect {
     }
 
     /// Keep `bytes` as a file, offer it to the peer as a lease and tell it.
-    fn announce_blob(&self, peer_id: &str, outbox: &mpsc::UnboundedSender<Msg>, kind: Blob, bytes: &[u8], hash: u64, chars: usize) -> Result<(), &'static str> {
+    fn announce_blob(&self, peer_id: &str, outbox: &mpsc::UnboundedSender<Msg>, kind: Blob, bytes: &[u8], hash: u64, chars: usize, upgrade: bool) -> Result<(), &'static str> {
         let size = bytes.len() as u64;
         let name = self.lock().store.peer(peer_id).map(|p| p.name.clone()).unwrap_or_default();
         // What was announced before is no longer what the clipboard holds.
@@ -135,10 +135,26 @@ impl Connect {
         self.note_blob_out(peer_id, kind, chars, size, "sent");
         let _ = outbox.send(match kind {
             Blob::Image => Msg::ClipImage { lease, size },
-            Blob::Rich => Msg::ClipRich { lease, size },
+            Blob::Rich => Msg::ClipRich { lease, size, upgrade },
         });
         self.audit(if kind == Blob::Image { "clipImageSend" } else { "clipRichSend" }, &name, true, Some(format!("{size} bytes")));
         Ok(())
+    }
+
+    /// Still the announcement written last, and the clipboard has not changed
+    /// since it was handled: what arrived late must not overwrite something newer.
+    fn blob_is_current(&self, lease: &str) -> bool {
+        let s = self.lock();
+        s.clip.blob_guard.as_ref().is_some_and(|(l, count)| l == lease && *count == sys_clip::change_count())
+    }
+
+    /// Nothing copied stays on disk from an earlier run.
+    pub(super) fn purge_blobs(&self) {
+        for name in ["clipblob", "clipblob-in"] {
+            if let Some(dir) = self.blob_dir(name) {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
     }
 
     // -- sending ----------------------------------------------------------------
@@ -164,13 +180,13 @@ impl Connect {
             self.note_blob_out(peer_id, Blob::Image, 0, size, if code == "clip_image_too_large" { "too_large" } else { "failed" });
             return Err(code);
         }
-        self.announce_blob(peer_id, outbox, Blob::Image, &png, hash, 0)
+        self.announce_blob(peer_id, outbox, Blob::Image, &png, hash, 0, false)
     }
 
-    /// Send text that was copied with HTML, so it keeps its formatting. Gives
-    /// back false when this cannot be done (the other machine is older, or it is
-    /// too big) and the plain text should go instead.
-    pub(super) fn send_clip_rich(&self, peer_id: &str, outbox: &mpsc::UnboundedSender<Msg>, text: &str, html: &str) -> bool {
+    /// Send text that was copied with HTML, so it keeps its formatting. `upgrade`
+    /// says the plain text was just sent too. Gives back false when this cannot
+    /// be done (the other machine is older, or it is too big).
+    pub(super) fn send_clip_rich(&self, peer_id: &str, outbox: &mpsc::UnboundedSender<Msg>, text: &str, html: &str, upgrade: bool) -> bool {
         if !self.peer_can(peer_id, machine::FEATURE_CLIPRICH) {
             return false;
         }
@@ -178,7 +194,7 @@ impl Connect {
         if bytes.len() as u64 > MAX_BLOB {
             return false;
         }
-        self.announce_blob(peer_id, outbox, Blob::Rich, &bytes, hash_rich(text, html), text.chars().count()).is_ok()
+        self.announce_blob(peer_id, outbox, Blob::Rich, &bytes, hash_rich(text, html), text.chars().count(), upgrade).is_ok()
     }
 
     // -- receiving --------------------------------------------------------------
@@ -187,15 +203,17 @@ impl Connect {
     /// written here, or "" when it is on its way: the answer to the sender
     /// follows when the picture has arrived.
     pub(super) fn on_clip_image(&self, peer_id: &str, lease: String, size: u64) -> &'static str {
-        self.receive_blob(peer_id, lease, size, Blob::Image)
+        self.receive_blob(peer_id, lease, size, Blob::Image, false)
     }
 
     /// The linked machine copied text with its HTML; as `on_clip_image`.
-    pub(super) fn on_clip_rich(&self, peer_id: &str, lease: String, size: u64) -> &'static str {
-        self.receive_blob(peer_id, lease, size, Blob::Rich)
+    pub(super) fn on_clip_rich(&self, peer_id: &str, lease: String, size: u64, upgrade: bool) -> &'static str {
+        self.receive_blob(peer_id, lease, size, Blob::Rich, upgrade)
     }
 
-    fn receive_blob(&self, peer_id: &str, lease: String, size: u64, kind: Blob) -> &'static str {
+    /// `upgrade`: the plain text of this copy is already here, so when this fails
+    /// the sender is not told, and nothing is overwritten.
+    fn receive_blob(&self, peer_id: &str, lease: String, size: u64, kind: Blob, upgrade: bool) -> &'static str {
         let (allowed, peer, targets) = {
             let s = self.lock();
             let Some(p) = s.store.peer(peer_id) else { return "off" };
@@ -212,11 +230,14 @@ impl Connect {
             return "failed";
         }
         let Some(dir) = self.blob_dir("clipblob-in").map(|d| d.join(&lease)) else { return "failed" };
+        // Only the latest announcement is written, and only if nothing was copied here meanwhile.
+        self.lock().clip.blob_guard = Some((lease.clone(), sys_clip::change_count()));
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
             let _ = std::fs::remove_dir_all(&dir);
             let fetched = this.fetch_item(&me, &peer, &targets, &lease, 0, &dir, None, Arc::new(Notify::new()), Some(MAX_BLOB)).await;
             let reason = match fetched {
+                Ok(Some(_)) if !this.blob_is_current(&lease) => "",
                 Ok(Some(path)) => {
                     let path = PathBuf::from(path);
                     match kind {
@@ -229,6 +250,10 @@ impl Connect {
                 Err(_) => "failed",
             };
             let _ = std::fs::remove_dir_all(&dir);
+            // A failed upgrade changes nothing for the sender: the plain text was taken.
+            if upgrade && !reason.is_empty() {
+                return;
+            }
             if let Some(outbox) = this.link_outbox(&peer.id) {
                 let _ = outbox.send(Msg::ClipAck { ok: reason.is_empty(), reason: reason.into() });
             }
@@ -350,11 +375,14 @@ mod tests {
             #[serde(other)]
             Unknown,
         }
-        for m in [Msg::ClipImage { lease: "abc".into(), size: 1234 }, Msg::ClipRich { lease: "def".into(), size: 99 }] {
+        for m in [Msg::ClipImage { lease: "abc".into(), size: 1234 }, Msg::ClipRich { lease: "def".into(), size: 99, upgrade: true }] {
             let json = serde_json::to_string(&m).unwrap();
             assert_eq!(serde_json::from_str::<Msg>(&json).unwrap(), m);
             // The same tagging the wire uses, read by a build that does not know the message.
             assert_eq!(serde_json::from_str::<Older>(&json).unwrap(), Older::Unknown, "{json}");
         }
+        // A sender that does not know `upgrade` (it is false there) is still understood.
+        let plain: Msg = serde_json::from_str(r#"{"t":"clipRich","lease":"x","size":5}"#).unwrap();
+        assert_eq!(plain, Msg::ClipRich { lease: "x".into(), size: 5, upgrade: false });
     }
 }

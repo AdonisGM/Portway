@@ -161,7 +161,14 @@ pub enum Msg {
     /// Text copied together with its HTML (a web page, a Word selection), as a
     /// small JSON file of `size` bytes fetched exactly like a `ClipImage`. The
     /// receiver writes both into its clipboard and answers with a `ClipAck`.
-    ClipRich { lease: String, size: u64 },
+    /// `upgrade` says the same text was just sent as a plain `Clip`: it is
+    /// already in the receiver's clipboard, so a failure here is not an answer to report.
+    ClipRich {
+        lease: String,
+        size: u64,
+        #[serde(default)]
+        upgrade: bool,
+    },
     /// First message of a `Fetch` connection: the item (by position) of a lease.
     Want { lease: String, item: u32 },
     /// What this machine does with clipboard text for the other one, sent when

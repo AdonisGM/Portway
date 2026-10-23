@@ -443,6 +443,10 @@ impl Connect {
             }
         })
         .await;
+        // Served once: a copied picture or rich text is not kept on disk after that.
+        if blob {
+            let _ = std::fs::remove_file(&files[0].0);
+        }
         let Some(tid) = tid else { return };
         match result {
             Ok(()) => {

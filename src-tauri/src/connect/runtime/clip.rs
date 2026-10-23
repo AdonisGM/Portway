@@ -66,11 +66,15 @@ pub struct ClipState {
     /// The clipboard's change count right after this app put something there.
     pub own_change: Option<u64>,
     pub note: Option<ClipNote>,
+    /// The picture or rich text announced last, and the clipboard's change count
+    /// when it was: it is written only if it is still the latest and nothing was
+    /// copied here since (the fetch takes a moment).
+    pub(super) blob_guard: Option<(String, Option<u64>)>,
 }
 
 impl ClipState {
     pub fn new() -> Self {
-        Self { last: None, own_change: None, note: None }
+        Self { last: None, own_change: None, note: None, blob_guard: None }
     }
 }
 
@@ -112,20 +116,21 @@ impl Connect {
         self.lock().link.as_ref().filter(|l| l.up && l.peer_id == id).map(|l| l.outbox.clone())
     }
 
-    /// Send copied text: with its HTML when there is some and the other machine
-    /// can keep it, else as plain text. Gives back false when plain text is too
-    /// long (or empty) and nothing was sent.
+    /// Send copied text. The plain text goes first, over the live link, exactly
+    /// as it always has; when there is HTML and the other machine can keep it, the
+    /// formatted version follows as an upgrade of what was just written there.
+    /// Text too long for the live link goes only as rich text. Gives back false
+    /// when nothing could be sent.
     pub(super) fn send_text(&self, id: &str, outbox: &mpsc::UnboundedSender<Msg>, text: String, html: Option<String>) -> bool {
-        if let Some(html) = &html {
-            if self.send_clip_rich(id, outbox, &text, html) {
-                return true;
-            }
+        let plain_fits = check_text(&text).is_ok();
+        let rich_hash = html.as_ref().map(|h| super::clipblob::hash_rich(&text, h));
+        if plain_fits {
+            self.send_clip(id, outbox, text.clone());
         }
-        if check_text(&text).is_err() {
+        let rich_sent = html.as_ref().is_some_and(|h| self.send_clip_rich(id, outbox, &text, h, plain_fits));
+        if !plain_fits && !rich_sent {
             return false;
         }
-        let rich_hash = html.as_ref().map(|h| super::clipblob::hash_rich(&text, h));
-        self.send_clip(id, outbox, text);
         // The watcher compares against the text and HTML together when there is HTML.
         if let Some(h) = rich_hash {
             self.lock().clip.last = Some(h);

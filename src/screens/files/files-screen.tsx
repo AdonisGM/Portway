@@ -403,7 +403,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
           <ToolButton
             warn={asRoot}
             disabled={!live}
-            title={asRoot ? t('Đang dùng root: bấm để quay về quyền của {user}', { user }) : t('Duyệt, tải lên, sửa và xoá tệp bằng quyền root qua sudo')}
+            title={asRoot ? t('Đang thao tác tệp bằng root qua sudo: tệp tải lên hoặc tạo mới sẽ thuộc root. Bấm để quay về quyền của {user}', { user }) : t('Duyệt, tải lên, sửa và xoá tệp bằng quyền root qua sudo')}
             onClick={toggleRoot}
           >
             {asRoot ? <ShieldAlert size={15} strokeWidth={2} /> : <ShieldCheck size={15} strokeWidth={1.8} />}
@@ -411,18 +411,6 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
           </ToolButton>
         )}
       </div>
-
-      {asRoot && (
-        <div className="flex items-center gap-2.5 rounded-[10px] px-3 py-[7px]" style={{ background: 'var(--warn-soft)' }}>
-          <ShieldCheck size={15} strokeWidth={1.9} className="flex-none text-warn" />
-          <span className="flex-1 leading-snug text-ink2">
-            {t('Đang thao tác tệp bằng quyền root qua sudo. Tệp tải lên, tệp và thư mục tạo mới sẽ thuộc root.')}
-          </span>
-          <Button variant="ghost" size="xs" onClick={() => void setRoot(false)}>
-            {t('Quay về {user}', { user })}
-          </Button>
-        </div>
-      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <SearchInput value={filter} onChange={setFilter} placeholder={t('Lọc trong thư mục (hỗ trợ *.log)')} className="w-60 min-w-0" />
@@ -445,6 +433,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
       <div className="flex min-h-[260px] flex-1 gap-3">
         <Table
           loading={false}
+          root={asRoot}
           dim={loading}
           padBottom={queueShown}
           overlay={
@@ -794,6 +783,7 @@ function PathBar({ path, go }: { path: string; go: (p: string) => Promise<boolea
 /** Fills the height it is given; rows scroll inside under a fixed header. */
 function Table({
   loading,
+  root,
   dim,
   head,
   overlay,
@@ -801,6 +791,8 @@ function Table({
   children,
 }: {
   loading: boolean
+  /** SFTP runs as root: the frame turns amber and glows. */
+  root?: boolean
   dim?: boolean
   head?: ReactNode
   overlay?: ReactNode
@@ -809,7 +801,7 @@ function Table({
   children?: ReactNode
 }) {
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
+    <div className={cx('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-surface', root ? 'root-frame' : 'border-line')}>
       <div className="min-h-0 flex-1 overflow-auto overscroll-contain transition-opacity" style={{ opacity: dim ? 0.6 : 1 }}>
         <div
           className="sticky top-0 z-[1] grid items-center gap-3 bg-sunken px-3.5 py-2 text-[11px] text-muted"

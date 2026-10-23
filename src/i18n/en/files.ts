@@ -74,11 +74,8 @@ const en: Dict = {
   'Đã quay về quyền của {user}': 'Back to {user}',
   'Không dùng được quyền root': "Couldn't switch to root",
   'Không tắt được quyền root': "Couldn't turn off root access",
-  'Đang dùng root: bấm để quay về quyền của {user}': 'Working as root: click to go back to {user}',
+  'Đang thao tác tệp bằng root qua sudo: tệp tải lên hoặc tạo mới sẽ thuộc root. Bấm để quay về quyền của {user}': 'Working on files as root through sudo: uploaded or new files will belong to root. Click to go back to {user}',
   'Duyệt, tải lên, sửa và xoá tệp bằng quyền root qua sudo': 'Browse, upload, edit and delete files as root through sudo',
-  'Đang thao tác tệp bằng quyền root qua sudo. Tệp tải lên, tệp và thư mục tạo mới sẽ thuộc root.':
-    'Working on files as root through sudo. Uploaded files and new files or folders will belong to root.',
-  'Quay về {user}': 'Back to {user}',
   'Dùng quyền root (sudo)': 'Use root (sudo)',
   'Server không có sftp-server để chạy bằng sudo (SFTP được cấu hình internal-sftp?)': 'No sftp-server binary to run through sudo (is SFTP set to internal-sftp?)',
   'Không mở được SFTP bằng sudo: {detail}': "Couldn't start SFTP through sudo: {detail}",

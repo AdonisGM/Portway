@@ -105,3 +105,18 @@
 [data-scope='menu'][data-part='positioner'] {
   z-index: 60 !important;
 }
+
+/* The file list while SFTP runs as root: an amber frame with a slow, soft glow. */
+@keyframes root-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent, inset 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 14px 1px color-mix(in srgb, var(--warn) 38%, transparent), inset 0 0 22px 0 color-mix(in srgb, var(--warn) 10%, transparent);
+  }
+}
+.root-frame {
+  border-color: var(--warn);
+  animation: root-glow 3.2s ease-in-out infinite;
+}

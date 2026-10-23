@@ -15,6 +15,8 @@ pub const FEATURE_SPEED: &str = "speed";
 pub const FEATURE_CLIPFILES: &str = "clipfiles";
 /// A copied picture (a screenshot) can be pasted on the other machine.
 pub const FEATURE_CLIPIMAGE: &str = "clipimage";
+/// Copied text keeps its formatting (HTML) on the other machine.
+pub const FEATURE_CLIPRICH: &str = "cliprich";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -124,7 +126,7 @@ pub fn collect(cards: &[Card], statics: &Statics) -> MachineInfo {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         uptime: System::uptime(),
         cards,
-        features: vec![FEATURE_SPEED.to_string(), FEATURE_CLIPFILES.to_string(), FEATURE_CLIPIMAGE.to_string()],
+        features: vec![FEATURE_SPEED.to_string(), FEATURE_CLIPFILES.to_string(), FEATURE_CLIPIMAGE.to_string(), FEATURE_CLIPRICH.to_string()],
     }
 }
 

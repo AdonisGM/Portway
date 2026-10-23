@@ -42,6 +42,8 @@ pub struct ClipNote {
     pub files: u32,
     /// A picture (then `bytes` is its size) rather than text or files.
     pub image: bool,
+    /// Text sent with its formatting (HTML).
+    pub rich: bool,
     pub bytes: u64,
     pub at: u64,
     /// For "out": "sent" until the other machine answers, then "delivered" or
@@ -97,13 +99,38 @@ impl Connect {
         if text.trim().is_empty() && sys_clip::has_image() {
             return self.send_clip_image(id, &outbox, true).map_err(AppError::new);
         }
-        check_text(&text).map_err(AppError::new)?;
-        self.send_clip(id, &outbox, text);
+        if text.trim().is_empty() {
+            return Err(AppError::new("clip_empty"));
+        }
+        if !self.send_text(id, &outbox, text.clone(), sys_clip::html()) {
+            return Err(AppError::new(check_text(&text).err().unwrap_or("clip_too_large")));
+        }
         Ok(())
     }
 
     pub(super) fn link_outbox(&self, id: &str) -> Option<mpsc::UnboundedSender<Msg>> {
         self.lock().link.as_ref().filter(|l| l.up && l.peer_id == id).map(|l| l.outbox.clone())
+    }
+
+    /// Send copied text: with its HTML when there is some and the other machine
+    /// can keep it, else as plain text. Gives back false when plain text is too
+    /// long (or empty) and nothing was sent.
+    pub(super) fn send_text(&self, id: &str, outbox: &mpsc::UnboundedSender<Msg>, text: String, html: Option<String>) -> bool {
+        if let Some(html) = &html {
+            if self.send_clip_rich(id, outbox, &text, html) {
+                return true;
+            }
+        }
+        if check_text(&text).is_err() {
+            return false;
+        }
+        let rich_hash = html.as_ref().map(|h| super::clipblob::hash_rich(&text, h));
+        self.send_clip(id, outbox, text);
+        // The watcher compares against the text and HTML together when there is HTML.
+        if let Some(h) = rich_hash {
+            self.lock().clip.last = Some(h);
+        }
+        true
     }
 
     fn send_clip(&self, id: &str, outbox: &mpsc::UnboundedSender<Msg>, text: String) {
@@ -112,7 +139,7 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip.last = Some(hash_of(&text));
-            s.clip.note = Some(ClipNote { peer_id: id.to_string(), direction: "out", chars, files: 0, image: false, bytes: 0, at: now_ms(), status: "sent".into() });
+            s.clip.note = Some(ClipNote { peer_id: id.to_string(), direction: "out", chars, files: 0, image: false, rich: false, bytes: 0, at: now_ms(), status: "sent".into() });
         }
         let _ = outbox.send(Msg::Clip { text });
         self.audit("clipSend", &name, true, Some(format!("{chars} chars")));
@@ -146,7 +173,7 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip.last = Some(h);
-            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars, files: 0, image: false, bytes: 0, at: now_ms(), status: "delivered".into() });
+            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars, files: 0, image: false, rich: false, bytes: 0, at: now_ms(), status: "delivered".into() });
         }
         self.audit("clipReceive", &name, true, Some(format!("{chars} chars")));
         self.publish();
@@ -229,11 +256,16 @@ impl Connect {
                 }
                 continue;
             }
-            if check_text(&text).is_err() || self.lock().clip.last == Some(hash_of(&text)) {
+            let html = sys_clip::html();
+            let hash = match &html {
+                Some(h) => super::clipblob::hash_rich(&text, h),
+                None => hash_of(&text),
+            };
+            if self.lock().clip.last == Some(hash) {
                 continue;
             }
             if let Some(outbox) = self.link_outbox(&peer_id) {
-                self.send_clip(&peer_id, &outbox, text);
+                self.send_text(&peer_id, &outbox, text, html);
             }
         }
     }

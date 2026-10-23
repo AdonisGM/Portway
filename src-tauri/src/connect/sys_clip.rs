@@ -84,6 +84,77 @@ pub fn image_png() -> Option<Vec<u8>> {
     None
 }
 
+/// The HTML of what was copied (a web page, a Word selection) as the copying
+/// app put it on the clipboard; `None` when there is none.
+pub fn html() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeHTML};
+        let pb = NSPasteboard::generalPasteboard();
+        // SAFETY: the constant is a plain pasteboard type name.
+        let text = pb.stringForType(unsafe { NSPasteboardTypeHTML })?.to_string();
+        return Some(text).filter(|t| !t.trim().is_empty());
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW};
+        use windows_sys::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+        let name: Vec<u16> = "HTML Format".encode_utf16().chain(std::iter::once(0)).collect();
+        // SAFETY: `name` is NUL-terminated; the clipboard is opened for the read and
+        // closed after it, and the memory is only read while it is locked.
+        let raw = unsafe {
+            let format = RegisterClipboardFormatW(name.as_ptr());
+            if format == 0 {
+                return None;
+            }
+            // Another program may hold the clipboard for a moment.
+            let mut opened = false;
+            for _ in 0..5 {
+                if OpenClipboard(std::ptr::null_mut()) != 0 {
+                    opened = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if !opened {
+                return None;
+            }
+            let mut bytes = None;
+            let handle = GetClipboardData(format);
+            if !handle.is_null() {
+                let ptr = GlobalLock(handle) as *const u8;
+                if !ptr.is_null() {
+                    bytes = Some(std::slice::from_raw_parts(ptr, GlobalSize(handle)).to_vec());
+                    GlobalUnlock(handle);
+                }
+            }
+            CloseClipboard();
+            bytes
+        };
+        return fragment_of_cf_html(&raw?);
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+/// What Windows calls "HTML Format": a header with byte offsets, then the page.
+/// Gives back the copied fragment (or the whole page when the header names no fragment).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn fragment_of_cf_html(data: &[u8]) -> Option<String> {
+    let head = String::from_utf8_lossy(&data[..data.len().min(1024)]).into_owned();
+    let offset = |key: &str| -> Option<usize> {
+        let at = head.find(key)? + key.len();
+        head[at..].chars().take_while(char::is_ascii_digit).collect::<String>().parse().ok()
+    };
+    let (start, end) = match (offset("StartFragment:"), offset("EndFragment:")) {
+        (Some(s), Some(e)) => (s, e),
+        _ => (offset("StartHTML:")?, offset("EndHTML:")?),
+    };
+    let slice = data.get(start..end.min(data.len()))?;
+    let text = String::from_utf8_lossy(slice).trim_end_matches('\0').to_string();
+    Some(text).filter(|t| !t.trim().is_empty())
+}
+
 /// The files (and folders) on the clipboard, as copied in Finder or Explorer;
 /// empty when there are none or this platform has no way to read them.
 pub fn file_paths() -> Vec<std::path::PathBuf> {
@@ -270,6 +341,42 @@ mod mac_lazy {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
+    use super::fragment_of_cf_html;
+
+    /// What Windows puts there, built the way its header says: offsets count bytes.
+    fn cf_html(fragment: &str) -> Vec<u8> {
+        let (pre, post) = ("<html><body>\r\n<!--StartFragment-->", "<!--EndFragment-->\r\n</body></html>");
+        let header = |sh: usize, eh: usize, sf: usize, ef: usize| format!("Version:0.9\r\nStartHTML:{sh:010}\r\nEndHTML:{eh:010}\r\nStartFragment:{sf:010}\r\nEndFragment:{ef:010}\r\n");
+        let len = header(0, 0, 0, 0).len();
+        let sf = len + pre.len();
+        let ef = sf + fragment.len();
+        let eh = ef + post.len();
+        format!("{}{pre}{fragment}{post}", header(len, eh, sf, ef)).into_bytes()
+    }
+
+    #[test]
+    fn the_fragment_is_cut_out_of_windows_html_format_by_byte_offsets() {
+        let data = cf_html("<p>Xin <b>caf\u{e9}</b> 😀</p>");
+        assert_eq!(fragment_of_cf_html(&data).as_deref(), Some("<p>Xin <b>caf\u{e9}</b> 😀</p>"));
+        // A trailing NUL, as GlobalSize may include, is dropped.
+        let mut with_nul = data.clone();
+        with_nul.push(0);
+        assert_eq!(fragment_of_cf_html(&with_nul).as_deref(), Some("<p>Xin <b>caf\u{e9}</b> 😀</p>"));
+    }
+
+    #[test]
+    fn a_header_without_a_fragment_gives_the_page_and_garbage_gives_nothing() {
+        let page = "<html><body>hi</body></html>";
+        let head = "Version:0.9\r\nStartHTML:0000000055\r\nEndHTML:0000000083\r\n";
+        let data = format!("{head}{page}").into_bytes();
+        assert_eq!(head.len(), 55);
+        assert_eq!(fragment_of_cf_html(&data).as_deref(), Some(page));
+        assert_eq!(fragment_of_cf_html(b"no header at all"), None);
+        assert_eq!(fragment_of_cf_html(b""), None);
+        // Offsets pointing past the data are refused, not panicked on.
+        assert_eq!(fragment_of_cf_html(b"StartFragment:0000009999\r\nEndFragment:0000009999\r\n"), None);
+    }
+
     /// Run by hand with a file copied in Finder (Cmd+C): its pasteboard URL is a file
     /// reference, which must come out as the real path.
     #[test]

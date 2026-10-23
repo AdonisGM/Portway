@@ -312,7 +312,7 @@ struct Inner {
 
 mod clip;
 mod clipfiles;
-mod clipimage;
+mod clipblob;
 mod speed;
 mod transfer;
 use super::sys_clip;
@@ -1252,6 +1252,10 @@ impl Connect {
                     Some(Msg::ClipImage { lease, size }) => {
                         // Accepted means on its way: the answer comes when it has arrived.
                         let reason = self.on_clip_image(&peer_id, lease, size);
+                        if !reason.is_empty() && tx.send(&Msg::ClipAck { ok: false, reason: reason.into() }).await.is_err() { break; }
+                    }
+                    Some(Msg::ClipRich { lease, size }) => {
+                        let reason = self.on_clip_rich(&peer_id, lease, size);
                         if !reason.is_empty() && tx.send(&Msg::ClipAck { ok: false, reason: reason.into() }).await.is_err() { break; }
                     }
                     Some(Msg::ClipFilesGone { lease }) => self.on_clip_files_gone(&peer_id, &lease),

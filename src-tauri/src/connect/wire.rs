@@ -158,6 +158,10 @@ pub enum Msg {
     /// connection naming this `lease` for item 0. The receiver writes it into its
     /// clipboard and answers with a `ClipAck`, once the picture has arrived.
     ClipImage { lease: String, size: u64 },
+    /// Text copied together with its HTML (a web page, a Word selection), as a
+    /// small JSON file of `size` bytes fetched exactly like a `ClipImage`. The
+    /// receiver writes both into its clipboard and answers with a `ClipAck`.
+    ClipRich { lease: String, size: u64 },
     /// First message of a `Fetch` connection: the item (by position) of a lease.
     Want { lease: String, item: u32 },
     /// What this machine does with clipboard text for the other one, sent when

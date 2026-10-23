@@ -23,9 +23,9 @@ pub struct OutLease {
     pub(super) paths: Vec<PathBuf>,
     /// Who was told; only they may fetch.
     pub(super) peers: HashSet<String>,
-    /// A copied picture, saved as a PNG of our own for the other machine to fetch
-    /// (not shown as a transfer, deleted when the clipboard moves on).
-    pub(super) image: bool,
+    /// A copied picture or rich text, kept as a file of our own for the other
+    /// machine to fetch (not shown as a transfer, deleted when the clipboard moves on).
+    pub(super) blob: bool,
 }
 
 /// What a linked machine says it copied.
@@ -116,12 +116,12 @@ impl Connect {
             let name = s.store.peer(peer_id).map(|p| p.name.clone()).unwrap_or_default();
             let same = s.clip_out.as_ref().is_some_and(|l| l.paths == paths);
             if !same {
-                s.clip_out = Some(OutLease { id: uuid::Uuid::new_v4().simple().to_string(), paths: paths.clone(), peers: HashSet::new(), image: false });
+                s.clip_out = Some(OutLease { id: uuid::Uuid::new_v4().simple().to_string(), paths: paths.clone(), peers: HashSet::new(), blob: false });
             }
             let out = s.clip_out.as_mut().expect("just set");
             out.peers.insert(peer_id.to_string());
             let lease = out.id.clone();
-            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "out", chars: 0, files: items.len() as u32, image: false, bytes: 0, at: now_ms(), status: "sent".into() });
+            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "out", chars: 0, files: items.len() as u32, image: false, rich: false, bytes: 0, at: now_ms(), status: "sent".into() });
             (lease, name)
         };
         let count = items.len();
@@ -142,7 +142,7 @@ impl Connect {
             let mut s = self.lock();
             match s.clip_out.take() {
                 Some(l) => {
-                    if l.image {
+                    if l.blob {
                         for p in &l.paths {
                             let _ = std::fs::remove_file(p);
                         }
@@ -182,7 +182,7 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip_in = Some(InLease { peer_id: peer_id.to_string(), lease, items, at: now_ms() });
-            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars: 0, files: count as u32, image: false, bytes: 0, at: now_ms(), status: "delivered".into() });
+            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars: 0, files: count as u32, image: false, rich: false, bytes: 0, at: now_ms(), status: "delivered".into() });
         }
         self.audit("clipFilesReceive", &name, true, Some(format!("{count} items")));
         self.offer_to_system();
@@ -390,9 +390,9 @@ impl Connect {
         // Only the lease still on the clipboard, only for whoever was told, only by position.
         let found = {
             let s = self.lock();
-            s.clip_out.as_ref().filter(|l| l.id == lease && l.peers.contains(&peer.id)).and_then(|l| l.paths.get(item as usize).cloned().map(|p| (p, l.image)))
+            s.clip_out.as_ref().filter(|l| l.id == lease && l.peers.contains(&peer.id)).and_then(|l| l.paths.get(item as usize).cloned().map(|p| (p, l.blob)))
         };
-        let Some((path, image)) = found else {
+        let Some((path, blob)) = found else {
             let _ = tx.send(&Msg::Refuse { code: "gone".into() }).await;
             return;
         };
@@ -427,8 +427,8 @@ impl Connect {
             Ok(Some(Frame::Msg(Msg::Accept))) => {}
             _ => return,
         }
-        // A copied picture is one more clipboard sync, not a transfer worth a row of its own.
-        let (tid, cancel) = if image {
+        // A copied picture or rich text is one more clipboard sync, not a transfer worth a row of its own.
+        let (tid, cancel) = if blob {
             (None, Arc::new(Notify::new()))
         } else {
             let (tid, t) = Self::new_transfer(&peer.id, &peer.name, false, offered, "active");

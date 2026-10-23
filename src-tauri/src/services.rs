@@ -117,14 +117,37 @@ pub struct Unit {
     pub run_as: Option<String>,
 }
 
-const PROPS: &str = "Id,Names,Description,LoadState,ActiveState,SubState,UnitFileState,MainPID,MemoryCurrent,NRestarts,ActiveEnterTimestamp,InactiveEnterTimestamp,ExecMainStatus,ExecMainCode,FragmentPath,User,Result";
+const PROPS: &str = "Id,Names,Description,LoadState,ActiveState,SubState,UnitFileState,MainPID,MemoryCurrent,NRestarts,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic,ExecMainStatus,ExecMainCode,FragmentPath,User,Result";
 
-/// "@1727326801" from --timestamp=unix, in ms; empty or 0 when it never happened.
-fn unix_ms(v: &str) -> Option<u64> {
-    v.strip_prefix('@').and_then(|s| s.parse::<u64>().ok()).filter(|s| *s > 0).map(|s| s * 1000)
+/// A "...Monotonic" property (µs since boot, 0 when it never happened) as ms
+/// since epoch, given the boot time. `--timestamp=unix` would be simpler but
+/// systemd before 250 rejects it, and with it the whole unit list.
+fn since_boot_ms(v: &str, boot_ms: Option<u64>) -> Option<u64> {
+    let us: u64 = v.parse().ok().filter(|us| *us > 0)?;
+    boot_ms.map(|boot| boot + us / 1000)
 }
 
-pub(crate) fn parse_show(out: &str) -> Vec<Unit> {
+/// Boot time in ms since epoch from `date +%s` and the first field of
+/// /proc/uptime, one per line.
+fn boot_ms(tail: &str) -> Option<u64> {
+    let mut lines = tail.lines().map(str::trim).filter(|l| !l.is_empty());
+    let now: u64 = lines.next()?.parse().ok()?;
+    let uptime: f64 = lines.next()?.split_whitespace().next()?.parse().ok()?;
+    (now * 1000).checked_sub((uptime * 1000.0).round() as u64)
+}
+
+/// The unit properties, then (after MARK) the clock the monotonic times count from.
+pub(crate) fn status_script(props: &str, list: &str) -> String {
+    format!("systemctl show --no-pager -p {props} -- {list}; echo {MARK}; date +%s; cat /proc/uptime")
+}
+
+/// Units from the output of `status_script`.
+pub(crate) fn parse_status(stdout: &str) -> Vec<Unit> {
+    let (show, clock) = stdout.split_once(MARK).unwrap_or((stdout, ""));
+    parse_show(show, boot_ms(clock))
+}
+
+fn parse_show(out: &str, boot_ms: Option<u64>) -> Vec<Unit> {
     out.split("\n\n")
         .filter_map(|block| {
             let props: HashMap<&str, &str> = block.lines().filter_map(|l| l.split_once('=')).collect();
@@ -147,8 +170,8 @@ pub(crate) fn parse_show(out: &str) -> Vec<Unit> {
                 // "[not set]" or u64::MAX when there is no memory accounting.
                 memory: get("MemoryCurrent").parse().ok().filter(|m| *m < u64::MAX),
                 restarts: get("NRestarts").parse().unwrap_or(0),
-                active_since: unix_ms(&get("ActiveEnterTimestamp")),
-                inactive_since: unix_ms(&get("InactiveEnterTimestamp")),
+                active_since: since_boot_ms(&get("ActiveEnterTimestampMonotonic"), boot_ms),
+                inactive_since: since_boot_ms(&get("InactiveEnterTimestampMonotonic"), boot_ms),
                 exit_status: get("ExecMainStatus").parse().ok(),
                 exit_code: Some(get("ExecMainCode")).filter(|c| !c.is_empty() && c != "0"),
                 result: get("Result"),
@@ -167,14 +190,15 @@ pub async fn services_status(sessions: tauri::State<'_, Sessions>, server_id: St
     check_units(&units)?;
     let session = sessions.get(&server_id, &user)?;
     let list = units.join(" ");
-    let cmd = format!("systemctl show --no-pager --timestamp=unix -p {PROPS} -- {list}");
+    let cmd = status_script(PROPS, &list);
     let out = trace::labelled(tr("Dịch vụ · trạng thái unit", "Services · unit status"), exec_priv(&session, &cmd, READ_TIMEOUT)).await?;
-    if out.code != Some(0) && out.stdout.trim().is_empty() {
+    // The clock lines come after MARK whatever systemctl did, so judge by its own output.
+    if out.stdout.split(MARK).next().unwrap_or("").trim().is_empty() {
         return Err(AppError::detail("systemctl", out.stderr.trim()));
     }
     // An alias shows as its real unit (Id); keep one row per unit.
     let mut seen = std::collections::HashSet::new();
-    Ok(parse_show(&out.stdout).into_iter().filter(|u| seen.insert(u.name.clone())).collect())
+    Ok(parse_status(&out.stdout).into_iter().filter(|u| seen.insert(u.name.clone())).collect())
 }
 
 // -------------------------------------------------------------------- journal
@@ -340,14 +364,24 @@ mod tests {
 
     #[test]
     fn parses_systemctl_show() {
-        let out = "Id=worker-queue.service\nDescription=Background worker\nLoadState=loaded\nActiveState=failed\nSubState=failed\nUnitFileState=enabled\nMainPID=0\nMemoryCurrent=[not set]\nNRestarts=4\nActiveEnterTimestamp=\nInactiveEnterTimestamp=@1727326801\nExecMainStatus=3\nExecMainCode=1\nFragmentPath=/etc/systemd/system/worker-queue.service\nUser=deploy\nResult=exit-code\n\nId=nginx.service\nActiveState=active\nMainPID=412\nMemoryCurrent=5242880\nActiveEnterTimestamp=@1727326700\n";
-        let u = parse_show(out);
+        // Booted at 1_727_320_000 s; now 1_727_327_000 s, up 7000.5 s.
+        let out = "Id=worker-queue.service\nDescription=Background worker\nLoadState=loaded\nActiveState=failed\nSubState=failed\nUnitFileState=enabled\nMainPID=0\nMemoryCurrent=[not set]\nNRestarts=4\nActiveEnterTimestampMonotonic=0\nInactiveEnterTimestampMonotonic=6801000000\nExecMainStatus=3\nExecMainCode=1\nFragmentPath=/etc/systemd/system/worker-queue.service\nUser=deploy\nResult=exit-code\n\nId=nginx.service\nActiveState=active\nMainPID=412\nMemoryCurrent=5242880\nActiveEnterTimestampMonotonic=6700000000\n";
+        let u = parse_status(&format!("{out}{MARK}\n1727327000\n7000.50 27000.11\n"));
         assert_eq!(u.len(), 2);
         assert_eq!((u[0].restarts, u[0].main_pid, u[0].memory), (4, None, None));
-        assert_eq!(u[0].inactive_since, Some(1_727_326_801_000));
+        assert_eq!((u[0].active_since, u[0].inactive_since), (None, Some(1_727_326_801_000 - 500)));
         assert_eq!(u[0].exit_status, Some(3));
         assert_eq!(u[0].run_as.as_deref(), Some("deploy"));
         assert_eq!((u[1].main_pid, u[1].memory), (Some(412), Some(5_242_880)));
+        assert_eq!(u[1].active_since, Some(1_727_326_700_000 - 500));
+    }
+
+    #[test]
+    fn times_need_the_clock() {
+        let out = "Id=nginx.service\nActiveEnterTimestampMonotonic=6700000000\n";
+        assert_eq!(parse_status(out)[0].active_since, None, "no clock lines");
+        assert_eq!(boot_ms("1727327000\n7000.50 27000.11\n"), Some(1_727_319_999_500));
+        assert_eq!(boot_ms("garbage"), None);
     }
 
     #[test]

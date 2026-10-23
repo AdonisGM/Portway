@@ -2243,10 +2243,11 @@ mod tests {
         assert!(all.iter().any(|u| u.name == "nginx.service" && u.active == "active"));
         assert!(all.iter().any(|u| u.name == "report-mailer.service" && u.file_state.as_deref() == Some("disabled")));
         assert!(!all.iter().any(|u| u.name == "sshd.service"), "aliases are left out");
-        let show = exec_priv(&sysd, "systemctl show --no-pager --timestamp=unix -p Id,Names,ActiveState,Result,ExecMainStatus,User -- backup-db.service sshd.service", EXEC_TIMEOUT).await.unwrap().stdout;
-        let units = crate::services::parse_show(&show);
+        let show = exec_priv(&sysd, &crate::services::status_script("Id,Names,ActiveState,Result,ExecMainStatus,User,ActiveEnterTimestampMonotonic", "backup-db.service sshd.service"), EXEC_TIMEOUT).await.unwrap().stdout;
+        let units = crate::services::parse_status(&show);
         let backup = units.iter().find(|u| u.name == "backup-db.service").unwrap();
         assert_eq!((backup.active_state.as_str(), backup.exit_status), ("failed", Some(1)));
+        assert!(units.iter().any(|u| u.name == "ssh.service" && u.active_since.is_some_and(|ms| ms > 1_600_000_000_000)), "a running unit has a start time");
         assert!(units.iter().any(|u| u.name == "ssh.service" && u.aliases.contains(&"sshd.service".to_string())));
 
         // UFW on pw-ubuntu: read the rules as added, add one, delete it by its spec.

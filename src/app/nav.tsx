@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useRef, useState, type ReactNode } from 'react'
 import { useConnections } from './connections'
 
 export type RailId = 'conn' | 'server' | 'transfer' | 'tunnels' | 'connect' | 'settings'
@@ -41,6 +41,8 @@ type Nav = {
   /** Open (or switch to) a session for this server and user and connect it
    *  over SSH if it is not connected yet. */
   connect: (serverId: string, user: string) => void
+  /** Switch to a session, on the menu entry it was last left on. */
+  switchSession: (serverId: string, user: string) => void
   /** Open a session without leaving the current screen. */
   openSession: (serverId: string, user: string) => void
   closeSession: (s: Session) => void
@@ -73,10 +75,20 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const [expanded, setExpanded] = useState<Nav['expanded']>({})
   const [panes, setPanes] = useState<Record<PaneSide, PaneSpot>>({ L: LOCAL_DOWNLOADS, R: LOCAL_DOWNLOADS })
 
+  // The menu entry each session was last on, so switching back lands there.
+  const lastModule = useRef(new Map<string, ModuleId>())
+  const sessionKey = (serverId: string, user: string) => `${serverId}\u0000${user}`
+
   const go = (next: Screen) => {
-    if (next.kind === 'server') setLastServer(next)
+    if (next.kind === 'server') {
+      setLastServer(next)
+      lastModule.current.set(sessionKey(next.serverId, next.user), next.module)
+    }
     setScreen(next)
   }
+
+  const switchSession = (serverId: string, user: string) =>
+    go({ kind: 'server', serverId, user, module: lastModule.current.get(sessionKey(serverId, user)) ?? 'overview' })
 
   const goRail = (rail: RailId) => {
     if (rail === 'conn') return go({ kind: 'servers' })
@@ -112,7 +124,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
 
   const connect = (serverId: string, user: string) => {
     openSession(serverId, user)
-    go({ kind: 'server', serverId, user, module: 'overview' })
+    switchSession(serverId, user)
   }
 
   const openTransfer = (left: PaneSpot) => {
@@ -123,10 +135,11 @@ export function NavProvider({ children }: { children: ReactNode }) {
   const closeWhere = (drop: (s: Session) => boolean) => {
     for (const s of sessions.filter(drop)) void conns.disconnect(s.serverId, s.user)
     const rest = sessions.filter((s) => !drop(s))
+    for (const s of sessions.filter(drop)) lastModule.current.delete(sessionKey(s.serverId, s.user))
     setSessions(rest)
     if (screen.kind !== 'server' || !drop(screen)) return
     const next = rest[rest.length - 1]
-    if (next) go({ kind: 'server', ...next, module: screen.module })
+    if (next) switchSession(next.serverId, next.user)
     else go({ kind: 'servers' })
   }
 
@@ -149,6 +162,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
         openModule,
         toggleGroup,
         connect,
+        switchSession,
         openSession,
         closeSession,
         closeServer,

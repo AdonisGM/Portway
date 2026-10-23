@@ -270,7 +270,7 @@ function Sessions() {
           <div key={id} className="mb-1 flex flex-col gap-px">
             <button
               type="button"
-              onClick={() => nav.go({ kind: 'server', serverId: id, user: users[0].user, module: current?.module ?? 'overview' })}
+              onClick={() => nav.switchSession(id, users[0].user)}
               className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-accent-soft"
             >
               <OsBadge os={srv?.os} size={22} />
@@ -287,7 +287,7 @@ function Sessions() {
               return (
                 <div
                   key={u.user}
-                  onClick={() => nav.go({ kind: 'server', serverId: id, user: u.user, module: current?.module ?? 'overview' })}
+                  onClick={() => nav.switchSession(id, u.user)}
                   className={`ml-[19px] flex cursor-pointer items-center gap-2 rounded-r-[7px] border-l border-line py-1 pr-1 pl-3 hover:bg-accent-soft ${
                     active ? 'bg-surface' : ''
                   }`}

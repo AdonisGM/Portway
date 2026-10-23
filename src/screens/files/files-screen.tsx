@@ -3,14 +3,17 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import {
   ArrowDown,
+  ArrowLeftRight,
   ArrowUp,
   ChevronDown,
   ChevronRight,
   ChevronsRight,
   Copy,
   Download,
+  FilePlus,
   Folder,
   FolderOpen,
+  FolderPlus,
   House,
   Lock,
   AppWindow,
@@ -18,6 +21,7 @@ import {
   Pencil,
   RotateCw,
   ScrollText,
+  ShieldAlert,
   ShieldCheck,
   SquareTerminal,
   Terminal,
@@ -49,7 +53,26 @@ import { TransferQueue } from './queue'
 import { locale, t } from '../../i18n'
 import { localBaseName } from '../../lib/platform'
 
-const ICON_BTN = 'flex size-8 cursor-pointer items-center justify-center rounded-lg border border-line2 text-ink hover:border-muted'
+/** Square icon button of the toolbar; `warn` marks a risky mode that is on. */
+function ToolButton({ title, onClick, disabled, warn, children }: { title: string; onClick: () => void; disabled?: boolean; warn?: boolean; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={cx(
+        'relative flex size-8 flex-none cursor-pointer items-center justify-center rounded-lg border disabled:cursor-default disabled:opacity-40',
+        warn ? 'border-warn text-warn' : 'border-line2 text-ink hover:border-muted',
+      )}
+      style={warn ? { background: 'var(--warn-soft)' } : undefined}
+    >
+      {children}
+    </button>
+  )
+}
+
 const GRID = '28px minmax(160px,1fr) 72px 104px 92px'
 const SKELETON = ['60%', '45%', '70%', '40%', '55%', '65%']
 
@@ -353,49 +376,39 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <PathBar path={path} go={go} />
         {/* An empty path is the SFTP default folder: the user's home. */}
-        <button type="button" title={t('Về thư mục home')} onClick={() => void go('')} className={ICON_BTN}>
+        <ToolButton title={t('Về thư mục home')} onClick={() => void go('')}>
           <House size={15} strokeWidth={1.8} />
-        </button>
-        <button type="button" title={t('Làm mới')} onClick={() => void reload()} className={ICON_BTN}>
+        </ToolButton>
+        <PathBar path={path} go={go} />
+        <ToolButton title={t('Làm mới')} onClick={() => void reload()}>
           <RotateCw size={15} strokeWidth={1.8} className={cx(loading && 'animate-spin')} />
-        </button>
-        <Button size="sm" onClick={() => void pickUpload()} disabled={!canWrite}>
-          {t('Tải lên')}
-        </Button>
-        <Button size="sm" onClick={() => setAction({ mode: 'newfile' })} disabled={!canWrite}>
-          {t('Tệp mới')}
-        </Button>
-        <Button size="sm" onClick={() => setAction({ mode: 'newdir' })} disabled={!canWrite}>
-          {t('Thư mục mới')}
-        </Button>
-        <Button
-          size="sm"
-          title={t('Mở màn Chuyển tệp với thư mục này ở bên trái')}
-          onClick={() => nav.openTransfer({ src: { kind: 'remote', serverId: id, user }, path })}
-        >
-          {t('Chép sang máy khác')}
-        </Button>
-        <button
-          type="button"
-          title={t('Mở thư mục này trong Terminal')}
-          onClick={() => void terminalAt(path)}
-          className={ICON_BTN}
-        >
+        </ToolButton>
+        <ToolButton title={t('Tải lên')} onClick={() => void pickUpload()} disabled={!canWrite}>
+          <Upload size={15} strokeWidth={1.8} />
+        </ToolButton>
+        <ToolButton title={t('Tệp mới')} onClick={() => setAction({ mode: 'newfile' })} disabled={!canWrite}>
+          <FilePlus size={15} strokeWidth={1.8} />
+        </ToolButton>
+        <ToolButton title={t('Thư mục mới')} onClick={() => setAction({ mode: 'newdir' })} disabled={!canWrite}>
+          <FolderPlus size={15} strokeWidth={1.8} />
+        </ToolButton>
+        <ToolButton title={t('Mở màn Chuyển tệp với thư mục này ở bên trái')} onClick={() => nav.openTransfer({ src: { kind: 'remote', serverId: id, user }, path })}>
+          <ArrowLeftRight size={15} strokeWidth={1.8} />
+        </ToolButton>
+        <ToolButton title={t('Mở thư mục này trong Terminal')} onClick={() => void terminalAt(path)}>
           <Terminal size={15} strokeWidth={1.8} />
-        </button>
+        </ToolButton>
         {!isRoot && (
-          <Button
-            size="sm"
-            variant={asRoot ? 'primary' : 'secondary'}
+          <ToolButton
+            warn={asRoot}
             disabled={!live}
-            title={asRoot ? t('Bấm để quay về quyền của {user}', { user }) : t('Duyệt, tải lên, sửa và xoá tệp bằng quyền root qua sudo')}
+            title={asRoot ? t('Đang dùng root: bấm để quay về quyền của {user}', { user }) : t('Duyệt, tải lên, sửa và xoá tệp bằng quyền root qua sudo')}
             onClick={toggleRoot}
           >
-            <ShieldCheck size={14} strokeWidth={1.8} />
-            {asRoot ? t('Đang dùng root') : t('Quyền root')}
-          </Button>
+            {asRoot ? <ShieldAlert size={15} strokeWidth={2} /> : <ShieldCheck size={15} strokeWidth={1.8} />}
+            {asRoot && <span className="absolute right-1 top-1 size-1.5 animate-pulse rounded-full bg-warn" />}
+          </ToolButton>
         )}
       </div>
 

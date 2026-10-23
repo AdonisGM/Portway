@@ -74,10 +74,8 @@ const en: Dict = {
   'Đã quay về quyền của {user}': 'Back to {user}',
   'Không dùng được quyền root': "Couldn't switch to root",
   'Không tắt được quyền root': "Couldn't turn off root access",
-  'Bấm để quay về quyền của {user}': 'Click to go back to {user}',
+  'Đang dùng root: bấm để quay về quyền của {user}': 'Working as root: click to go back to {user}',
   'Duyệt, tải lên, sửa và xoá tệp bằng quyền root qua sudo': 'Browse, upload, edit and delete files as root through sudo',
-  'Đang dùng root': 'Working as root',
-  'Quyền root': 'Root access',
   'Đang thao tác tệp bằng quyền root qua sudo. Tệp tải lên, tệp và thư mục tạo mới sẽ thuộc root.':
     'Working on files as root through sudo. Uploaded files and new files or folders will belong to root.',
   'Quay về {user}': 'Back to {user}',

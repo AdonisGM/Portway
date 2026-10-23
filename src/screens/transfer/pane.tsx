@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Eye, EyeOff, Folder, FolderPlus, Lock, RotateCw, Terminal, Upload, type LucideIcon } from 'lucide-react'
+import { ArrowDown, ArrowUp, Eye, EyeOff, Folder, FolderPlus, House, Lock, RotateCw, Terminal, Upload, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useServers } from '../../app/servers'
 import { SelectField, type Option } from '../../components/ui/form-controls'
@@ -202,6 +202,9 @@ export function Pane({
             root
           </span>
         )}
+        <IconButton title={t('Về thư mục home')} disabled={!p.ready} onClick={() => void p.load(p.src.kind === 'local' ? (home ?? '') : '')}>
+          <House size={14} strokeWidth={1.8} />
+        </IconButton>
         <IconButton title={t('Làm mới')} disabled={!p.ready} onClick={() => void p.reload()}>
           <RotateCw size={14} strokeWidth={1.8} className={cx(p.loading && 'animate-spin')} />
         </IconButton>

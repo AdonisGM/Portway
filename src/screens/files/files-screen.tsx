@@ -11,10 +11,12 @@ import {
   Download,
   Folder,
   FolderOpen,
+  House,
   Lock,
   AppWindow,
   FilePen,
   Pencil,
+  RotateCw,
   ScrollText,
   ShieldCheck,
   SquareTerminal,
@@ -47,6 +49,7 @@ import { TransferQueue } from './queue'
 import { locale, t } from '../../i18n'
 import { localBaseName } from '../../lib/platform'
 
+const ICON_BTN = 'flex size-8 cursor-pointer items-center justify-center rounded-lg border border-line2 text-ink hover:border-muted'
 const GRID = '28px minmax(160px,1fr) 72px 104px 92px'
 const SKELETON = ['60%', '45%', '70%', '40%', '55%', '65%']
 
@@ -351,6 +354,13 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
     <div className="relative flex min-h-0 flex-1 flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <PathBar path={path} go={go} />
+        {/* An empty path is the SFTP default folder: the user's home. */}
+        <button type="button" title={t('Về thư mục home')} onClick={() => void go('')} className={ICON_BTN}>
+          <House size={15} strokeWidth={1.8} />
+        </button>
+        <button type="button" title={t('Làm mới')} onClick={() => void reload()} className={ICON_BTN}>
+          <RotateCw size={15} strokeWidth={1.8} className={cx(loading && 'animate-spin')} />
+        </button>
         <Button size="sm" onClick={() => void pickUpload()} disabled={!canWrite}>
           {t('Tải lên')}
         </Button>
@@ -371,7 +381,7 @@ export function FilesScreen({ server, user }: { server: Server; user: string }) 
           type="button"
           title={t('Mở thư mục này trong Terminal')}
           onClick={() => void terminalAt(path)}
-          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-line2 text-ink hover:border-muted"
+          className={ICON_BTN}
         >
           <Terminal size={15} strokeWidth={1.8} />
         </button>

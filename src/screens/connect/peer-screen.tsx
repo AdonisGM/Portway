@@ -495,7 +495,7 @@ function ClipboardPanel({ peer, linked, onError }: { peer: ConnectPeer; linked: 
   const remote = linked ? peer.remoteClip : null
   const setClip = (receive: boolean, send: boolean) => void api.connectSetClip(peer.id, receive, send).catch(onError(t('Không đổi được cài đặt')))
   const why = peer.versionMismatch ? t('Hai máy chạy khác phiên bản Portway.') : !linked ? t('Cần đang kết nối với máy này.') : null
-  const when = (n: NonNullable<typeof note>) => [n.files > 0 ? t('{n} tệp hoặc thư mục', { n: n.files }) : t('{n} ký tự', { n: n.chars }), new Date(n.at).toLocaleTimeString()].join(' · ')
+  const when = (n: NonNullable<typeof note>) => [n.image ? t('Ảnh {size}', { size: formatBytes(n.bytes) }) : n.files > 0 ? t('{n} tệp hoặc thư mục', { n: n.files }) : t('{n} ký tự', { n: n.chars }), new Date(n.at).toLocaleTimeString()].join(' · ')
 
   // This machine to the other: needs our auto-send and, when it says, its Receive.
   const out: FlowState = !peer.clipSend ? 'off' : remote && !remote.receive ? 'blocked' : 'flow'
@@ -516,7 +516,7 @@ function ClipboardPanel({ peer, linked, onError }: { peer: ConnectPeer; linked: 
   ) : (
     <span className="flex items-center gap-1 text-[11px] text-warn">
       <TriangleAlert size={12} strokeWidth={2} />
-      {sent.status === 'off' ? t('Máy kia chưa bật Nhận clipboard từ máy này') : sent.status === 'too_large' ? t('Văn bản quá dài cho máy kia') : t('Máy kia không ghi được vào clipboard')}
+      {sent.status === 'off' ? t('Máy kia chưa bật Nhận clipboard từ máy này') : sent.status === 'unsupported' ? t('Portway ở máy kia chưa hỗ trợ nhận ảnh. Cập nhật Portway ở máy đó.') : sent.status === 'too_large' ? (sent.image ? t('Ảnh quá lớn (tối đa 25 MB)') : t('Văn bản quá dài cho máy kia')) : t('Máy kia không ghi được vào clipboard')}
     </span>
   )
   const received = note?.direction === 'in' ? note : null
@@ -524,7 +524,7 @@ function ClipboardPanel({ peer, linked, onError }: { peer: ConnectPeer; linked: 
   const filesWhy = why ?? (peer.info?.features.includes('clipfiles') ? null : t('Portway ở máy kia chưa hỗ trợ dán tệp. Cập nhật Portway ở máy đó.'))
 
   return (
-    <Panel title={t('Clipboard')} note={t('chỉ văn bản')}>
+    <Panel title={t('Clipboard')} note={t('văn bản, ảnh và tệp')}>
       <div className="flex flex-col gap-3 px-3.5 py-3.5">
         <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'minmax(96px,128px) minmax(0,1fr) minmax(96px,128px)' }}>
           <Endpoint os={device?.os ?? 'macos'} name={t('Máy này')} sends={peer.clipSend} takes={peer.clipReceive} />
@@ -535,8 +535,8 @@ function ClipboardPanel({ peer, linked, onError }: { peer: ConnectPeer; linked: 
           <Endpoint os={peer.os} name={peer.name} sends={remote ? remote.send : null} takes={remote ? remote.receive : null} />
         </div>
         <div className="flex flex-col gap-2.5 border-t border-line pt-3">
-          <SwitchLine label={t('Tự gửi sang máy kia')} tip={t('Mỗi lần bạn copy văn bản, nó được gửi sang máy kia (trừ mật khẩu từ trình quản lý mật khẩu). Chỉ chạy khi đang kết nối.')} on={peer.clipSend} onChange={(v) => setClip(peer.clipReceive, v)} />
-          <SwitchLine label={t('Nhận từ máy kia')} tip={t('Văn bản máy kia gửi sẽ được ghi vào clipboard của máy này.')} on={peer.clipReceive} onChange={(v) => setClip(v, peer.clipSend)} />
+          <SwitchLine label={t('Tự gửi sang máy kia')} tip={t('Mỗi lần bạn copy văn bản hoặc ảnh (ảnh chụp màn hình cũng vậy), nó được gửi sang máy kia, trừ mật khẩu từ trình quản lý mật khẩu. Chỉ chạy khi đang kết nối.')} on={peer.clipSend} onChange={(v) => setClip(peer.clipReceive, v)} />
+          <SwitchLine label={t('Nhận từ máy kia')} tip={t('Văn bản và ảnh máy kia gửi sẽ được ghi vào clipboard của máy này.')} on={peer.clipReceive} onChange={(v) => setClip(v, peer.clipSend)} />
           <div className="flex flex-wrap items-center gap-2.5">
             <Button size="sm" disabled={!!why} title={why ?? undefined} onClick={() => void api.connectClipSend(peer.id).catch(onError(t('Không gửi được clipboard')))}>
               <Send size={13} strokeWidth={1.75} className="mr-1.5" />

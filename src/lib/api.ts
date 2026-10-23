@@ -717,8 +717,8 @@ export type ConnectTransfer = {
   since: number
 }
 /** The last text sent or received over a link, without its content. */
-/** For "out": "sent" until the other machine answers, then "delivered" or why it was not taken ("off", "too_large", "failed"). */
-export type ConnectClipNote = { peerId: string; direction: 'in' | 'out'; chars: number; /** Files or folders, when it is those that were copied; 0 for text. */ files: number; at: number; status: string }
+/** For "out": "sent" until the other machine answers, then "delivered" or why it was not taken ("off", "too_large", "failed"); for a picture also "unsupported" (the other machine is too old). */
+export type ConnectClipNote = { peerId: string; direction: 'in' | 'out'; chars: number; /** Files or folders, when it is those that were copied; 0 for text. */ files: number; /** A picture, of `bytes` bytes. */ image: boolean; bytes: number; at: number; status: string }
 export type ConnectView = {
   enabled: boolean
   device: { id: string; name: string; os: string; version: string; port: number | null; fingerprint: string } | null

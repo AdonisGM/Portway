@@ -12,7 +12,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 const MAX_BYTES: usize = 40_000;
 const WATCH_EVERY: Duration = Duration::from_millis(700);
 
-fn hash_of(text: &str) -> u64 {
+pub(super) fn hash_of(text: &str) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut h);
     h.finish()
@@ -40,6 +40,9 @@ pub struct ClipNote {
     pub chars: usize,
     /// How many files or folders when it is files that were copied; 0 for text.
     pub files: u32,
+    /// A picture (then `bytes` is its size) rather than text or files.
+    pub image: bool,
+    pub bytes: u64,
     pub at: u64,
     /// For "out": "sent" until the other machine answers, then "delivered" or
     /// why it was not taken ("off", "too_large", "failed"). Machines older than
@@ -57,7 +60,7 @@ pub struct ClipPrefs {
 
 pub struct ClipState {
     /// Hash of the text last sent or written, so it is not sent back or written twice.
-    last: Option<u64>,
+    pub(super) last: Option<u64>,
     /// The clipboard's change count right after this app put something there.
     pub own_change: Option<u64>,
     pub note: Option<ClipNote>,
@@ -89,7 +92,11 @@ impl Connect {
     /// Send what is on the clipboard now to the machine linked with.
     pub fn clip_send_now(&self, id: &str) -> AppResult<()> {
         let outbox = self.link_outbox(id).ok_or_else(|| AppError::new("not_linked"))?;
-        let text = self.inner.app.clipboard().read_text().map_err(|_| AppError::new("clip_empty"))?;
+        let text = self.inner.app.clipboard().read_text().unwrap_or_default();
+        // No text: a picture, if that is what was copied.
+        if text.trim().is_empty() && sys_clip::has_image() {
+            return self.send_clip_image(id, &outbox, true).map_err(AppError::new);
+        }
         check_text(&text).map_err(AppError::new)?;
         self.send_clip(id, &outbox, text);
         Ok(())
@@ -105,7 +112,7 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip.last = Some(hash_of(&text));
-            s.clip.note = Some(ClipNote { peer_id: id.to_string(), direction: "out", chars, files: 0, at: now_ms(), status: "sent".into() });
+            s.clip.note = Some(ClipNote { peer_id: id.to_string(), direction: "out", chars, files: 0, image: false, bytes: 0, at: now_ms(), status: "sent".into() });
         }
         let _ = outbox.send(Msg::Clip { text });
         self.audit("clipSend", &name, true, Some(format!("{chars} chars")));
@@ -139,7 +146,7 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip.last = Some(h);
-            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars, files: 0, at: now_ms(), status: "delivered".into() });
+            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars, files: 0, image: false, bytes: 0, at: now_ms(), status: "delivered".into() });
         }
         self.audit("clipReceive", &name, true, Some(format!("{chars} chars")));
         self.publish();
@@ -211,7 +218,17 @@ impl Connect {
                 }
                 continue;
             }
-            let Ok(text) = self.inner.app.clipboard().read_text() else { continue };
+            let text = self.inner.app.clipboard().read_text().unwrap_or_default();
+            if text.trim().is_empty() {
+                // No text: a picture, if that is what was copied. (Word and Pages put a
+                // rendering of the text on the clipboard too; then the text is what goes.)
+                if sys_clip::has_image() {
+                    if let Some(outbox) = self.link_outbox(&peer_id) {
+                        let _ = self.send_clip_image(&peer_id, &outbox, false);
+                    }
+                }
+                continue;
+            }
             if check_text(&text).is_err() || self.lock().clip.last == Some(hash_of(&text)) {
                 continue;
             }

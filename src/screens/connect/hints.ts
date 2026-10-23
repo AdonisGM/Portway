@@ -136,7 +136,13 @@ export function commandError(e: unknown): string {
     case 'not_linked':
       return t('Chỉ gửi clipboard được khi đang kết nối với máy đó')
     case 'clip_empty':
-      return t('Clipboard không có văn bản để gửi')
+      return t('Clipboard không có văn bản hoặc ảnh để gửi')
+    case 'clip_image_too_large':
+      return t('Ảnh trong clipboard quá lớn (tối đa 25 MB)')
+    case 'clip_image_invalid':
+      return t('Không đọc được ảnh trong clipboard')
+    case 'clipimage_unsupported':
+      return t('Portway ở máy kia chưa hỗ trợ nhận ảnh. Cập nhật Portway ở máy đó.')
     case 'clip_too_large':
       return t('Văn bản trong clipboard quá dài (tối đa khoảng 40.000 ký tự)')
     case 'no_files':

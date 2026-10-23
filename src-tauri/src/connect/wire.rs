@@ -153,6 +153,11 @@ pub enum Msg {
     ClipFiles { lease: String, items: Vec<ClipItem> },
     /// What was announced is no longer on the sender's clipboard.
     ClipFilesGone { lease: String },
+    /// A picture was copied on the sender (a screenshot, "Copy Image"): a PNG of
+    /// `size` bytes, fetched the way a copied file is, by an `Intent::Fetch`
+    /// connection naming this `lease` for item 0. The receiver writes it into its
+    /// clipboard and answers with a `ClipAck`, once the picture has arrived.
+    ClipImage { lease: String, size: u64 },
     /// First message of a `Fetch` connection: the item (by position) of a lease.
     Want { lease: String, item: u32 },
     /// What this machine does with clipboard text for the other one, sent when

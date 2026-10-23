@@ -4224,7 +4224,7 @@ dependencies = [
 
 [[package]]
 name = "portway"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -4237,6 +4237,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "png 0.17.16",
  "russh",
  "russh-sftp",
  "serde",

@@ -19,10 +19,13 @@ const FETCH_WAIT: Duration = Duration::from_secs(30);
 
 /// What this machine copied and told others about.
 pub struct OutLease {
-    id: String,
-    paths: Vec<PathBuf>,
+    pub(super) id: String,
+    pub(super) paths: Vec<PathBuf>,
     /// Who was told; only they may fetch.
-    peers: HashSet<String>,
+    pub(super) peers: HashSet<String>,
+    /// A copied picture, saved as a PNG of our own for the other machine to fetch
+    /// (not shown as a transfer, deleted when the clipboard moves on).
+    pub(super) image: bool,
 }
 
 /// What a linked machine says it copied.
@@ -113,12 +116,12 @@ impl Connect {
             let name = s.store.peer(peer_id).map(|p| p.name.clone()).unwrap_or_default();
             let same = s.clip_out.as_ref().is_some_and(|l| l.paths == paths);
             if !same {
-                s.clip_out = Some(OutLease { id: uuid::Uuid::new_v4().simple().to_string(), paths: paths.clone(), peers: HashSet::new() });
+                s.clip_out = Some(OutLease { id: uuid::Uuid::new_v4().simple().to_string(), paths: paths.clone(), peers: HashSet::new(), image: false });
             }
             let out = s.clip_out.as_mut().expect("just set");
             out.peers.insert(peer_id.to_string());
             let lease = out.id.clone();
-            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "out", chars: 0, files: items.len() as u32, at: now_ms(), status: "sent".into() });
+            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "out", chars: 0, files: items.len() as u32, image: false, bytes: 0, at: now_ms(), status: "sent".into() });
             (lease, name)
         };
         let count = items.len();
@@ -138,7 +141,14 @@ impl Connect {
         let (lease, peers) = {
             let mut s = self.lock();
             match s.clip_out.take() {
-                Some(l) => (l.id, l.peers),
+                Some(l) => {
+                    if l.image {
+                        for p in &l.paths {
+                            let _ = std::fs::remove_file(p);
+                        }
+                    }
+                    (l.id, l.peers)
+                }
                 None => return,
             }
         };
@@ -172,7 +182,7 @@ impl Connect {
         {
             let mut s = self.lock();
             s.clip_in = Some(InLease { peer_id: peer_id.to_string(), lease, items, at: now_ms() });
-            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars: 0, files: count as u32, at: now_ms(), status: "delivered".into() });
+            s.clip.note = Some(ClipNote { peer_id: peer_id.to_string(), direction: "in", chars: 0, files: count as u32, image: false, bytes: 0, at: now_ms(), status: "delivered".into() });
         }
         self.audit("clipFilesReceive", &name, true, Some(format!("{count} items")));
         self.offer_to_system();
@@ -237,7 +247,7 @@ impl Connect {
         let cancel = t.cancel.clone();
         self.add_transfer(t);
         self.publish();
-        let result = tauri::async_runtime::block_on(self.fetch_item(&me, &peer, &targets, &lease.lease, index as u32, &dir, Some(&tid), cancel));
+        let result = tauri::async_runtime::block_on(self.fetch_item(&me, &peer, &targets, &lease.lease, index as u32, &dir, Some(&tid), cancel, None));
         match result {
             Ok(path) => {
                 self.with_transfer(&tid, |t| t.saved_to = path.clone());
@@ -283,7 +293,7 @@ impl Connect {
             let mut first: Option<String> = None;
             let mut result = Ok(());
             for index in 0..lease.items.len() {
-                match this.fetch_item(&me, &peer, &targets, &lease.lease, index as u32, &dir, Some(&tid), cancel.clone()).await {
+                match this.fetch_item(&me, &peer, &targets, &lease.lease, index as u32, &dir, Some(&tid), cancel.clone(), None).await {
                     Ok(path) => first = first.or(path),
                     Err(code) => {
                         result = Err(code);
@@ -310,7 +320,7 @@ impl Connect {
     /// Ask the machine that copied for one item and take it into `dir`. Gives
     /// back where it landed (the folder, for a folder). `tid` is the transfer
     /// to show progress on.
-    pub(super) async fn fetch_item(&self, me: &Me, peer: &Peer, targets: &[SocketAddrV4], lease: &str, item: u32, dir: &Path, tid: Option<&str>, cancel: Arc<Notify>) -> Result<Option<String>, String> {
+    pub(super) async fn fetch_item(&self, me: &Me, peer: &Peer, targets: &[SocketAddrV4], lease: &str, item: u32, dir: &Path, tid: Option<&str>, cancel: Arc<Notify>, max_bytes: Option<u64>) -> Result<Option<String>, String> {
         let (stream, _used) = tokio::select! {
             r = connect_any(targets) => r.map_err(|f| f.code().to_string())?,
             _ = cancel.notified() => return Err("canceled".into()),
@@ -357,6 +367,10 @@ impl Connect {
         if files.is_empty() {
             return Err("protocol".into());
         }
+        // The size is the other machine's to claim: judged before anything is accepted.
+        if max_bytes.is_some_and(|max| files.iter().map(|f| f.size).sum::<u64>() > max) {
+            return Err("too_large".into());
+        }
         tx.send(&Msg::Accept).await.map_err(|_| "connection_lost".to_string())?;
         let first = pull_files(&mut tx, &mut msgs, &files, dir, &cancel, |bytes, index| {
             if let Some(tid) = tid {
@@ -374,11 +388,11 @@ impl Connect {
     pub(super) async fn accept_fetch(&self, mut tx: Sender<Stream>, mut rx: Receiver<Stream>, peer: Peer) {
         let Ok(Ok(Msg::Want { lease, item })) = tokio::time::timeout(HANDSHAKE_TIMEOUT, rx.recv()).await else { return };
         // Only the lease still on the clipboard, only for whoever was told, only by position.
-        let path = {
+        let found = {
             let s = self.lock();
-            s.clip_out.as_ref().filter(|l| l.id == lease && l.peers.contains(&peer.id)).and_then(|l| l.paths.get(item as usize).cloned())
+            s.clip_out.as_ref().filter(|l| l.id == lease && l.peers.contains(&peer.id)).and_then(|l| l.paths.get(item as usize).cloned().map(|p| (p, l.image)))
         };
-        let Some(path) = path else {
+        let Some((path, image)) = found else {
             let _ = tx.send(&Msg::Refuse { code: "gone".into() }).await;
             return;
         };
@@ -413,11 +427,23 @@ impl Connect {
             Ok(Some(Frame::Msg(Msg::Accept))) => {}
             _ => return,
         }
-        let (tid, t) = Self::new_transfer(&peer.id, &peer.name, false, offered, "active");
-        let cancel = t.cancel.clone();
-        self.add_transfer(t);
-        self.publish();
-        let result = push_files(&mut tx, &mut msgs, &files, &cancel, |bytes, index| self.progress(&tid, bytes, index)).await;
+        // A copied picture is one more clipboard sync, not a transfer worth a row of its own.
+        let (tid, cancel) = if image {
+            (None, Arc::new(Notify::new()))
+        } else {
+            let (tid, t) = Self::new_transfer(&peer.id, &peer.name, false, offered, "active");
+            let cancel = t.cancel.clone();
+            self.add_transfer(t);
+            self.publish();
+            (Some(tid), cancel)
+        };
+        let result = push_files(&mut tx, &mut msgs, &files, &cancel, |bytes, index| {
+            if let Some(tid) = &tid {
+                self.progress(tid, bytes, index);
+            }
+        })
+        .await;
+        let Some(tid) = tid else { return };
         match result {
             Ok(()) => {
                 self.audit("send", &peer.name, true, Some(format!("{} files", files.len())));

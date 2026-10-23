@@ -49,6 +49,41 @@ pub fn is_sensitive() -> bool {
     false
 }
 
+/// A picture is on the clipboard (a screenshot, "Copy Image").
+pub fn has_image() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSPasteboard;
+        let pb = NSPasteboard::generalPasteboard();
+        let Some(types) = pb.types() else { return false };
+        return types.iter().any(|t| matches!(t.to_string().as_str(), "public.png" | "public.tiff"));
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::DataExchange::IsClipboardFormatAvailable;
+        // CF_DIB and CF_DIBV5.
+        return [8u32, 17].iter().any(|f| unsafe { IsClipboardFormatAvailable(*f) } != 0);
+    }
+    #[allow(unreachable_code)]
+    false
+}
+
+/// The picture on the clipboard as PNG bytes, where the system keeps it that
+/// way already (macOS screenshots do): no decoding and encoding in between.
+/// `None` otherwise; the caller then reads it through the clipboard plugin.
+pub fn image_png() -> Option<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypePNG};
+        let pb = NSPasteboard::generalPasteboard();
+        // SAFETY: the constant is a plain pasteboard type name.
+        let data = pb.dataForType(unsafe { NSPasteboardTypePNG })?;
+        return Some(data.to_vec());
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
 /// The files (and folders) on the clipboard, as copied in Finder or Explorer;
 /// empty when there are none or this platform has no way to read them.
 pub fn file_paths() -> Vec<std::path::PathBuf> {
